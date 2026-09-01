@@ -1,6 +1,14 @@
 {
   "version": 3,
   "name": "VACE inpaint and stitch",
+  "sections": [
+    {
+      "id": "advanced_settings",
+      "title": "Advanced Settings",
+      "order": 4,
+      "default_open": false
+    }
+  ],
   "nodes": {
     "118": {
       "selection": {
@@ -15,6 +23,17 @@
         "switch": {
           "hidden": true,
           "value_type": "boolean"
+        }
+      }
+    },
+    "121": {
+      "widgets": {
+        "attention": {
+          "label": "Attention backend",
+          "section_id": "advanced_settings",
+          "group_id": "model_patches",
+          "group_title": "Model",
+          "group_order": 0
         }
       }
     },
