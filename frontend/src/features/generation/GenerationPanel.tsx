@@ -1448,7 +1448,8 @@ export function GenerationPanel() {
                     Retry workflow load
                   </Button>
                 </Box>
-              ) : !hasVisibleGenerationControls ? (
+              ) : !isWorkflowBridgeSyncing &&
+                !hasVisibleGenerationControls ? (
                 <Box sx={{ px: 2, pb: 2 }}>
                   <Typography variant="caption" sx={{ color: "text.secondary" }}>
                     No inputs detected (or workflow has no editable parameters).

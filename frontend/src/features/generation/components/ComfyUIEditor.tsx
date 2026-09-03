@@ -71,9 +71,11 @@ function nextIframeClientBindingVersion(): number {
   return lastIframeClientBindingVersion;
 }
 const APP_READY_TIMEOUT_MS = 10_000;
+const IFRAME_NAVIGATION_TIMEOUT_MS = 30_000;
 const RECOVERY_POLL_MS = 3000;
 const MAX_CONSECUTIVE_READ_FAILURES = 3;
 const MAX_CONSECUTIVE_BACKEND_DISCONNECTS = 3;
+const MAX_HIDDEN_RECOVERY_RELOADS = 2;
 const RECOVERY_RELOAD_COOLDOWN_MS = 2000;
 const VISIBILITY_RESUME_GRACE_MS = 5000;
 const CONNECTING_HELPER_TEXT = "Connecting to ComfyUI...";
@@ -247,7 +249,11 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const dropRequestIdRef = useRef(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const iframeLoadedAtRef = useRef<number | null>(null);
+  const iframeNavigationStartedAtRef = useRef<number | null>(null);
   const hiddenProbeInFlightRef = useRef(false);
+  const hiddenRecoveryAttemptsRef = useRef(0);
+  const hiddenRecoveryExhaustedRef = useRef(false);
+  const recoveryWorkflowReloadPendingRef = useRef(false);
 
   const { active: activeDrag } = useDndContext();
   const isAssetDragActive =
@@ -257,6 +263,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     (node: HTMLIFrameElement | null) => {
       if (node !== iframeRef.current) {
         iframeLoadedAtRef.current = null;
+        iframeNavigationStartedAtRef.current = node ? Date.now() : null;
       }
       if (node) {
         registerEditor(node);
@@ -481,15 +488,18 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   );
 
   const recoverIframe = useCallback(
-    (reason: string) => {
+    (reason: string): boolean => {
       const now = Date.now();
-      if (now - lastRecoveryAtRef.current < RECOVERY_RELOAD_COOLDOWN_MS) return;
+      if (now - lastRecoveryAtRef.current < RECOVERY_RELOAD_COOLDOWN_MS) {
+        return false;
+      }
       lastRecoveryAtRef.current = now;
 
       const iframe = iframeRef.current;
-      if (!iframe) return;
+      if (!iframe) return false;
 
       iframeLoadedAtRef.current = null;
+      iframeNavigationStartedAtRef.current = now;
 
       // Cancel any in-flight init/poll attempt before forcing a reload.
       initRunIdRef.current += 1;
@@ -502,7 +512,10 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       setStartupDelayed(false);
       setRestarting(true);
       setEditorNeedsReconnect(false);
-      useGenerationStore.getState().setWorkflowLoading(true);
+      const generationState = useGenerationStore.getState();
+      generationState.setWorkflowLoading(true);
+      recoveryWorkflowReloadPendingRef.current =
+        generationState.selectedWorkflowId !== null;
       useGenerationStore.setState({
         iframeWorkflowInstanceId: null,
         iframeWorkflowRevision: null,
@@ -523,6 +536,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       }
       // Pending bridge requests belong to the old document.
       iframeBridge.notifyIframeReloaded();
+      return true;
     },
     [iframeUrl, setEditorNeedsReconnect],
   );
@@ -579,6 +593,10 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
         }
         return false;
       }
+
+      // An open editor resumes through this initialization path. The hidden
+      // bridge onReady handler must not start a second workflow load later.
+      recoveryWorkflowReloadPendingRef.current = false;
 
       // 2. Restore selected workflow through the store-owned workflow sync flow.
       const { selectedWorkflowId, loadWorkflow, syncedGraphData, isWorkflowReady } =
@@ -725,14 +743,25 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     lastDirectUrlRef.current = comfyuiDirectUrl;
 
     if (!prev || !comfyuiDirectUrl || prev === comfyuiDirectUrl) return;
+    hiddenRecoveryAttemptsRef.current = 0;
+    hiddenRecoveryExhaustedRef.current = false;
     recoverIframe("ComfyUI URL changed");
   }, [comfyuiDirectUrl, recoverIframe]);
 
   // Manual reconnect is triggered from GenerationPanel and propagated via store.
   useEffect(() => {
     if (editorReconnectSignal === 0) return;
+    hiddenRecoveryAttemptsRef.current = 0;
+    hiddenRecoveryExhaustedRef.current = false;
     recoverIframe("manual reconnect requested");
   }, [editorReconnectSignal, recoverIframe]);
+
+  useEffect(() => {
+    if (connectionStatus !== "connected") {
+      hiddenRecoveryAttemptsRef.current = 0;
+      hiddenRecoveryExhaustedRef.current = false;
+    }
+  }, [connectionStatus]);
 
   // The iframe is mounted on first render and stays alive across open/close
   // cycles, but the recovery loop below (and the iframe `onLoad` initializer)
@@ -967,26 +996,63 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
 
   const maintainHiddenBridge = useCallback(() => {
     if (iframeBridge.isReady) {
+      hiddenRecoveryAttemptsRef.current = 0;
+      hiddenRecoveryExhaustedRef.current = false;
       void probeHiddenBridge();
       return;
     }
+    const now = Date.now();
     const loadedAt = iframeLoadedAtRef.current;
+    const navigationStartedAt = iframeNavigationStartedAtRef.current;
+    const bridgeWaitTimedOut =
+      loadedAt !== null
+        ? now - loadedAt >= APP_READY_TIMEOUT_MS
+        : navigationStartedAt !== null &&
+          now - navigationStartedAt >= IFRAME_NAVIGATION_TIMEOUT_MS;
     if (
       connectionStatus === "connected" &&
-      loadedAt !== null &&
-      Date.now() - loadedAt >= APP_READY_TIMEOUT_MS &&
+      bridgeWaitTimedOut &&
       !iframeBridge.isPeerBooting()
     ) {
-      recoverIframe("hidden iframe bridge did not initialize");
+      if (
+        hiddenRecoveryAttemptsRef.current >= MAX_HIDDEN_RECOVERY_RELOADS
+      ) {
+        if (!hiddenRecoveryExhaustedRef.current) {
+          hiddenRecoveryExhaustedRef.current = true;
+          setEditorNeedsReconnect(true);
+        }
+        return;
+      }
+      if (recoverIframe("hidden iframe bridge did not initialize")) {
+        hiddenRecoveryAttemptsRef.current += 1;
+      }
     }
-  }, [connectionStatus, probeHiddenBridge, recoverIframe]);
+  }, [
+    connectionStatus,
+    probeHiddenBridge,
+    recoverIframe,
+    setEditorNeedsReconnect,
+  ]);
 
   useEffect(() => {
     if (open) return;
 
     maintainHiddenBridge();
     const unsubscribeReady = iframeBridge.onReady(() => {
+      hiddenRecoveryAttemptsRef.current = 0;
+      hiddenRecoveryExhaustedRef.current = false;
       void probeHiddenBridge();
+      const state = useGenerationStore.getState();
+      const shouldReloadWorkflow =
+        recoveryWorkflowReloadPendingRef.current;
+      recoveryWorkflowReloadPendingRef.current = false;
+      if (
+        shouldReloadWorkflow &&
+        state.isWorkflowLoading &&
+        state.selectedWorkflowId
+      ) {
+        void state.loadWorkflow(state.selectedWorkflowId);
+      }
     });
     const timer = setInterval(() => {
       maintainHiddenBridge();

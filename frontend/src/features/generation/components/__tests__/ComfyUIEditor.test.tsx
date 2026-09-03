@@ -181,6 +181,92 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     );
   });
 
+  it("bounds automatic recovery when a hidden iframe never handshakes", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    resetStore({
+      comfyuiDirectUrl: "http://comfy.local",
+      connectionStatus: "connected",
+    });
+
+    const rendered = render(
+      <ComfyUIEditor open={false} onClose={() => undefined} />,
+    );
+    const iframe = screen.getByTitle("ComfyUI Node Editor");
+
+    try {
+      fireEvent.load(iframe);
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(bridgeMocks.notifyIframeReloaded).toHaveBeenCalledTimes(1);
+
+      fireEvent.load(iframe);
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(bridgeMocks.notifyIframeReloaded).toHaveBeenCalledTimes(2);
+
+      fireEvent.load(iframe);
+      act(() => vi.advanceTimersByTime(20_000));
+      expect(bridgeMocks.notifyIframeReloaded).toHaveBeenCalledTimes(2);
+      expect(useGenerationStore.getState().editorNeedsReconnect).toBe(true);
+    } finally {
+      rendered.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers a hidden iframe whose initial navigation never loads", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    resetStore({
+      comfyuiDirectUrl: "http://comfy.local",
+      connectionStatus: "connected",
+    });
+
+    const rendered = render(
+      <ComfyUIEditor open={false} onClose={() => undefined} />,
+    );
+
+    try {
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(bridgeMocks.notifyIframeReloaded).toHaveBeenCalledOnce();
+    } finally {
+      rendered.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a pending workflow when the recovered hidden bridge is ready", async () => {
+    const loadWorkflow = vi.fn().mockResolvedValue(undefined);
+    resetStore({
+      comfyuiDirectUrl: "http://comfy.local",
+      connectionStatus: "disconnected",
+      selectedWorkflowId: "selected.json",
+      isWorkflowReady: true,
+      syncedGraphData: { nodes: [] },
+      loadWorkflow,
+    });
+    render(<ComfyUIEditor open={false} onClose={() => undefined} />);
+    fireEvent.load(screen.getByTitle("ComfyUI Node Editor"));
+
+    act(() => {
+      useGenerationStore.setState({ connectionStatus: "connected" });
+    });
+    await waitFor(() =>
+      expect(bridgeMocks.notifyIframeReloaded).toHaveBeenCalledOnce(),
+    );
+    expect(useGenerationStore.getState().isWorkflowLoading).toBe(true);
+
+    const readyHandlers = bridgeMocks.onReady.mock.calls.map(
+      ([handler]) => handler,
+    );
+    act(() => {
+      bridgeMocks.state.isReady = true;
+      readyHandlers.forEach((handler) => handler());
+    });
+
+    expect(loadWorkflow).toHaveBeenCalledOnce();
+    expect(loadWorkflow).toHaveBeenCalledWith("selected.json");
+  });
+
   it("health-checks a ready bridge while the editor is closed", async () => {
     bridgeMocks.state.isReady = true;
     bridgeMocks.health.mockResolvedValue({

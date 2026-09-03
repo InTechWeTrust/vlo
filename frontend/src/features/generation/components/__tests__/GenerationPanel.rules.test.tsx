@@ -527,6 +527,29 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
   });
 
+  it("does not claim a workflow has no inputs before iframe sync completes", () => {
+    useGenerationStore.setState({
+      syncedGraphData: { nodes: [] },
+    });
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        isWorkflowLoading: true,
+        isWorkflowReady: false,
+        canGenerate: false,
+        workflowInputs: [],
+      }),
+    );
+
+    render(<GenerationPanel />);
+
+    expect(
+      screen.queryByText(/No inputs detected/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Inputs ready — syncing workflow with ComfyUI..."),
+    ).toBeInTheDocument();
+  });
+
   it("shows the inline workflow resolver when local ComfyUI downloads are enabled", () => {
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
       makeHookState({
