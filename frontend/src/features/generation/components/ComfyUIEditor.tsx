@@ -246,6 +246,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   );
   const dropRequestIdRef = useRef(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const iframeLoadedAtRef = useRef<number | null>(null);
+  const hiddenProbeInFlightRef = useRef(false);
 
   const { active: activeDrag } = useDndContext();
   const isAssetDragActive =
@@ -253,6 +255,9 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
 
   const iframeRefCb = useCallback(
     (node: HTMLIFrameElement | null) => {
+      if (node !== iframeRef.current) {
+        iframeLoadedAtRef.current = null;
+      }
       if (node) {
         registerEditor(node);
       } else {
@@ -483,6 +488,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
 
       const iframe = iframeRef.current;
       if (!iframe) return;
+
+      iframeLoadedAtRef.current = null;
 
       // Cancel any in-flight init/poll attempt before forcing a reload.
       initRunIdRef.current += 1;
@@ -739,6 +746,12 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     if (connectionStatus !== "connected") return;
     const iframe = iframeRef.current;
     if (!iframe) return;
+    // A URL becoming available mounts a fresh iframe in the same render that
+    // marks ComfyUI connected. It has not failed merely because its bridge has
+    // not answered during that commit; onLoad will initialize it. This branch
+    // is only recovery for a document that already finished loading while the
+    // upstream was unavailable (normally the proxy's 502 response).
+    if (iframeLoadedAtRef.current === null) return;
     if (iframeBridge.isReady || iframeBridge.isPeerBooting()) return;
     recoverIframe("ComfyUI became reachable; iframe app never initialized");
   }, [connectionStatus, recoverIframe]);
@@ -933,6 +946,57 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
     }
   }, [applyHealth]);
 
+  // The iframe remains mounted while its fullscreen editor is closed because
+  // panel workflow loads still need its bridge identity. Keep that channel
+  // lightly exercised: a request timeout demotes a stale `ready` peer back to
+  // handshaking, so the next load does not spend its 20-second injection
+  // timeout discovering that the iframe document changed while hidden.
+  const probeHiddenBridge = useCallback(async () => {
+    if (!iframeBridge.isReady || hiddenProbeInFlightRef.current) return;
+    hiddenProbeInFlightRef.current = true;
+    try {
+      await iframeBridge.health();
+    } catch {
+      // IframeBridgeClient performs the useful state transition on timeout.
+      // Recovery remains demand-driven so a transient backend disconnect does
+      // not reload and discard a closed editor's preserved graph.
+    } finally {
+      hiddenProbeInFlightRef.current = false;
+    }
+  }, []);
+
+  const maintainHiddenBridge = useCallback(() => {
+    if (iframeBridge.isReady) {
+      void probeHiddenBridge();
+      return;
+    }
+    const loadedAt = iframeLoadedAtRef.current;
+    if (
+      connectionStatus === "connected" &&
+      loadedAt !== null &&
+      Date.now() - loadedAt >= APP_READY_TIMEOUT_MS &&
+      !iframeBridge.isPeerBooting()
+    ) {
+      recoverIframe("hidden iframe bridge did not initialize");
+    }
+  }, [connectionStatus, probeHiddenBridge, recoverIframe]);
+
+  useEffect(() => {
+    if (open) return;
+
+    maintainHiddenBridge();
+    const unsubscribeReady = iframeBridge.onReady(() => {
+      void probeHiddenBridge();
+    });
+    const timer = setInterval(() => {
+      maintainHiddenBridge();
+    }, HEALTH_WATCHDOG_MS);
+    return () => {
+      clearInterval(timer);
+      unsubscribeReady();
+    };
+  }, [maintainHiddenBridge, open, probeHiddenBridge]);
+
   // On close, always do one last read to capture unsynced edits.
   useEffect(() => {
     const wasOpen = wasOpenRef.current;
@@ -979,12 +1043,17 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   // unsaved ComfyUI edits.
   useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState !== "visible" || !open) return;
+      if (document.visibilityState !== "visible") return;
       visibilityResumeGraceUntilRef.current =
         Date.now() + VISIBILITY_RESUME_GRACE_MS;
 
       const iframe = iframeRef.current;
       if (!iframe) return;
+
+      if (!open) {
+        maintainHiddenBridge();
+        return;
+      }
 
       if (!iframeBridge.isReady) {
         setAppReady(false);
@@ -1005,7 +1074,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [open, appReady, initializeIframe, pollWorkflow]);
+  }, [open, appReady, initializeIframe, maintainHiddenBridge, pollWorkflow]);
 
   if (!iframeUrl) {
     if (!open) return null;
@@ -1160,6 +1229,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
           ref={iframeRefCb}
           src={iframeUrl}
           onLoad={() => {
+            iframeLoadedAtRef.current = Date.now();
             if (open) {
               initializeIframe();
             }

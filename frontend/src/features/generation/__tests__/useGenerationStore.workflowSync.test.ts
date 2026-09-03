@@ -5,6 +5,7 @@ import type { WorkflowInput } from "../types";
 import * as comfyApi from "../services/comfyuiApi";
 import { parseInputsFromGraphData } from "../services/workflowBridge";
 import * as workflowSyncController from "../services/workflowSyncController";
+import { iframeBridge } from "../services/iframeBridgeClient";
 import { createDefaultWorkflowRules } from "../services/workflowRules";
 
 function makeInputs(): WorkflowInput[] {
@@ -1610,6 +1611,53 @@ describe("useGenerationStore workflow editor sync", () => {
     const state = useGenerationStore.getState();
     expect(state.isWorkflowReady).toBe(true);
     expect(state.isWorkflowLoading).toBe(false);
+  });
+
+  it("probes a latched ready bridge before starting the long workflow injection", async () => {
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      source: "backend",
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wf.json",
+      has_sidecar: true,
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+    vi.spyOn(iframeBridge, "isReady", "get")
+      .mockReturnValueOnce(true)
+      .mockReturnValue(false);
+    const healthSpy = vi
+      .spyOn(iframeBridge, "health")
+      .mockRejectedValue(new Error("stale iframe document"));
+    const readySpy = vi
+      .spyOn(workflowSyncController, "waitForAppReady")
+      .mockResolvedValue(true);
+    const injectSpy = vi
+      .spyOn(workflowSyncController, "injectWorkflowAndRead")
+      .mockResolvedValue({
+        ok: true,
+        deferred: false,
+        workflowResult: {
+          workflow: null,
+          graphData: { source: "backend" },
+          inputs: makeInputs(),
+          filename: "wf.json",
+          workflowInstanceId: "workflow-1",
+          revision: 1,
+        },
+        reason: null,
+        warnings: null,
+      });
+    useGenerationStore.setState({ editorRef: makeReadyEditorRef() });
+
+    await useGenerationStore.getState().loadWorkflow("wf.json");
+
+    expect(healthSpy).toHaveBeenCalledOnce();
+    expect(readySpy).toHaveBeenCalledOnce();
+    expect(injectSpy).toHaveBeenCalledOnce();
+    expect(healthSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      injectSpy.mock.invocationCallOrder[0],
+    );
   });
 
   it("waits for iframe confirmation before marking a replayed temp workflow ready", async () => {

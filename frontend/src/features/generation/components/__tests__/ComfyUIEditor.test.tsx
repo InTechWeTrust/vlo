@@ -153,6 +153,46 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     expect(openLink).toHaveAttribute("target", "_blank");
   });
 
+  it("does not reload a newly mounted iframe just because ComfyUI is already connected", () => {
+    resetStore({
+      comfyuiDirectUrl: "http://comfy.local",
+      connectionStatus: "connected",
+    });
+
+    render(<ComfyUIEditor open={false} onClose={() => undefined} />);
+
+    expect(bridgeMocks.notifyIframeReloaded).not.toHaveBeenCalled();
+  });
+
+  it("recovers a loaded dead iframe when ComfyUI becomes connected", async () => {
+    resetStore({
+      comfyuiDirectUrl: "http://comfy.local",
+      connectionStatus: "disconnected",
+    });
+    render(<ComfyUIEditor open={false} onClose={() => undefined} />);
+    fireEvent.load(screen.getByTitle("ComfyUI Node Editor"));
+
+    act(() => {
+      useGenerationStore.setState({ connectionStatus: "connected" });
+    });
+
+    await waitFor(() =>
+      expect(bridgeMocks.notifyIframeReloaded).toHaveBeenCalledOnce(),
+    );
+  });
+
+  it("health-checks a ready bridge while the editor is closed", async () => {
+    bridgeMocks.state.isReady = true;
+    bridgeMocks.health.mockResolvedValue({
+      appReady: true,
+      backendConnected: true,
+    });
+
+    render(<ComfyUIEditor open={false} onClose={() => undefined} />);
+
+    await waitFor(() => expect(bridgeMocks.health).toHaveBeenCalledOnce());
+  });
+
   it("keeps the iframe URL stable when the active project changes", () => {
     useProjectStore.setState({
       project: {

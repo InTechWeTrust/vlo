@@ -1173,6 +1173,20 @@ export function buildWorkflowStoreState(
           // graphToPrompt. Treat them like persisted workflows here so replay
           // cannot expose Generate before the hidden editor confirms the graph.
           let appReady = iframeBridge.isReady;
+          if (appReady) {
+            try {
+              // `ready` names a particular iframe document. Browsers or
+              // ComfyUI can replace that hidden document while the editor is
+              // closed, leaving the client latched ready until an RPC times
+              // out. The lightweight health request has a 3s bound and
+              // reopens the handshake on timeout; do it before committing to
+              // the 20s workflow-injection request.
+              await iframeBridge.health();
+            } catch {
+              appReady = false;
+            }
+            if (isStale()) return;
+          }
           if (!appReady) {
             appReady = await waitForAppReady(
               editorRef,
