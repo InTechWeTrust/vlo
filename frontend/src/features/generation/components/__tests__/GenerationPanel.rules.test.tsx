@@ -494,6 +494,39 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(screen.queryByText("Reference Image")).not.toBeInTheDocument();
   });
 
+  it("shows newly parsed inputs while the iframe confirms execution identity", () => {
+    useGenerationStore.setState({
+      syncedGraphData: { nodes: [{ id: 6, type: "LoadImage" }] },
+    });
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        isWorkflowLoading: true,
+        isWorkflowReady: false,
+        canGenerate: false,
+        workflowInputs: [
+          {
+            nodeId: "6",
+            classType: "LoadImage",
+            inputType: "image",
+            param: "image",
+            label: "Reference Image",
+            currentValue: null,
+            origin: "rule",
+          },
+        ],
+      }),
+    );
+
+    render(<GenerationPanel />);
+
+    expect(screen.queryByText("Loading inputs...")).not.toBeInTheDocument();
+    expect(screen.getByText("Reference Image")).toBeInTheDocument();
+    expect(
+      screen.getByText("Inputs ready — syncing workflow with ComfyUI..."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate" })).toBeDisabled();
+  });
+
   it("shows the inline workflow resolver when local ComfyUI downloads are enabled", () => {
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
       makeHookState({

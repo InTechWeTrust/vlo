@@ -690,6 +690,16 @@ export function GenerationPanel() {
   );
   const hasVisibleGenerationControls =
     workflowInputs.length > 0 || displayWidgetInputs.length > 0;
+  // Backend graph/rule parsing completes before the iframe confirms the exact
+  // workflow instance used for submission. Those are separate readiness
+  // boundaries: controls can be useful immediately, while `canGenerate`
+  // remains false until the bridge identity is pinned.
+  const hasWorkflowPresentation =
+    !isWorkflowLoading || syncedGraphData !== null;
+  const isWorkflowPresentationLoading =
+    isWorkflowLoading && !hasWorkflowPresentation;
+  const isWorkflowBridgeSyncing =
+    isWorkflowLoading && hasWorkflowPresentation;
 
   // The session's commit side: a validated widget write that has already been
   // through `generationSessionService.transaction`. Panel controls call
@@ -1406,7 +1416,7 @@ export function GenerationPanel() {
             />
           ) : (
             <>
-              {isWorkflowLoading ? (
+              {isWorkflowPresentationLoading ? (
                 <Box
                   sx={{
                     px: 2,
@@ -1448,7 +1458,25 @@ export function GenerationPanel() {
                 </Box>
               ) : null}
 
-              {!isWorkflowLoading && !workflowLoadError ? (
+              {isWorkflowBridgeSyncing ? (
+                <Box
+                  data-testid="generation-workflow-sync-status"
+                  sx={{
+                    px: 2,
+                    pb: 1.5,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                  }}
+                >
+                  <CircularProgress size={14} />
+                  <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                    Inputs ready — syncing workflow with ComfyUI...
+                  </Typography>
+                </Box>
+              ) : null}
+
+              {hasWorkflowPresentation && !workflowLoadError ? (
                 <>
                   <GenerationInputs
                     inputs={workflowInputs}
@@ -1504,6 +1532,8 @@ export function GenerationPanel() {
                             .slice(0, 4)
                             .map((f) => f.message)
                             .join("\n")
+                        : isWorkflowBridgeSyncing
+                          ? "Waiting for ComfyUI to confirm the active workflow"
                         : ""
                     }
                     placement="top"
