@@ -649,7 +649,7 @@ export function buildWorkflowStoreState(
         hasInferredInputs: presented.hasInferredInputs,
         derivedMaskMappings: presented.derivedMaskMappings,
         workflowRuleWarnings,
-        workflowLoadError: null,
+        ...(options?.preserveLoadStatus ? {} : { workflowLoadError: null }),
         mediaInputs: carryOverMediaInputs(
           currentState.workflowInputs,
           currentState.mediaInputs,
@@ -663,6 +663,44 @@ export function buildWorkflowStoreState(
             }
           : {}),
       }));
+    },
+
+    refreshWorkflowPresentation: () => {
+      const state = get();
+      const { selectedWorkflowId, syncedGraphData } = state;
+      if (
+        !selectedWorkflowId ||
+        selectedWorkflowId === TEMP_WORKFLOW_ID ||
+        !syncedGraphData
+      ) {
+        return;
+      }
+
+      const refreshed = buildWorkflowResultFromGraphData(
+        syncedGraphData,
+        selectedWorkflowId,
+        {
+          inputNodeMap: state.inputNodeMap,
+          objectInfo: state.rawObjectInfo,
+        },
+      );
+      const bridgeIdentity =
+        typeof state.iframeWorkflowInstanceId === "string" &&
+        typeof state.iframeWorkflowRevision === "number"
+          ? {
+              workflowInstanceId: state.iframeWorkflowInstanceId,
+              revision: state.iframeWorkflowRevision,
+            }
+          : null;
+
+      // This is presentation-only enrichment. Keep the workflow's existing
+      // execution readiness and bridge identity exactly as they were.
+      state.syncWorkflow(
+        state.syncedWorkflow,
+        syncedGraphData,
+        refreshed.inputs,
+        { markReady: false, preserveLoadStatus: true, bridgeIdentity },
+      );
     },
 
     registerWorkflowFromEditor: async (

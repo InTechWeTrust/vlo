@@ -12,6 +12,7 @@ import { revokeJobPostprocessPreview, revokePreviewAnimation } from "./previewSt
 import { attachDeliveryClientHandlers } from "./deliveryEvents";
 import { attachRuntimeClientHandlers } from "./runtimeEvents";
 import { useProjectStore } from "../../project";
+import type { RuntimeStatus } from "../../../types/RuntimeStatus";
 import type {
   ComfyUIConnectionStatus,
   GenerationRuntimeState,
@@ -20,7 +21,7 @@ import type {
 } from "./types";
 
 function connectionStatusFromRuntime(
-  runtimeStatus: import("../../../types/RuntimeStatus").RuntimeStatus | null,
+  runtimeStatus: RuntimeStatus | null,
 ): ComfyUIConnectionStatus {
   if (!runtimeStatus) return "disconnected";
   if (runtimeStatus.comfyui.status === "connected") return "connected";
@@ -36,6 +37,22 @@ export function buildRuntimeStoreState(
   // so a parallel `fetchWorkflows` race (initial connect + WS "status" event)
   // doesn't fire two backend sync requests. Cleared on settle.
   let inFlightSyncPromise: Promise<void> | null = null;
+  let runtimeStatusRequestId = 0;
+  let inFlightRuntimeStatus: {
+    requestId: number;
+    promise: Promise<RuntimeStatus | null>;
+  } | null = null;
+
+  function invalidateRuntimeStatusRequest(): void {
+    runtimeStatusRequestId += 1;
+    inFlightRuntimeStatus = null;
+  }
+
+  function finishRuntimeStatusRequest(requestId: number): void {
+    if (inFlightRuntimeStatus?.requestId === requestId) {
+      inFlightRuntimeStatus = null;
+    }
+  }
 
   function createDeliveryClient(projectId: string): GenerationDeliveryWebSocket {
     const deliveryClient = new GenerationDeliveryWebSocket(API_BASE_URL, projectId);
@@ -75,74 +92,95 @@ export function buildRuntimeStoreState(
         editorReconnectSignal: state.editorReconnectSignal + 1,
       })),
 
-    refreshRuntimeStatus: async () => {
-      try {
-        const runtimeStatus = await getRuntimeStatus();
-        let shouldReconnectEditor = false;
-        set((state) => {
-          const nextState = {
-            runtimeStatus,
-            runtimeStatusError: null,
-            comfyuiDirectUrl: runtimeStatus.comfyui.url,
-            connectionStatus: connectionStatusFromRuntime(runtimeStatus),
-          } as import("./types").GenerationStorePatch;
+    refreshRuntimeStatus: (options) => {
+      if (inFlightRuntimeStatus && !options?.force) {
+        return inFlightRuntimeStatus.promise;
+      }
+      if (options?.force) {
+        invalidateRuntimeStatusRequest();
+      }
 
-          if (
-            runtimeStatus.comfyui.status !== "connected" &&
-            state.isWorkflowLoading
-          ) {
-            nextState.isWorkflowLoading = false;
-            nextState.workflowLoadState = state.syncedGraphData ? "ready" : "error";
-            nextState.isWorkflowReady = state.syncedGraphData !== null;
-            nextState.workflowLoadError =
-              runtimeStatus.comfyui.error ??
-              "ComfyUI is unavailable. Start it and retry loading inputs.";
+      const requestId = ++runtimeStatusRequestId;
+      const promise = (async () => {
+        try {
+          const runtimeStatus = await getRuntimeStatus();
+          if (requestId !== runtimeStatusRequestId) return runtimeStatus;
+
+          let shouldReconnectEditor = false;
+          set((state) => {
+            const nextState = {
+              runtimeStatus,
+              runtimeStatusError: null,
+              comfyuiDirectUrl: runtimeStatus.comfyui.url,
+              connectionStatus: connectionStatusFromRuntime(runtimeStatus),
+            } as import("./types").GenerationStorePatch;
+
+            if (
+              runtimeStatus.comfyui.status !== "connected" &&
+              state.isWorkflowLoading
+            ) {
+              nextState.isWorkflowLoading = false;
+              nextState.workflowLoadState = state.syncedGraphData
+                ? "ready"
+                : "error";
+              nextState.isWorkflowReady = state.syncedGraphData !== null;
+              nextState.workflowLoadError =
+                runtimeStatus.comfyui.error ??
+                "ComfyUI is unavailable. Start it and retry loading inputs.";
+            }
+
+            if (
+              runtimeStatus.comfyui.status === "connected" &&
+              state.connectionStatus !== "connected"
+            ) {
+              shouldReconnectEditor = state.editorNeedsReconnect;
+            }
+
+            return nextState;
+          });
+          if (shouldReconnectEditor) {
+            get().requestEditorReconnect();
           }
-
+          // Sync-retry handoff: if the backend reports ComfyUI as connected but
+          // we still haven't synced (e.g. an earlier sync 503'd because ComfyUI
+          // was briefly unreachable), retry now. The panel's 5s polling loop
+          // calls refreshRuntimeStatus while !objectInfoSynced, giving us
+          // bounded passive retries without a separate timer.
           if (
             runtimeStatus.comfyui.status === "connected" &&
-            state.connectionStatus !== "connected"
+            !get().objectInfoSynced
           ) {
-            shouldReconnectEditor = state.editorNeedsReconnect;
+            void get().syncObjectInfo();
           }
+          return runtimeStatus;
+        } catch (error) {
+          if (requestId !== runtimeStatusRequestId) return null;
 
-          return nextState;
-        });
-        if (shouldReconnectEditor) {
-          get().requestEditorReconnect();
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Backend status check failed";
+          set((state) => ({
+            runtimeStatus: null,
+            runtimeStatusError: message,
+            connectionStatus: "error",
+            ...(state.isWorkflowLoading
+              ? {
+                  isWorkflowLoading: false,
+                  workflowLoadState: state.syncedGraphData ? "ready" : "error",
+                  isWorkflowReady: state.syncedGraphData !== null,
+                  workflowLoadError: message,
+                }
+              : {}),
+          }));
+          return null;
+        } finally {
+          finishRuntimeStatusRequest(requestId);
         }
-        // Sync-retry handoff: if the backend reports ComfyUI as connected but
-        // we still haven't synced (e.g. an earlier sync 503'd because ComfyUI
-        // was briefly unreachable), retry now. The panel's 5s polling loop
-        // calls refreshRuntimeStatus while !objectInfoSynced, giving us
-        // bounded passive retries without a separate timer.
-        if (
-          runtimeStatus.comfyui.status === "connected" &&
-          !get().objectInfoSynced
-        ) {
-          void get().syncObjectInfo();
-        }
-        return runtimeStatus;
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Backend status check failed";
-        set((state) => ({
-          runtimeStatus: null,
-          runtimeStatusError: message,
-          connectionStatus: "error",
-          ...(state.isWorkflowLoading
-            ? {
-                isWorkflowLoading: false,
-                workflowLoadState: state.syncedGraphData ? "ready" : "error",
-                isWorkflowReady: state.syncedGraphData !== null,
-                workflowLoadError: message,
-              }
-            : {}),
-        }));
-        return null;
-      }
+      })();
+
+      inFlightRuntimeStatus = { requestId, promise };
+      return promise;
     },
 
     updateRuntimeSettings: async (patch) => {
@@ -165,6 +203,7 @@ export function buildRuntimeStoreState(
       }
 
       await patchRuntimeSettings(patch);
+      invalidateRuntimeStatusRequest();
       const runtimeStatus = await get().refreshRuntimeStatus();
       set((state) => ({
         comfyuiDirectUrl:
@@ -217,19 +256,12 @@ export function buildRuntimeStoreState(
             inputNodeMap,
           });
 
-          // The first workflow load can race ahead of object_info on a cold
-          // start, leaving the backend's enrich pass to run against an empty
-          // cache and the panel rendering without auto-discovered widgets, AR
-          // targets, or default validation. Re-resolve the active workflow now
-          // that object_info is populated so its rules pick up enrichment.
+          // The first workflow parse can race ahead of object_info on a cold
+          // start. Re-project the cached graph locally once metadata arrives;
+          // fetching and reinjecting the whole workflow here restarts iframe
+          // synchronization for data we already hold.
           if (!hadObjectInfo) {
-            const { selectedWorkflowId, loadWorkflow } = get();
-            if (
-              selectedWorkflowId &&
-              selectedWorkflowId !== TEMP_WORKFLOW_ID
-            ) {
-              void loadWorkflow(selectedWorkflowId);
-            }
+            get().refreshWorkflowPresentation();
           }
         } catch (err) {
           console.error("[Generation] Failed to sync object_info:", err);
@@ -298,6 +330,7 @@ export function buildRuntimeStoreState(
     },
 
     disconnect: () => {
+      invalidateRuntimeStatusRequest();
       const {
         wsClient,
         deliveryClient,

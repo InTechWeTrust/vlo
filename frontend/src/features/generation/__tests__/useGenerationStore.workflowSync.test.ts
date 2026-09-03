@@ -1845,6 +1845,8 @@ describe("useGenerationStore workflow editor sync", () => {
     vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
       { id: "wf.json", name: "Workflow" },
     ]);
+    const originalSyncObjectInfo =
+      useGenerationStore.getState().syncObjectInfo;
     const syncObjectInfo = vi
       .spyOn(useGenerationStore.getState(), "syncObjectInfo")
       .mockImplementation(() => new Promise(() => {}));
@@ -1853,12 +1855,105 @@ describe("useGenerationStore workflow editor sync", () => {
       objectInfoSynced: false,
     });
 
-    await useGenerationStore.getState().fetchWorkflows();
+    try {
+      await useGenerationStore.getState().fetchWorkflows();
 
-    expect(syncObjectInfo).toHaveBeenCalledOnce();
-    expect(useGenerationStore.getState().availableWorkflows).toEqual([
-      { id: "wf.json", name: "Workflow" },
+      expect(syncObjectInfo).toHaveBeenCalledOnce();
+      expect(useGenerationStore.getState().availableWorkflows).toEqual([
+        { id: "wf.json", name: "Workflow" },
+      ]);
+    } finally {
+      // Zustand replaces the state object above, so mockRestore alone would
+      // restore only the older object that vi.spyOn wrapped.
+      useGenerationStore.setState({ syncObjectInfo: originalSyncObjectInfo });
+    }
+  });
+
+  it("re-enriches the cached graph locally when object-info sync finishes", async () => {
+    vi.spyOn(comfyApi, "syncObjectInfo").mockResolvedValue({
+      synced: true,
+      node_classes: 1,
+      input_node_map: {
+        CustomMediaNode: [
+          {
+            input_type: "video",
+            param: "source",
+            label: "Source",
+          },
+        ],
+      },
+      object_info: {
+        CustomMediaNode: {
+          display_name: "Custom Media",
+          input: {
+            required: {
+              source: ["STRING", {}],
+            },
+          },
+          input_order: {
+            required: ["source"],
+          },
+        },
+      },
+    });
+    const loadWorkflow = vi.spyOn(
+      useGenerationStore.getState(),
+      "loadWorkflow",
+    );
+    const graphData = {
+      nodes: [
+        {
+          id: 7,
+          type: "CustomMediaNode",
+          widgets_values: ["clip.mp4"],
+        },
+      ],
+      links: [],
+    };
+    const syncedWorkflow = {
+      "7": {
+        class_type: "CustomMediaNode",
+        inputs: { source: "clip.mp4" },
+      },
+    };
+    useGenerationStore.setState({
+      connectionStatus: "connected",
+      objectInfoSynced: false,
+      rawObjectInfo: null,
+      inputNodeMap: null,
+      selectedWorkflowId: "wf.json",
+      syncedGraphData: graphData,
+      syncedWorkflow,
+      workflowInputs: [],
+      iframeWorkflowInstanceId: "workflow-7",
+      iframeWorkflowRevision: 4,
+      isWorkflowLoading: false,
+      workflowLoadState: "ready",
+      workflowLoadError: "catalog refresh failed",
+      isWorkflowReady: true,
+    });
+
+    await useGenerationStore.getState().syncObjectInfo();
+
+    const state = useGenerationStore.getState();
+    expect(loadWorkflow).not.toHaveBeenCalled();
+    expect(state.syncedGraphData).toBe(graphData);
+    expect(state.syncedWorkflow).toBe(syncedWorkflow);
+    expect(state.workflowInputs).toMatchObject([
+      {
+        nodeId: "7",
+        classType: "CustomMediaNode",
+        inputType: "video",
+        param: "source",
+        label: "Custom Media",
+        currentValue: "clip.mp4",
+      },
     ]);
+    expect(state.iframeWorkflowInstanceId).toBe("workflow-7");
+    expect(state.iframeWorkflowRevision).toBe(4);
+    expect(state.isWorkflowLoading).toBe(false);
+    expect(state.workflowLoadError).toBe("catalog refresh failed");
+    expect(state.isWorkflowReady).toBe(true);
   });
 
   it("returns to the menu without leaving a workflow ready to generate", () => {

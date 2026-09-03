@@ -227,9 +227,13 @@ export interface GenerationWorkflowState {
     inputs: WorkflowInput[],
     options?: {
       markReady?: boolean;
+      preserveLoadStatus?: boolean;
       bridgeIdentity?: { workflowInstanceId: string; revision: number } | null;
     },
   ) => void;
+  /** Re-project the cached graph after object_info becomes available without
+   * fetching or reinjecting the selected workflow. */
+  refreshWorkflowPresentation: () => void;
   registerWorkflowFromEditor: (
     workflow: Record<string, unknown> | null,
     graphData: Record<string, unknown>,
@@ -277,7 +281,9 @@ export interface GenerationRuntimeState {
   requestEditorReconnect: () => void;
   connect: () => void;
   disconnect: () => void;
-  refreshRuntimeStatus: () => Promise<RuntimeStatus | null>;
+  refreshRuntimeStatus: (options?: {
+    force?: boolean;
+  }) => Promise<RuntimeStatus | null>;
   updateRuntimeSettings: (patch: RuntimeSettingsPatch) => Promise<void>;
   updateComfyUrl: (url: string) => Promise<void>;
   syncObjectInfo: () => Promise<void>;

@@ -848,7 +848,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   useEffect(() => {
     const store = useGenerationStore.getState();
     store.connect();
-    void store.refreshRuntimeStatus();
 
     const intervalId = window.setInterval(() => {
       const current = useGenerationStore.getState();

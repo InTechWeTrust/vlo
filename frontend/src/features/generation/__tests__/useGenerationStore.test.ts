@@ -264,6 +264,50 @@ describe("useGenerationStore workflow rules", () => {
     expect(state.editorNeedsReconnect).toBe(false);
   });
 
+  it("shares an in-flight runtime status request across cold-start triggers", async () => {
+    const connectedStatus = useGenerationStore.getState().runtimeStatus;
+    if (!connectedStatus) throw new Error("Expected seeded runtime status");
+
+    let resolveStatus: (value: typeof connectedStatus) => void = () => {};
+    mockGetRuntimeStatus.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
+    useGenerationStore.setState({ objectInfoSynced: true });
+
+    const first = useGenerationStore.getState().refreshRuntimeStatus();
+    const second = useGenerationStore.getState().refreshRuntimeStatus();
+
+    expect(first).toBe(second);
+    expect(mockGetRuntimeStatus).toHaveBeenCalledOnce();
+
+    resolveStatus(connectedStatus);
+    await expect(first).resolves.toBe(connectedStatus);
+    await expect(second).resolves.toBe(connectedStatus);
+  });
+
+  it("ignores a runtime status response invalidated by disconnect", async () => {
+    const connectedStatus = useGenerationStore.getState().runtimeStatus;
+    if (!connectedStatus) throw new Error("Expected seeded runtime status");
+
+    let resolveStatus: (value: typeof connectedStatus) => void = () => {};
+    mockGetRuntimeStatus.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+    );
+
+    const pending = useGenerationStore.getState().refreshRuntimeStatus();
+    useGenerationStore.getState().disconnect();
+    resolveStatus(connectedStatus);
+    await pending;
+
+    const state = useGenerationStore.getState();
+    expect(state.runtimeStatus).toBeNull();
+    expect(state.connectionStatus).toBe("disconnected");
+  });
+
   it("requests an editor reconnect when runtime recovers and the editor was marked unhealthy", async () => {
     useGenerationStore.setState((state) => ({
       connectionStatus: "disconnected",

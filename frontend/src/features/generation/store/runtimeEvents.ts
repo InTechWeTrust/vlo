@@ -58,7 +58,7 @@ export function attachRuntimeClientHandlers(
 
       case "error": {
         console.warn("[Generation] Proxy error:", event.data.message);
-        void get().refreshRuntimeStatus();
+        void get().refreshRuntimeStatus({ force: true });
         set((state) =>
           markActiveJobError(state, event.data.message, {
             nextConnectionStatus: "error",
@@ -91,7 +91,7 @@ export function attachRuntimeClientHandlers(
             }
           : state.runtimeStatus,
       }));
-      void get().refreshRuntimeStatus();
+      void get().refreshRuntimeStatus({ force: true });
     }
   });
 }
