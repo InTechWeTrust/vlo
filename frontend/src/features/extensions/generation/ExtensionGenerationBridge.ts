@@ -7,11 +7,13 @@ import type {
 } from "../../generation/services/generationSessionTypes";
 import { bindOwnerScopedSubscribe } from "../utils/ownerScopedSubscribe";
 import { extensionGenerationSubmissionContributors } from "./ExtensionGenerationSubmissionContributors";
+import { registerExtensionGenerationSection } from "./ExtensionGenerationPanelSections";
 import { projectGenerationSession } from "./generationSessionProjection";
 import type {
   ExtensionApiScope,
   ExtensionGenerationApi,
   ExtensionGenerationInputSnapshot,
+  ExtensionGenerationSectionDefinition,
   ExtensionGenerationSessionSnapshot,
   ExtensionGenerationTransaction,
   ExtensionGenerationTransactionResult,
@@ -156,6 +158,10 @@ export function createExtensionGenerationApi(
     extensionGenerationSubmissionContributors.bind(scope);
 
   const api: ExtensionGenerationApi = {
+    ui: Object.freeze({
+      registerSection: (definition: ExtensionGenerationSectionDefinition) =>
+        registerExtensionGenerationSection(scope, definition),
+    }),
     listInputs: () => {
       if (scope.signal.aborted) return [];
       return Object.freeze(

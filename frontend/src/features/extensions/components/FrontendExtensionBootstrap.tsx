@@ -1,9 +1,10 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   frontendExtensionRuntime,
   type FrontendExtensionStartSummary,
 } from "../services/FrontendExtensionRuntime";
 import { useCommandKeybindings } from "../commands/useCommandKeybindings";
+import { FrontendExtensionActivationContext } from "./frontendExtensionActivationContext";
 
 interface FrontendExtensionRuntimeStarter {
   start(): Promise<FrontendExtensionStartSummary>;
@@ -19,6 +20,10 @@ export function FrontendExtensionBootstrap({
   runtime = frontendExtensionRuntime,
 }: FrontendExtensionBootstrapProps) {
   useCommandKeybindings();
+  const [activationStatus, setActivationStatus] = useState<
+    "pending" | "settled"
+  >("pending");
+
   useEffect(() => {
     let mounted = true;
     void runtime
@@ -39,6 +44,9 @@ export function FrontendExtensionBootstrap({
             error,
           );
         }
+      })
+      .finally(() => {
+        if (mounted) setActivationStatus("settled");
       });
 
     return () => {
@@ -46,5 +54,9 @@ export function FrontendExtensionBootstrap({
     };
   }, [runtime]);
 
-  return children;
+  return (
+    <FrontendExtensionActivationContext.Provider value={activationStatus}>
+      {children}
+    </FrontendExtensionActivationContext.Provider>
+  );
 }

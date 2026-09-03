@@ -1,5 +1,6 @@
 import type {
   ExtensionGenerationApi,
+  ExtensionGenerationSectionProps,
   ExtensionModule,
   ExtensionReactRuntime,
   ExtensionUiModalComponentProps,
@@ -296,22 +297,41 @@ export const activate: ExtensionModule["activate"] = (context) => {
     size: "large",
     component: createLayoutPromptModal(React, context.api.generation),
   });
-  context.api.ui.registerComponent({
-    id: "open-layout-prompt",
+  context.api.generation.ui.registerSection({
+    id: "layout-canvas",
     apiVersion: 1,
-    slot: "generation.toolbar",
     kind: "trusted-react",
-    order: -100,
-    component: () =>
+    component: ({ config }: ExtensionGenerationSectionProps) =>
       React.createElement(
-        Button,
-        {
-          type: "button",
-          size: "small",
-          variant: "outlined",
-          onClick: () => void context.api.ui.openModal("layout-prompt"),
-        },
-        "Layout prompt",
+        "div",
+        { style: { display: "grid", gap: 8 } },
+        React.createElement("canvas", {
+          role: "img",
+          "aria-label": "Layout canvas preview",
+          width: 640,
+          height: 360,
+          style: {
+            width: "100%",
+            aspectRatio: "16 / 9",
+            background: "#111827",
+            border: `1px solid ${
+              typeof config.stroke === "string" ? config.stroke : "#475569"
+            }`,
+          },
+        }),
+        React.createElement(
+          Button,
+          {
+            type: "button",
+            fullWidth: true,
+            variant: "outlined",
+            "data-config-frozen": Object.isFrozen(config),
+            onClick: () => void context.api.ui.openModal("layout-prompt"),
+          },
+          typeof config.buttonLabel === "string"
+            ? config.buttonLabel
+            : "Open layout canvas",
+        ),
       ),
   });
   context.logger.info("Layout prompt UI conformance fixture activated.");

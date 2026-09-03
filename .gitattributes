@@ -147,6 +147,14 @@
 # freezes the result into the queued plan. Extension-owned behaviour enters the
 # generation pipeline here.
 /frontend/src/features/generation/services/generationSubmissionContributors.ts extension-surface=adapter
+/frontend/src/features/generation/services/GenerationPanelSectionRegistry.ts extension-surface=host
+/frontend/src/features/generation/components/GenerationPanelSectionHost.tsx extension-surface=adapter
+/frontend/src/features/extensions/components/frontendExtensionActivationContext.ts extension-surface=host
+/frontend/src/features/extensions/generation/ExtensionGenerationPanelSections.tsx extension-surface=adapter
+/frontend/src/features/extensions/generation/ExtensionGenerationPanelSectionMount.tsx extension-surface=adapter
+/backend/services/workflow_rules/schema/models.py extension-surface=host
+/backend/services/workflow_rules/schema/resolved_workflow_rules.schema.json extension-surface=authoring
+/frontend/src/features/generation/services/workflowRules/generated.ts extension-surface=authoring
 /frontend/src/features/generation/store/executionStoreState.ts extension-surface=adapter
 # Clone-time effect application (§N2b). The bridge decides which node ids are
 # addressable and which writes fail closed, so it defines what the effect union

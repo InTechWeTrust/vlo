@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExtensionApiScope, ExtensionResource } from "../..";
 import { createVloExtensionApi } from "../../services/FrontendExtensionRuntime";
 import { mountGenerationSession } from "../../../../testUtils/generationSession";
+import { GenerationInputs } from "../../../generation/components/GenerationInputs";
 import { ExtensionModalHost } from "../ExtensionModalHost";
-import { ExtensionUiSlot } from "../ExtensionUiSlot";
 import { activate } from "../../../../../../extension-fixtures/layout-prompt/frontend/src/index";
 
 describe("layout prompt UI conformance fixture", () => {
@@ -34,7 +34,7 @@ describe("layout prompt UI conformance fixture", () => {
     const api = createVloExtensionApi(scope);
     await activate({
       extension: scope.extension,
-      sdkVersion: "1.0.0",
+      sdkVersion: "1.20.0",
       signal: scope.signal,
       api,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -43,12 +43,46 @@ describe("layout prompt UI conformance fixture", () => {
     });
     render(
       <>
-        <ExtensionUiSlot slot="generation.toolbar" presentation="inline" />
+        <GenerationInputs
+          inputs={[]}
+          sections={[
+            {
+              id: "layout",
+              title: "Visual layout",
+              extension: {
+                extension_id: "example.layout-prompt",
+                contribution_id: "layout-canvas",
+                config: { buttonLabel: "Layout prompt", stroke: "#22d3ee" },
+              },
+            },
+          ]}
+          workflowId="layout-workflow.json"
+          textValues={{}}
+          onTextValueCommit={vi.fn()}
+          mediaInputs={{}}
+          onInputDrop={vi.fn()}
+          onExternalInputDrop={vi.fn()}
+          onInputClear={vi.fn()}
+          onSwapMediaInputs={vi.fn()}
+          onMoveMediaInput={vi.fn()}
+          onClickSelect={vi.fn()}
+          widgetInputs={[]}
+          widgetValues={{}}
+          randomizeToggles={{}}
+          onWidgetChange={vi.fn()}
+          onToggleRandomize={vi.fn()}
+        />
         <ExtensionModalHost />
       </>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Layout prompt" }));
+    expect(screen.getByText("Visual layout")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Layout canvas preview" }).tagName,
+    ).toBe("CANVAS");
+    const openCanvas = screen.getByRole("button", { name: "Layout prompt" });
+    expect(openCanvas).toHaveAttribute("data-config-frozen", "true");
+    fireEvent.click(openCanvas);
     expect(screen.getByRole("dialog")).toHaveTextContent("Visual layout prompt");
     const canvas = screen.getByRole("img", {
       name: "Visual prompt layout canvas",

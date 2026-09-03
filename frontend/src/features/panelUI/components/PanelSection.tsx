@@ -1,4 +1,5 @@
-import { useState, memo } from "react";
+import { memo, useState } from "react";
+import type { ReactNode } from "react";
 import { Box, Typography, IconButton, Switch } from "@mui/material";
 import {
   ExpandMore,
@@ -6,6 +7,7 @@ import {
   DragIndicator,
   Close,
 } from "@mui/icons-material";
+import { PanelSectionActiveContext } from "../panelSectionActiveContext";
 
 interface SectionToggleProps {
   checked: boolean;
@@ -16,9 +18,10 @@ interface SectionToggleProps {
 
 interface PanelSectionProps {
   title: string;
-  children: React.ReactNode;
+  children: ReactNode;
   onRemove?: () => void;
   defaultOpen?: boolean;
+  keepMounted?: boolean;
 
   // Styling Props
   bgColor: string;
@@ -32,7 +35,7 @@ interface PanelSectionProps {
   sectionToggle?: SectionToggleProps;
   isActive?: boolean;
   onSectionClick?: () => void;
-  headerActions?: React.ReactNode;
+  headerActions?: ReactNode;
 }
 
 export const PanelSection = memo(function PanelSection({
@@ -40,6 +43,7 @@ export const PanelSection = memo(function PanelSection({
   children,
   onRemove,
   defaultOpen = true,
+  keepMounted = false,
   bgColor,
   dragHandleProps,
   isDragging,
@@ -199,7 +203,17 @@ export const PanelSection = memo(function PanelSection({
         </Box>
       </Box>
 
-      {isOpen && <Box sx={{ pl: dragHandleProps ? 4 : 0.5 }}>{children}</Box>}
+      {(isOpen || keepMounted) && (
+        <Box
+          hidden={!isOpen}
+          aria-hidden={!isOpen}
+          sx={{ pl: dragHandleProps ? 4 : 0.5 }}
+        >
+          <PanelSectionActiveContext.Provider value={isOpen}>
+            {children}
+          </PanelSectionActiveContext.Provider>
+        </Box>
+      )}
     </Box>
   );
 });

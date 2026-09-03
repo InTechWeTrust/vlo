@@ -48,6 +48,7 @@ export { ControlGroup } from "./components/ControlGroup";
 export type { NumberControlProps } from "./components/NumberControl";
 export { NumberControl } from "./components/NumberControl";
 export { PanelSection } from "./components/PanelSection";
+export { usePanelSectionActive } from "./panelSectionActiveContext";
 export {
   PanelTabs,
   type PanelTabDefinition,

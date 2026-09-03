@@ -412,6 +412,7 @@
       "title": "InputMetadataReference",
       "type": "object"
     },
+    "JsonValue": {},
     "MaskProcessingTarget": {
       "properties": {
         "mask": {
@@ -1411,6 +1412,33 @@
         "base_split_step"
       ],
       "title": "WorkflowDualSamplerDenoiseRule",
+      "type": "object"
+    },
+    "WorkflowExtensionSection": {
+      "additionalProperties": false,
+      "description": "One extension-owned body mounted inside a workflow section.\n\nThe workflow owns placement and configuration. The extension manifest id\nand its package-local contribution id resolve through the generation panel\nsection registry at runtime; neither id grants activation or permissions.",
+      "properties": {
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Config",
+          "type": "object"
+        },
+        "contribution_id": {
+          "title": "Contribution Id",
+          "type": "string"
+        },
+        "extension_id": {
+          "title": "Extension Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "extension_id",
+        "contribution_id"
+      ],
+      "title": "WorkflowExtensionSection",
       "type": "object"
     },
     "WorkflowFrontendControl": {
@@ -3188,6 +3216,17 @@
           ],
           "default": null,
           "title": "Default Open"
+        },
+        "extension": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowExtensionSection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "id": {
           "title": "Id",

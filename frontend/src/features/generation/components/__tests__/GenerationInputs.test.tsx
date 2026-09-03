@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GenerationInputs } from "../GenerationInputs";
 import { buildGenerationNodeCatalogue } from "../../services/workflowNodeCatalogue";
@@ -10,6 +11,16 @@ import {
 } from "../../utils/loraLoaderWidgets";
 import { reconcileNodeBypassWidgetTargets } from "../../utils/nodeBypassWidgets";
 import { useMediaInputPreparationStore } from "../../store/useMediaInputPreparationStore";
+import { generationPanelSectionRegistry } from "../../services/GenerationPanelSectionRegistry";
+import { FrontendExtensionActivationContext } from "../../../extensions/components/frontendExtensionActivationContext";
+
+const activeSectionRegistrations: Array<{ dispose(): void }> = [];
+
+afterEach(() => {
+  for (const registration of activeSectionRegistrations.splice(0).reverse()) {
+    registration.dispose();
+  }
+});
 
 const LORA_WORKFLOW = {
   "12": {
@@ -673,6 +684,315 @@ describe("GenerationInputs", () => {
 
     expect(screen.getByText("Guidance")).toBeInTheDocument();
     expect(screen.getByText("Prompt")).toBeInTheDocument();
+  });
+
+  it("mounts and unmounts a rule-selected generation section provider", () => {
+    render(
+      <GenerationInputs
+        inputs={[
+          {
+            nodeId: "6",
+            classType: "CLIPTextEncode",
+            inputType: "text",
+            param: "text",
+            label: "Prompt",
+            currentValue: "",
+            origin: "rule",
+            presentation: { section: { id: "prompts" } },
+          },
+        ]}
+        sections={[
+          {
+            id: "motion_path",
+            title: "Motion path",
+            order: 1,
+            extension: {
+              extension_id: "example.path",
+              contribution_id: "canvas",
+              config: { stroke: "#22d3ee" },
+            },
+          },
+          { id: "prompts", title: "Prompts", order: 10 },
+        ]}
+        workflowId="path-workflow.json"
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Motion path")).toBeInTheDocument();
+    const motionPathTitle = screen.getByText("Motion path");
+    const promptsTitle = screen.getByText("Prompts");
+    expect(
+      motionPathTitle.compareDocumentPosition(promptsTitle) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(
+      screen.getByText(/example\.path\/canvas, but that provider is not active/),
+    ).toBeInTheDocument();
+
+    let registration:
+      | ReturnType<typeof generationPanelSectionRegistry.register>
+      | undefined;
+    act(() => {
+      registration = generationPanelSectionRegistry.register({
+        providerId: "example.path",
+        contributionId: "canvas",
+        render: (placement) => (
+          <div data-testid="path-canvas">
+            {placement.workflowId}:{String(placement.config.stroke)}
+          </div>
+        ),
+      });
+      activeSectionRegistrations.push(registration);
+    });
+
+    expect(screen.getByTestId("path-canvas")).toHaveTextContent(
+      "path-workflow.json:#22d3ee",
+    );
+    expect(screen.queryByText(/provider is not active/)).not.toBeInTheDocument();
+
+    act(() => registration?.dispose());
+    expect(screen.queryByTestId("path-canvas")).not.toBeInTheDocument();
+    expect(screen.getByText(/provider is not active/)).toBeInTheDocument();
+  });
+
+  it("remounts a contributed section when workflow identity changes", () => {
+    function StatefulCanvas() {
+      const [strokes, setStrokes] = useState(0);
+      return (
+        <button type="button" onClick={() => setStrokes((value) => value + 1)}>
+          Strokes: {strokes}
+        </button>
+      );
+    }
+
+    const registration = generationPanelSectionRegistry.register({
+      providerId: "example.path",
+      contributionId: "stateful-canvas",
+      render: () => <StatefulCanvas />,
+    });
+    activeSectionRegistrations.push(registration);
+
+    function RuleSelectedCanvas({ workflowId }: { workflowId: string }) {
+      return (
+        <GenerationInputs
+          inputs={[]}
+          sections={[
+            {
+              id: "motion_path",
+              extension: {
+                extension_id: "example.path",
+                contribution_id: "stateful-canvas",
+              },
+            },
+          ]}
+          workflowId={workflowId}
+          textValues={{}}
+          onTextValueCommit={vi.fn()}
+          mediaInputs={{}}
+          onInputDrop={vi.fn()}
+          onExternalInputDrop={vi.fn()}
+          onInputClear={vi.fn()}
+          onSwapMediaInputs={vi.fn()}
+          onMoveMediaInput={vi.fn()}
+          onClickSelect={vi.fn()}
+          widgetInputs={[]}
+          widgetValues={{}}
+          randomizeToggles={{}}
+          onWidgetChange={vi.fn()}
+          onToggleRandomize={vi.fn()}
+        />
+      );
+    }
+
+    const view = render(<RuleSelectedCanvas workflowId="first.json" />);
+    fireEvent.click(screen.getByRole("button", { name: "Strokes: 0" }));
+    expect(screen.getByRole("button", { name: "Strokes: 1" })).toBeInTheDocument();
+
+    view.rerender(<RuleSelectedCanvas workflowId="first.json" />);
+    expect(screen.getByRole("button", { name: "Strokes: 1" })).toBeInTheDocument();
+
+    view.rerender(<RuleSelectedCanvas workflowId="second.json" />);
+    expect(screen.getByRole("button", { name: "Strokes: 0" })).toBeInTheDocument();
+  });
+
+  it("keeps a collapsed contributed section mounted and reports its active state", () => {
+    let mounts = 0;
+    function StatefulCanvas({ active }: { active: boolean }) {
+      const [strokes, setStrokes] = useState(() => {
+        mounts += 1;
+        return 0;
+      });
+      return (
+        <button
+          type="button"
+          data-testid="persistent-canvas"
+          data-active={String(active)}
+          onClick={() => setStrokes((value) => value + 1)}
+        >
+          Strokes: {strokes}
+        </button>
+      );
+    }
+
+    const registration = generationPanelSectionRegistry.register({
+      providerId: "example.path",
+      contributionId: "persistent-canvas",
+      render: (placement) => <StatefulCanvas active={placement.active} />,
+    });
+    activeSectionRegistrations.push(registration);
+
+    render(
+      <GenerationInputs
+        inputs={[]}
+        sections={[
+          {
+            id: "motion_path",
+            title: "Motion path",
+            default_open: false,
+            extension: {
+              extension_id: "example.path",
+              contribution_id: "persistent-canvas",
+            },
+          },
+        ]}
+        workflowId="path-workflow.json"
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const canvas = screen.getByTestId("persistent-canvas");
+    expect(canvas).toHaveAttribute("data-active", "false");
+    expect(mounts).toBe(1);
+
+    fireEvent.click(screen.getByText("Motion path"));
+    expect(canvas).toHaveAttribute("data-active", "true");
+    fireEvent.click(canvas);
+    expect(canvas).toHaveTextContent("Strokes: 1");
+
+    fireEvent.click(screen.getByText("Motion path"));
+    expect(canvas).toHaveAttribute("data-active", "false");
+    fireEvent.click(screen.getByText("Motion path"));
+    expect(canvas).toHaveAttribute("data-active", "true");
+    expect(canvas).toHaveTextContent("Strokes: 1");
+    expect(mounts).toBe(1);
+  });
+
+  it("waits for extension activation to settle before warning about a provider", () => {
+    const inputs = (
+      <GenerationInputs
+        inputs={[]}
+        sections={[
+          {
+            id: "motion_path",
+            extension: {
+              extension_id: "example.path",
+              contribution_id: "late-canvas",
+            },
+          },
+        ]}
+        workflowId="path-workflow.json"
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />
+    );
+    const view = render(
+      <FrontendExtensionActivationContext.Provider value="pending">
+        {inputs}
+      </FrontendExtensionActivationContext.Provider>,
+    );
+
+    expect(screen.queryByText(/provider is not active/)).not.toBeInTheDocument();
+    view.rerender(
+      <FrontendExtensionActivationContext.Provider value="settled">
+        {inputs}
+      </FrontendExtensionActivationContext.Provider>,
+    );
+    expect(screen.getByText(/provider is not active/)).toBeInTheDocument();
+  });
+
+  it("shows an actionable in-section error for oversize workflow config", () => {
+    const renderProvider = vi.fn(() => null);
+    const registration = generationPanelSectionRegistry.register({
+      providerId: "example.path",
+      contributionId: "bounded-canvas",
+      render: renderProvider,
+    });
+    activeSectionRegistrations.push(registration);
+
+    render(
+      <GenerationInputs
+        inputs={[]}
+        sections={[
+          {
+            id: "motion_path",
+            extension: {
+              extension_id: "example.path",
+              contribution_id: "bounded-canvas",
+              config: { path: "x".repeat(100_001) },
+            },
+          },
+        ]}
+        workflowId="path-workflow.json"
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(/workflow config larger than 100000 serialized characters/),
+    ).toBeInTheDocument();
+    expect(renderProvider).not.toHaveBeenCalled();
   });
 
   it("moves widget controls from Settings into a dedicated section", () => {

@@ -172,6 +172,12 @@ function createConformanceApi() {
       project: null,
     },
     generation: {
+      ui: {
+        registerSection: (definition) => ({
+          id: definition.id,
+          dispose: () => undefined,
+        }),
+      },
       listInputs: () => [],
       getSession: () => null,
       getRevision: () => 0,

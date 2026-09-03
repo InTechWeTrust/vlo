@@ -61,6 +61,8 @@ export interface InputMetadataReference {
   field: "sourceKind" | "inputType" | "mediaType" | "timelineSelection.startTick" | "timelineSelection.endTick" | "timelineSelection.durationTicks" | "timelineSelection.durationSeconds" | "timelineSelection.effectiveFps" | "timelineSelection.frameStep" | "timelineSelection.frameOffset" | "timelineSelection.frameCount" | "timelineSelection.clipCount" | "timelineSelection.trackCount" | "timelineSelection.includedTrackCount" | "timelineSelection.hasMaskClip" | "timelineSelection.isRange";
 }
 
+export type JsonValue = unknown;
+
 export interface MaskProcessingTarget {
   source: WorkflowParamReference;
   mask: WorkflowParamReference;
@@ -176,6 +178,12 @@ export interface WorkflowDualSamplerDenoiseRule {
   base_split_step: WorkflowParamReference;
   split_step_targets?: Array<WorkflowParamReference>;
   second_sampler_add_noise?: WorkflowParamReference | null;
+}
+
+export interface WorkflowExtensionSection {
+  extension_id: string;
+  contribution_id: string;
+  config?: Record<string, JsonValue>;
 }
 
 export interface WorkflowFrontendControl {
@@ -387,6 +395,7 @@ export interface WorkflowSection {
   title?: string | null;
   order?: number | null;
   default_open?: boolean | null;
+  extension?: WorkflowExtensionSection | null;
 }
 
 export interface WorkflowSingleSamplerDenoiseRule {

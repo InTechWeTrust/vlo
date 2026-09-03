@@ -43,6 +43,7 @@ import {
 import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 import { isAspectRatioWidget } from "../utils/aspectRatioWidgets";
 import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
+import { GenerationPanelSectionHost } from "./GenerationPanelSectionHost";
 
 interface GenerationInputsProps {
   inputs: WorkflowInput[];
@@ -63,6 +64,7 @@ interface GenerationInputsProps {
   onEditMedia?: (inputId: string, inputType: "video") => void;
   widgetInputs: WorkflowWidgetInput[];
   sections?: WorkflowSection[];
+  workflowId?: string | null;
   widgetValues: Record<string, Record<string, unknown>>;
   bypassedWidgetTargets?: ReadonlySet<string>;
   randomizeToggles: Record<string, boolean>;
@@ -751,6 +753,7 @@ interface RenderableSection {
   renderAsPanel: boolean;
   blocks: RenderableInputBlock[];
   widgetGroups: WidgetGroup[];
+  extension: NonNullable<WorkflowSection["extension"]> | null;
   firstIndex: number;
 }
 
@@ -801,6 +804,16 @@ function buildRenderableSections(
     ensureSection(group.sectionId, inputBlocks.length + index).widgetGroups.push(group);
   });
 
+  sections.forEach((section, index) => {
+    const sectionId = normalizeSectionId(section.id);
+    if (sectionId && section.extension) {
+      ensureSection(
+        sectionId,
+        inputBlocks.length + widgetGroups.length + index,
+      );
+    }
+  });
+
   return Array.from(resolvedSections.entries())
     .map(([sectionId, section]) => {
       const explicitSection = explicitSections.get(sectionId);
@@ -834,6 +847,7 @@ function buildRenderableSections(
           hasExplicitDefinition,
         blocks: section.blocks,
         widgetGroups: section.widgetGroups,
+        extension: explicitSection?.extension ?? null,
         firstIndex: section.firstIndex,
       };
     })
@@ -1840,6 +1854,7 @@ export const GenerationInputs = memo(function GenerationInputs({
   onEditMedia,
   widgetInputs,
   sections = [],
+  workflowId = null,
   widgetValues,
   bypassedWidgetTargets = EMPTY_BYPASSED_WIDGET_TARGETS,
   randomizeToggles,
@@ -1993,6 +2008,7 @@ export const GenerationInputs = memo(function GenerationInputs({
             title={item.section.title}
             bgColor={bgColor}
             defaultOpen={item.section.defaultOpen}
+            keepMounted={Boolean(item.section.extension)}
           >
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
               {item.section.blocks.map((block, blockIndex) =>
@@ -2019,6 +2035,15 @@ export const GenerationInputs = memo(function GenerationInputs({
                   showDivider={item.section.blocks.length > 0 || groupIndex > 0}
                 />
               ))}
+              {item.section.extension ? (
+                <GenerationPanelSectionHost
+                  key={`extension-section:${workflowId ?? "none"}:${item.section.id}`}
+                  placementId={item.section.id}
+                  sectionId={item.section.id}
+                  workflowId={workflowId}
+                  extension={item.section.extension}
+                />
+              ) : null}
             </Box>
           </PanelSection>
         );

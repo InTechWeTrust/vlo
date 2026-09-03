@@ -1012,7 +1012,8 @@ def test_layout_prompt_fixture_builds_and_stages_through_approval(
     built_entry = fixture / "frontend" / "dist" / "index.js"
     assert built_entry.is_file()
     assert b"Layout prompt" in built_entry.read_bytes()
-    assert b"generation.toolbar" in built_entry.read_bytes()
+    assert b"layout-canvas" in built_entry.read_bytes()
+    assert b"Layout canvas preview" in built_entry.read_bytes()
 
     extensions_root = tmp_path / "extensions"
     extensions_root.mkdir()

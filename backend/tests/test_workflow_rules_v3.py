@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
+from pydantic import ValidationError
 
 from services.comfyui.comfyui_generate import finalize_backend_response
 from services.gen_pipeline.context import BackendPipelineContext
@@ -435,6 +437,11 @@ def test_schema_accepts_section_metadata():
                     "title": "Masking",
                     "order": 1,
                     "default_open": False,
+                    "extension": {
+                        "extension_id": "example.path-tools",
+                        "contribution_id": "canvas",
+                        "config": {"stroke": "#22d3ee", "snap": True},
+                    },
                 }
             ],
             "nodes": {
@@ -485,11 +492,77 @@ def test_schema_accepts_section_metadata():
     assert warnings == []
     assert rules_model.sections[0].id == "masking"
     assert rules_model.sections[0].default_open is False
+    assert rules_model.sections[0].extension is not None
+    assert rules_model.sections[0].extension.extension_id == "example.path-tools"
+    assert rules_model.sections[0].extension.contribution_id == "canvas"
+    assert rules_model.sections[0].extension.config == {
+        "stroke": "#22d3ee",
+        "snap": True,
+    }
     assert rules_model.nodes["10"].present is not None
     assert rules_model.nodes["10"].present.section_id == "prompts"
     assert rules_model.nodes["20"].widgets["strength"].section_id == "masking"
     assert rules_model.derived_widgets[0].section_id == "masking"
     assert rules_model.pipeline[0].controls[0].section_id == "masking"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("extension_id", "Example Path"), ("contribution_id", "canvas/other")],
+)
+def test_schema_rejects_invalid_extension_section_ids(field: str, value: str):
+    extension = {
+        "extension_id": "example.path-tools",
+        "contribution_id": "canvas",
+    }
+    extension[field] = value
+
+    with pytest.raises(ValidationError):
+        ResolvedWorkflowRules.model_validate(
+            {
+                "version": 3,
+                "sections": [{"id": "path", "extension": extension}],
+            }
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_schema_rejects_non_finite_extension_section_config(value: float):
+    with pytest.raises(ValidationError, match="config must be finite JSON"):
+        ResolvedWorkflowRules.model_validate(
+            {
+                "version": 3,
+                "sections": [
+                    {
+                        "id": "path",
+                        "extension": {
+                            "extension_id": "example.path-tools",
+                            "contribution_id": "canvas",
+                            "config": {"coordinate": value},
+                        },
+                    }
+                ],
+            }
+        )
+
+
+def test_schema_rejects_oversize_extension_section_config():
+    with pytest.raises(ValidationError, match="exceeds 100000 serialized characters"):
+        ResolvedWorkflowRules.model_validate(
+            {
+                "version": 3,
+                "sections": [
+                    {
+                        "id": "path",
+                        "extension": {
+                            "extension_id": "example.path-tools",
+                            "contribution_id": "canvas",
+                            "config": {"path": "x" * 100_001},
+                        },
+                    }
+                ],
+            }
+        )
 
 
 def test_schema_rejects_legacy_fields():

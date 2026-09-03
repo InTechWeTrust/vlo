@@ -60,6 +60,33 @@ it. The fallback is expected trusted-alpha behaviour, but it is version-coupled.
   which the host validates and captures into the queued plan. The API deliberately
   targets workflow nodes, widgets, and inputs rather than ComfyUI DOM nodes; see
   `extension-fixtures/lora-policy` for the worked example.
+- A workflow can opt into an extension-owned generation section by adding an
+  `extension` reference to one of its `.rules.json` `sections`. Register the
+  matching body with `context.api.generation.ui.registerSection(...)`; the
+  rule owns its title, order, default-open state, and finite-JSON `config`, while
+  the component continues to read and write through `context.api.generation`.
+  Collapsing the section keeps the body mounted and sets `active` to `false`, so
+  canvas state survives and animation or pointer-processing loops can pause.
+  The manifest id is the rule's `extension_id`, and the package-local section id
+  is its `contribution_id`. See `extension-fixtures/layout-prompt` for the
+  rule-selected rich-UI pattern.
+
+  ```json
+  {
+    "sections": [
+      {
+        "id": "motion_path",
+        "title": "Motion path",
+        "order": 2,
+        "extension": {
+          "extension_id": "example.path-tools",
+          "contribution_id": "canvas",
+          "config": { "stroke": "#22d3ee" }
+        }
+      }
+    ]
+  }
+  ```
 - Pixi factories return `{ object, update, destroy? }`. The host validates and
   attaches `object`, calls `update` with resolved parameters, detaches it, and owns
   final Pixi destruction. `destroy` is only for additional extension-owned

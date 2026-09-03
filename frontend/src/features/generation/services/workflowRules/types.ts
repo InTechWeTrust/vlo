@@ -47,6 +47,7 @@ export type {
   WorkflowAspectRatioStage,
   WorkflowAspectRatioStageConfig,
   WorkflowDualSamplerDenoiseRule,
+  WorkflowExtensionSection,
   WorkflowFrontendControl,
   WorkflowInputCondition,
   WorkflowMaskProcessingStage,

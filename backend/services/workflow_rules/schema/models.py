@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import json
+import re
 from collections import defaultdict
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    ValidationError,
+    model_validator,
+)
 
 
 WidgetsMode = Literal["control_after_generate", "all"]
@@ -32,6 +41,7 @@ MaskProcessingSourceVideoTreatment = Literal[
 PostprocessingMode = Literal["auto", "stitch_frames_with_audio", "none"]
 PostprocessingPanelPreview = Literal["raw_outputs", "replace_outputs"]
 PostprocessingOnFailure = Literal["fallback_raw", "show_error"]
+GENERATION_PANEL_SECTION_CONFIG_MAX_LENGTH = 100_000
 AspectRatioPostprocessMode = Literal["stretch_exact"]
 AspectRatioPostprocessApplyTo = Literal["all_visual_outputs"]
 # `export_fps: "project"` links a selection's frame rate to the open project's
@@ -607,11 +617,61 @@ class WorkflowPipelineStageBase(WorkflowRuleBaseModel):
         return self
 
 
+class WorkflowExtensionSection(WorkflowRuleBaseModel):
+    """One extension-owned body mounted inside a workflow section.
+
+    The workflow owns placement and configuration. The extension manifest id
+    and its package-local contribution id resolve through the generation panel
+    section registry at runtime; neither id grants activation or permissions.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    extension_id: str
+    contribution_id: str
+    config: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_extension_section(self) -> "WorkflowExtensionSection":
+        for label, value in (
+            ("extension_id", self.extension_id),
+            ("contribution_id", self.contribution_id),
+        ):
+            if not re.fullmatch(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?", value):
+                raise ValueError(
+                    f"workflow extension section {label} must be a valid contribution id"
+                )
+
+        try:
+            serialized_config = json.dumps(
+                self.config,
+                allow_nan=False,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "workflow extension section config must be finite JSON"
+            ) from error
+
+        # JavaScript measures string length in UTF-16 code units. Use the same
+        # unit so backend acceptance and the generation-panel boundary agree.
+        serialized_length = len(serialized_config.encode("utf-16-le")) // 2
+        if serialized_length > GENERATION_PANEL_SECTION_CONFIG_MAX_LENGTH:
+            raise ValueError(
+                "workflow extension section config exceeds "
+                f"{GENERATION_PANEL_SECTION_CONFIG_MAX_LENGTH} serialized characters"
+            )
+        return self
+
+
 class WorkflowSection(WorkflowRuleBaseModel):
     id: str
     title: str | None = None
     order: int | None = None
     default_open: bool | None = None
+    extension: WorkflowExtensionSection | None = None
 
     @model_validator(mode="after")
     def validate_id(self) -> "WorkflowSection":

@@ -3384,8 +3384,35 @@ export interface ExtensionGenerationRegistration extends ExtensionDisposable {
   readonly id: string;
 }
 
+/** Props for one rule-selected extension body inside the generation panel. */
+export interface ExtensionGenerationSectionProps {
+  /** Rule-local placement identity, stable for the mounted workflow. */
+  readonly placementId: string;
+  readonly sectionId: string;
+  /** Whether the host-owned section is expanded; collapsed bodies stay mounted. */
+  readonly active: boolean;
+  /** Detached, deeply frozen configuration from the workflow rule (≤100k JSON characters). */
+  readonly config: Readonly<Record<string, JsonValue>>;
+}
+
+export interface ExtensionGenerationSectionDefinition {
+  /** Package-local id referenced by a workflow section's contribution_id. */
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly kind: "trusted-react";
+  readonly component: (props: ExtensionGenerationSectionProps) => unknown;
+}
+
+export interface ExtensionGenerationUiApi {
+  /** Register a section body that workflow rules may explicitly select. */
+  registerSection(
+    definition: ExtensionGenerationSectionDefinition,
+  ): ExtensionGenerationRegistration;
+}
+
 /** User-event API for the currently mounted generation/workflow panel. */
 export interface ExtensionGenerationApi {
+  readonly ui: ExtensionGenerationUiApi;
   listInputs(): readonly ExtensionGenerationInputSnapshot[];
   /** The mounted session, or `null` when no generation panel is mounted. */
   getSession(): ExtensionGenerationSessionSnapshot | null;

@@ -5,6 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtimeApiMocks = vi.hoisted(() => ({
@@ -62,6 +63,7 @@ import { GenerationPanel } from "../../GenerationPanel";
 import { createDefaultWorkflowRules } from "../../services/workflowRules";
 import type { GenerationJob } from "../../types";
 import { useGenerationStore } from "../../useGenerationStore";
+import { generationPanelSectionRegistry } from "../../services/GenerationPanelSectionRegistry";
 import {
   LORA_BYPASS_CHOICE,
   LORA_LOADERS_SECTION_ID,
@@ -194,11 +196,77 @@ describe("GenerationPanel workflow rule hints", () => {
       maskCropDilation: 0.1,
       syncedWorkflow: null,
       syncedGraphData: null,
+      iframeWorkflowInstanceId: null,
       targetResolution: 1080,
       setTargetResolution: vi.fn(),
       exactAspectRatio: false,
       setExactAspectRatio: vi.fn(),
     });
+  });
+
+  it("preserves contributed section state across bridge identity churn", () => {
+    function StatefulCanvas() {
+      const [strokes, setStrokes] = useState(0);
+      return (
+        <button type="button" onClick={() => setStrokes((value) => value + 1)}>
+          Bridge-stable strokes: {strokes}
+        </button>
+      );
+    }
+
+    const registration = generationPanelSectionRegistry.register({
+      providerId: "example.path",
+      contributionId: "bridge-stable-canvas",
+      render: () => <StatefulCanvas />,
+    });
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState(),
+    );
+    useGenerationStore.setState({
+      activeWorkflowRules: {
+        ...createDefaultWorkflowRules(),
+        sections: [
+          {
+            id: "motion_path",
+            title: "Motion path",
+            extension: {
+              extension_id: "example.path",
+              contribution_id: "bridge-stable-canvas",
+            },
+          },
+        ],
+      },
+      syncedGraphData: {},
+      iframeWorkflowInstanceId: null,
+    });
+
+    try {
+      render(<GenerationPanel />);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Bridge-stable strokes: 0" }),
+      );
+      expect(
+        screen.getByRole("button", { name: "Bridge-stable strokes: 1" }),
+      ).toBeInTheDocument();
+
+      act(() => {
+        useGenerationStore.setState({
+          iframeWorkflowInstanceId: "comfyui-instance-1",
+        });
+      });
+      expect(
+        screen.getByRole("button", { name: "Bridge-stable strokes: 1" }),
+      ).toBeInTheDocument();
+
+      act(() => {
+        useGenerationStore.setState({ iframeWorkflowInstanceId: null });
+      });
+      expect(
+        screen.getByRole("button", { name: "Bridge-stable strokes: 1" }),
+      ).toBeInTheDocument();
+    } finally {
+      registration.dispose();
+    }
   });
 
   it("renders autodiscovered LoRA widgets through the standard input panel", () => {

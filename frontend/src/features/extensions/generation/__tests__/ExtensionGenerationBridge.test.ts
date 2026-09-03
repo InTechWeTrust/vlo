@@ -10,6 +10,7 @@ import type {
   GenerationEditableWidgetSnapshot,
   GenerationNodeSnapshot,
 } from "../../../generation/services/generationSessionTypes";
+import { generationPanelSectionRegistry } from "../../../generation/services/GenerationPanelSectionRegistry";
 
 function createScope(
   report: ExtensionApiScope["report"] = () => undefined,
@@ -102,6 +103,96 @@ afterEach(() => {
 });
 
 describe("ExtensionGenerationBridge", () => {
+  it("registers and disposes a workflow-selected section for its activation owner", () => {
+    const api = createExtensionGenerationApi(createScope());
+    const component = () => null;
+
+    const registration = api.ui.registerSection({
+      id: "path-canvas",
+      apiVersion: 1,
+      kind: "trusted-react",
+      component,
+    });
+
+    expect(registration.id).toBe("example.layout-prompt/path-canvas");
+    expect(
+      generationPanelSectionRegistry.get(
+        "example.layout-prompt",
+        "path-canvas",
+      ),
+    ).not.toBeNull();
+
+    registration.dispose();
+    expect(
+      generationPanelSectionRegistry.get(
+        "example.layout-prompt",
+        "path-canvas",
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects invalid generation section definitions before publication", () => {
+    const api = createExtensionGenerationApi(createScope());
+
+    expect(() =>
+      api.ui.registerSection({
+        id: "path-canvas",
+        apiVersion: 2,
+        kind: "trusted-react",
+        component: () => null,
+      } as never),
+    ).toThrow(/trusted-react API 1/);
+    expect(
+      generationPanelSectionRegistry.get(
+        "example.layout-prompt",
+        "path-canvas",
+      ),
+    ).toBeNull();
+  });
+
+  it("uses canonical contribution id validation for generation sections", () => {
+    const api = createExtensionGenerationApi(createScope());
+
+    expect(() =>
+      api.ui.registerSection({
+        id: "Path Canvas",
+        apiVersion: 1,
+        kind: "trusted-react",
+        component: () => null,
+      }),
+    ).toThrow(/Invalid contribution ID/);
+    expect(
+      generationPanelSectionRegistry.get(
+        "example.layout-prompt",
+        "Path Canvas",
+      ),
+    ).toBeNull();
+  });
+
+  it("rolls back canonical registration when the panel registry refuses it", () => {
+    const blocker = generationPanelSectionRegistry.register({
+      providerId: "example.layout-prompt",
+      contributionId: "path-canvas",
+      render: () => null,
+    });
+    const api = createExtensionGenerationApi(createScope());
+    const definition = {
+      id: "path-canvas",
+      apiVersion: 1,
+      kind: "trusted-react",
+      component: () => null,
+    } as const;
+
+    expect(() => api.ui.registerSection(definition)).toThrow(
+      /already registered/,
+    );
+    blocker.dispose();
+
+    const registration = api.ui.registerSection(definition);
+    expect(registration.id).toBe("example.layout-prompt/path-canvas");
+    registration.dispose();
+  });
+
   it("commits validated text updates through one host write", () => {
     const session = mountGenerationSession({ inputs });
     activeUnmount = session.unmount;
