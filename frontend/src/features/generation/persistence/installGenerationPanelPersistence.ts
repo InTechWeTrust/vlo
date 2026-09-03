@@ -72,6 +72,12 @@ export function installGenerationPanelPersistence(): () => void {
     // the copy on disk intact rather than record a partial one over it.
     if (state.pendingPanelSnapshot !== null) return pendingWrite;
     if (state.isRestoringPanelSnapshot) return pendingWrite;
+    // The store has handed the panel its saved text and widget values but the
+    // panel has not taken them yet, so what it holds is still the workflow's
+    // own defaults. Writing here would record those over the saved ones and
+    // lose them for good. Applying the state changes the panel values, which
+    // schedules the write this one declines to make.
+    if (state.pendingReplayPanelState !== null) return pendingWrite;
 
     const snapshot = readCurrentSnapshot();
     const serialized = JSON.stringify(snapshot);

@@ -48,6 +48,7 @@ describe("installGenerationPanelPersistence", () => {
     useProjectStore.setState({ project: null, rootHandle: null });
     useGenerationStore.setState({
       pendingPanelSnapshot: null,
+      pendingReplayPanelState: null,
       isRestoringPanelSnapshot: false,
       selectedWorkflowId: null,
     });
@@ -128,6 +129,47 @@ describe("installGenerationPanelPersistence", () => {
     });
     await vi.advanceTimersByTimeAsync(2_000);
     expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overwrite the saved state while the panel has yet to take it", async () => {
+    openProject("project-a");
+    uninstall = installGenerationPanelPersistence();
+    await vi.waitFor(() =>
+      expect(useGenerationStore.getState().pendingPanelSnapshot).not.toBeNull(),
+    );
+
+    // The restore finished in the store, but the saved text and widget values
+    // are still queued for the panel: what it shows is the workflow's own
+    // defaults, and writing those would destroy the saved ones.
+    useGenerationStore.setState({
+      pendingPanelSnapshot: null,
+      pendingReplayPanelState: {
+        textValues: { "6:text": "a cat" },
+        widgetValues: { "136:length": "260" },
+        widgetModes: {},
+        derivedWidgetValues: {},
+      },
+      selectedWorkflowId: "wan-i2v.json",
+      workflowInputs: [],
+      mediaInputs: {},
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(write).not.toHaveBeenCalled();
+
+    // Taking the values is itself a panel change, so the write follows it.
+    useGenerationStore.setState({
+      pendingReplayPanelState: null,
+      panelValues: {
+        ...useGenerationStore.getState().panelValues,
+        textValues: { "6:text": "a cat" },
+      },
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]?.[0]).toMatchObject({
+      replayState: { textValues: { "6:text": "a cat" } },
+    });
   });
 
   it("does not rewrite a project that has nothing saved", async () => {

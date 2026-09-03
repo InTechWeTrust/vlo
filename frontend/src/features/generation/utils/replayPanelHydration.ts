@@ -30,16 +30,20 @@ function setWidgetValue(
   };
 }
 
+/**
+ * Whether the panel must keep a queued replay state for later rather than
+ * consuming it now.
+ *
+ * Readiness is decided by what is on screen, never by the workflow's load
+ * flag: a load can report itself finished while the inputs the state applies
+ * to are still being rebuilt, and consuming the state against an empty panel
+ * would silently discard everything it holds.
+ */
 export function shouldWaitForReplayPanelHydration(
   replayState: WorkflowReplayPanelState,
   workflowInputs: readonly WorkflowInput[],
   widgetInputs: readonly WorkflowWidgetInput[],
-  isWorkflowLoading: boolean,
 ): boolean {
-  if (!isWorkflowLoading) {
-    return false;
-  }
-
   const needsWorkflowInputs = hasEntries(replayState.textValues);
   const needsWidgetInputs =
     hasEntries(replayState.widgetValues) ||

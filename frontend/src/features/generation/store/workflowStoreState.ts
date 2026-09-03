@@ -1030,7 +1030,8 @@ export function buildWorkflowStoreState(
     },
 
     loadWorkflow: async (workflowId: string) => {
-      if (get().selectedWorkflowId !== workflowId) {
+      const isWorkflowChange = get().selectedWorkflowId !== workflowId;
+      if (isWorkflowChange) {
         bridgeLoadRetryCounts.clear();
       }
       const requestId = options.getNextWorkflowLoadRequestId();
@@ -1087,7 +1088,12 @@ export function buildWorkflowStoreState(
         workflowRuleWarnings: [],
         hasInferredInputs: false,
         derivedMaskMappings: [],
-        pendingReplayPanelState: null,
+        // Queued replay state belongs to a workflow, not to one load of it.
+        // Reloading the same workflow is routine after a restore — the editor
+        // registering, a bridge retry, a mode change — and each of those
+        // rebuilds the widgets the state has yet to be applied to, so it must
+        // survive them. Only moving to a different workflow invalidates it.
+        ...(isWorkflowChange ? { pendingReplayPanelState: null } : {}),
         suspectRuleLossCount: 0,
       });
 

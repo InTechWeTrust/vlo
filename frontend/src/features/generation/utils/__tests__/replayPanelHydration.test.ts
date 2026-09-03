@@ -63,7 +63,7 @@ function makeLoraWidget(): WorkflowWidgetInput {
 }
 
 describe("replayPanelHydration", () => {
-  it("waits for widget inputs while replay hydration is still loading", () => {
+  it("waits for the widget inputs a replay state applies to", () => {
     const replayState: WorkflowReplayPanelState = {
       ...EMPTY_REPLAY_STATE,
       widgetValues: {
@@ -71,19 +71,14 @@ describe("replayPanelHydration", () => {
       },
     };
 
+    expect(shouldWaitForReplayPanelHydration(replayState, [], [])).toBe(true);
     expect(
-      shouldWaitForReplayPanelHydration(replayState, [], [], true),
-    ).toBe(true);
-    expect(
-      shouldWaitForReplayPanelHydration(
-        replayState,
-        [],
-        [makeSeedWidget()],
-        true,
-      ),
+      shouldWaitForReplayPanelHydration(replayState, [], [makeSeedWidget()]),
     ).toBe(false);
+    // A workflow that reports itself loaded is not proof its widgets are
+    // rebuilt: waiting is decided by the panel, not by the load flag.
     expect(
-      shouldWaitForReplayPanelHydration(replayState, [], [], false),
+      shouldWaitForReplayPanelHydration(EMPTY_REPLAY_STATE, [], []),
     ).toBe(false);
   });
 
@@ -123,9 +118,7 @@ describe("replayPanelHydration", () => {
     };
     const widget = makeLoraWidget();
 
-    expect(
-      shouldWaitForReplayPanelHydration(replayState, [], [], true),
-    ).toBe(true);
+    expect(shouldWaitForReplayPanelHydration(replayState, [], [])).toBe(true);
     expect(resolveReplayNodeBypassWidgetTargets(replayState, [widget])).toEqual(
       new Set([getNodeBypassWidgetKey("12:6", "lora_name")]),
     );

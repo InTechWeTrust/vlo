@@ -203,6 +203,15 @@ function endMediaInputPreparation(inputId: string): void {
   useMediaInputPreparationStore.getState().endMediaInputPreparation(inputId);
 }
 
+/**
+ * How long a queued replay state waits for inputs that a settled workflow has
+ * not produced. Long enough to cover the gap between one load finishing and
+ * the next starting — the ComfyUI editor registering, a bridge retry — and
+ * short enough that a workflow which simply has no such inputs stops holding
+ * the project's panel state back from being saved.
+ */
+const REPLAY_PANEL_HYDRATION_GRACE_MS = 5_000;
+
 interface AudioSelectionExtractionOptions {
   inputId: string;
   timelineSelection: ReturnType<typeof createTimelineSelection>;
@@ -721,15 +730,26 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       return;
     }
 
+    // Not ready yet: the state stays queued rather than being consumed
+    // against a panel that has nothing to apply it to. A load in flight will
+    // rebuild the inputs and re-run this; once one has settled without them,
+    // the state is given a grace period and then dropped, because a queued
+    // state also holds back the project's own saves.
     if (
       shouldWaitForReplayPanelHydration(
         pendingReplayPanelState,
         workflowInputs,
         widgetInputs,
-        isWorkflowLoading,
       )
     ) {
-      return;
+      if (isWorkflowLoading) {
+        return;
+      }
+      const timer = setTimeout(
+        clearPendingReplayPanelState,
+        REPLAY_PANEL_HYDRATION_GRACE_MS,
+      );
+      return () => clearTimeout(timer);
     }
 
     // eslint-disable-next-line react-hooks/set-state-in-effect

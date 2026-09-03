@@ -231,6 +231,39 @@ describe("useGenerationStore panel snapshot restore", () => {
     );
   });
 
+  it("keeps the restored values queued through a reload of the same workflow", async () => {
+    const snapshot: GenerationPanelSnapshot = {
+      version: 1,
+      workflowId: "wan.json",
+      inputs: [],
+      replayState: {
+        version: 2,
+        textValues: { "6:text": "a cat" },
+        widgetValues: { "136:length": "260" },
+      },
+    };
+
+    await useGenerationStore.getState().restorePanelSnapshot(snapshot);
+    expect(
+      useGenerationStore.getState().pendingReplayPanelState,
+    ).toMatchObject({ widgetValues: { "136:length": "260" } });
+
+    // The ComfyUI editor registering, a bridge retry: the same workflow is
+    // reloaded before the panel has taken its saved values. The reload wipes
+    // the widgets those values belong to, so they have to outlive it or the
+    // panel silently falls back to the workflow's own numbers.
+    await useGenerationStore.getState().loadWorkflow("wan.json");
+
+    expect(
+      useGenerationStore.getState().pendingReplayPanelState,
+    ).toMatchObject({ widgetValues: { "136:length": "260" } });
+
+    // Moving to a different workflow does invalidate them.
+    await useGenerationStore.getState().loadWorkflow("other.json");
+
+    expect(useGenerationStore.getState().pendingReplayPanelState).toBeNull();
+  });
+
   it("leaves the panel alone when another workflow was selected meanwhile", async () => {
     const snapshot: GenerationPanelSnapshot = {
       version: 1,
