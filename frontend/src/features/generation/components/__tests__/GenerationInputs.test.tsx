@@ -25,7 +25,11 @@ afterEach(() => {
 const LORA_WORKFLOW = {
   "12": {
     class_type: "LoraLoaderModelOnly",
-    inputs: { model: ["1", 0], lora_name: "detail.safetensors" },
+    inputs: {
+      model: ["1", 0],
+      lora_name: "detail.safetensors",
+      strength_model: 0.8,
+    },
     _meta: { title: "Detail LoRA" },
   },
 };
@@ -35,9 +39,13 @@ const LORA_OBJECT_INFO = {
       required: {
         model: ["MODEL"],
         lora_name: [["base.safetensors", "detail.safetensors"], {}],
+        strength_model: [
+          "FLOAT",
+          { default: 1, min: -100, max: 100, step: 0.01 },
+        ],
       },
     },
-    input_order: { required: ["model", "lora_name"] },
+    input_order: { required: ["model", "lora_name", "strength_model"] },
   },
 };
 
@@ -92,6 +100,35 @@ describe("GenerationInputs", () => {
   it("shows an autodiscovered loader as a dropdown on its workflow model", () => {
     renderLoraPanel(null);
     expect(screen.getByRole("combobox")).toHaveTextContent("detail.safetensors");
+  });
+
+  it("presents the loader weight next to the model dropdown", () => {
+    renderLoraPanel(null);
+    expect(screen.getByText("Strength")).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton")).toHaveValue(0.8);
+  });
+
+  it("greys out the weight while the loader is switched off", () => {
+    // "None (bypass)" leaves the node out of the run, so its weight changes
+    // nothing — but it stays on screen, or a loader that ships off would look
+    // like it has no weight at all.
+    renderLoraPanel({
+      version: 1,
+      nodes: {
+        "12": {
+          widgets: { lora_name: { label: "Detail LoRA", default_node_bypass: true } },
+        },
+      },
+      slots: {},
+    });
+
+    expect(screen.getByRole("combobox")).toHaveTextContent("None (bypass)");
+    expect(screen.getByRole("spinbutton")).toBeDisabled();
+    // The dropdown itself is how the loader gets turned back on.
+    expect(screen.getByRole("combobox")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("starts a rule-defaulted loader on None, still as a dropdown", () => {

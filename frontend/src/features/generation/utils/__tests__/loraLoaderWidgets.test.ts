@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { WorkflowWidgetInput } from "../../types";
 import { buildGenerationNodeCatalogue } from "../../services/workflowNodeCatalogue";
+import { resolveWidgetInputs } from "../../services/workflowRules";
 import {
   LORA_BYPASS_CHOICE,
   LORA_LOADERS_SECTION_ID,
@@ -116,7 +119,14 @@ describe("autodiscovered LoRA widget inputs", () => {
       },
     );
 
-    expect(widgets.map((widget) => widget.nodeId)).toEqual(["4", "12:6"]);
+    expect(
+      widgets.map((widget) => [widget.nodeId, widget.param]),
+    ).toEqual([
+      ["4", "lora_name"],
+      ["4", "strength_model"],
+      ["12:6", "lora_name"],
+      ["12:6", "strength_model"],
+    ]);
     expect(widgets[0]).toMatchObject({
       param: "lora_name",
       currentValue: "detail.safetensors",
@@ -131,6 +141,106 @@ describe("autodiscovered LoRA widget inputs", () => {
         },
       },
     });
+  });
+
+  it("presents each loader's weight beside its model, with no bypass choice", () => {
+    const [, strength] = discoverLoraWidgets(
+      {
+        "4": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: {
+            model: ["1", 0],
+            lora_name: "detail.safetensors",
+            strength_model: 0.8,
+          },
+          _meta: { title: "Portrait detail" },
+        },
+      },
+      {
+        LoraLoaderModelOnly: {
+          input: {
+            required: {
+              model: ["MODEL"],
+              lora_name: [["base.safetensors", "detail.safetensors"], {}],
+              strength_model: [
+                "FLOAT",
+                { default: 1, min: -100, max: 100, step: 0.01 },
+              ],
+            },
+          },
+        },
+      },
+      null,
+    );
+
+    expect(strength).toMatchObject({
+      nodeId: "4",
+      param: "strength_model",
+      currentValue: 0.8,
+      config: {
+        label: "Strength",
+        valueType: "float",
+        defaultValue: 1,
+        min: -100,
+        max: 100,
+        step: 0.01,
+        sectionId: LORA_LOADERS_SECTION_ID,
+        // Same group as the dropdown, so the panel renders one loader block.
+        groupId: "lora-loader:4",
+      },
+    });
+    // Bypassing is the dropdown's job; a second "None" would be ambiguous.
+    expect(strength?.config.nodeBypassOption).toBeUndefined();
+  });
+
+  it("labels both weights apart on loaders that carry a CLIP strength", () => {
+    const widgets = discoverLoraWidgets(
+      {
+        "4": {
+          class_type: "LoraLoader",
+          inputs: {
+            lora_name: "base.safetensors",
+            strength_model: 1,
+            strength_clip: 0.5,
+          },
+        },
+      },
+      {
+        LoraLoader: {
+          input: {
+            required: {
+              lora_name: [["base.safetensors"], {}],
+              strength_model: ["FLOAT", { default: 1 }],
+              strength_clip: ["FLOAT", { default: 1 }],
+            },
+          },
+        },
+      },
+      null,
+    );
+
+    expect(
+      widgets.map((widget) => [widget.param, widget.config.label]),
+    ).toEqual([
+      ["lora_name", "Model"],
+      ["strength_model", "Model strength"],
+      ["strength_clip", "CLIP strength"],
+    ]);
+  });
+
+  it("skips a weight the graph feeds from a link", () => {
+    const widgets = discoverLoraWidgets(
+      {
+        "4": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: { lora_name: "base.safetensors", strength_model: ["9", 0] },
+        },
+      },
+      LORA_OBJECT_INFO,
+      null,
+    );
+
+    expect(widgets.map((widget) => widget.param)).toEqual(["lora_name"]);
   });
 
   it("skips linked, muted, and non-LoRA nodes", () => {
@@ -302,20 +412,100 @@ describe("autodiscovered LoRA widget inputs", () => {
       null,
     );
 
-    expect(mergeAutodiscoveredLoraWidgetInputs([explicit], discovered)).toEqual([
+    const [model, strength] = mergeAutodiscoveredLoraWidgetInputs(
+      [explicit],
+      discovered,
+    );
+    expect(model).toEqual({
+      ...explicit,
+      config: {
+        ...explicit.config,
+        nodeBypassOption: {
+          value: LORA_BYPASS_CHOICE,
+          label: "None (bypass)",
+        },
+        nodeShipsBypassed: undefined,
+        defaultNodeBypass: undefined,
+      },
+    });
+    // The weight follows the dropdown's placement rather than opening a
+    // second block off in the LoRA section.
+    expect(strength).toMatchObject({
+      param: "strength_model",
+      config: {
+        sectionId: "models",
+        groupId: "4",
+        groupTitle: "Custom models",
+      },
+    });
+  });
+
+  it("keeps a sidecar's own strength widget exactly as written", () => {
+    const explicit: readonly WorkflowWidgetInput[] = [
       {
-        ...explicit,
+        nodeId: "4",
+        param: "lora_name",
+        currentValue: "base.safetensors",
+        config: { label: "Style adapter", controlAfterGenerate: false },
+      },
+      {
+        nodeId: "4",
+        param: "strength_model",
+        currentValue: 0.6,
         config: {
-          ...explicit.config,
-          nodeBypassOption: {
-            value: LORA_BYPASS_CHOICE,
-            label: "None (bypass)",
-          },
-          nodeShipsBypassed: undefined,
-          defaultNodeBypass: undefined,
+          label: "Intensity",
+          controlAfterGenerate: false,
+          valueType: "float",
+          control: "slider",
+          min: 0,
+          max: 2,
+          step: 0.05,
         },
       },
-    ]);
+    ];
+    const discovered = discoverLoraWidgets(
+      {
+        "4": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: { lora_name: "base.safetensors", strength_model: 0.6 },
+        },
+      },
+      LORA_OBJECT_INFO,
+      null,
+    );
+
+    const merged = mergeAutodiscoveredLoraWidgetInputs(explicit, discovered);
+    expect(merged).toHaveLength(2);
+    expect(merged[1]).toEqual(explicit[1]);
+  });
+
+  it("keeps a hidden loader hidden, weight included", () => {
+    const explicit: WorkflowWidgetInput = {
+      nodeId: "4",
+      param: "lora_name",
+      currentValue: "base.safetensors",
+      config: {
+        label: "Style adapter",
+        controlAfterGenerate: false,
+        hidden: true,
+      },
+    };
+    const discovered = discoverLoraWidgets(
+      {
+        "4": {
+          class_type: "LoraLoaderModelOnly",
+          inputs: { lora_name: "base.safetensors", strength_model: 1 },
+        },
+      },
+      LORA_OBJECT_INFO,
+      null,
+    );
+
+    const [, strength] = mergeAutodiscoveredLoraWidgetInputs(
+      [explicit],
+      discovered,
+    );
+    expect(strength?.config.hidden).toBe(true);
   });
 });
 
@@ -403,4 +593,72 @@ describe("loaders the workflow ships bypassed", () => {
       ),
     ).toEqual([]);
   });
+});
+
+/**
+ * The shipped MiniMax workflows present `lora_name` themselves, so their
+ * strength widget only exists through the merge — and only lands beside the
+ * dropdown if it adopts the sidecar's section and group.
+ */
+describe("shipped MiniMax LoRA loaders", () => {
+  const CONFIG_DIR = resolve(
+    __dirname,
+    "../../../../../../backend/assets/.config",
+  );
+  const SHIPPED = [
+    ["vlo_minimax_h3_i2v", "150"],
+    ["vlo_minimax_h3_r2v", "148"],
+    ["vlo_minimax_h3_ttm", "23"],
+  ] as const;
+
+  // object_info is runtime data; only the loader's shape matters here.
+  const OBJECT_INFO = {
+    LoraLoaderModelOnly: {
+      input: {
+        required: {
+          model: ["MODEL"],
+          lora_name: [["base.safetensors"], {}],
+          strength_model: [
+            "FLOAT",
+            { default: 1, min: -100, max: 100, step: 0.01 },
+          ],
+        },
+      },
+      input_order: { required: ["model", "lora_name", "strength_model"] },
+    },
+  };
+
+  it.each(SHIPPED)(
+    "gives %s's loader a weight beside its model",
+    (name, nodeId) => {
+      const dir = resolve(CONFIG_DIR, "default_workflows");
+      const graphData = JSON.parse(
+        readFileSync(resolve(dir, `${name}.json`), "utf-8"),
+      ) as Record<string, unknown>;
+      const rules = JSON.parse(
+        readFileSync(resolve(dir, `${name}.rules.json`), "utf-8"),
+      ) as Record<string, unknown>;
+
+      const widgets = mergeAutodiscoveredLoraWidgetInputs(
+        resolveWidgetInputs(null, rules, { graphData, objectInfo: OBJECT_INFO }),
+        resolveAutodiscoveredLoraWidgetInputs(
+          buildGenerationNodeCatalogue(null, OBJECT_INFO, graphData),
+          collectBypassDiscoveryNodeIds(rules as unknown as WorkflowRules),
+        ),
+      );
+
+      const model = widgets.find(
+        (widget) => widget.nodeId === nodeId && widget.param === "lora_name",
+      );
+      const strength = widgets.find(
+        (widget) =>
+          widget.nodeId === nodeId && widget.param === "strength_model",
+      );
+      expect(model?.config.sectionId).toBe(LORA_LOADERS_SECTION_ID);
+      expect(strength?.config.label).toBe("Strength");
+      // Same section and group as the dropdown: one loader block, not two.
+      expect(strength?.config.sectionId).toBe(model?.config.sectionId);
+      expect(strength?.config.groupId).toBe(model?.config.groupId);
+    },
+  );
 });

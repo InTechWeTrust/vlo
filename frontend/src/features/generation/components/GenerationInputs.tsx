@@ -1304,10 +1304,12 @@ function ResolutionLadderRow({
   widget,
   value,
   onWidgetChange,
+  disabled,
 }: {
   widget: WorkflowWidgetInput;
   value: unknown;
   onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
+  disabled: boolean;
 }) {
   const rungs = useMemo(
     () => [...(widget.config.resolutionLadder ?? [])].sort((a, b) => a - b),
@@ -1350,6 +1352,7 @@ function ResolutionLadderRow({
           <Slider
             aria-label={widget.config.label}
             size="small"
+            disabled={disabled}
             value={resolution}
             min={min}
             max={max}
@@ -1374,6 +1377,7 @@ function ResolutionLadderRow({
           <CommittedTextInput
             key={resolution}
             label="Custom"
+            disabled={disabled}
             initialValue={String(resolution)}
             type="number"
             inputProps={{ min: 1, step: 1, "aria-label": "Custom resolution" }}
@@ -1413,6 +1417,8 @@ interface WidgetRowProps {
   widget: WorkflowWidgetInput;
   value: unknown;
   isRandomized: boolean;
+  /** This widget's node is switched off, so its value changes nothing. */
+  nodeBypassed: boolean;
   onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
   onToggleRandomize: (nodeId: string, param: string) => void;
   showExactAspectRatioControl: boolean;
@@ -1425,6 +1431,7 @@ function WidgetRow({
   widget,
   value,
   isRandomized,
+  nodeBypassed,
   onWidgetChange,
   onToggleRandomize,
   showExactAspectRatioControl,
@@ -1470,6 +1477,7 @@ function WidgetRow({
         widget={widget}
         value={value}
         onWidgetChange={onWidgetChange}
+        disabled={nodeBypassed}
       />
     );
   }
@@ -1506,6 +1514,7 @@ function WidgetRow({
           <Slider
             aria-label={widget.config.label}
             size="small"
+            disabled={nodeBypassed}
             value={sliderValue}
             min={min}
             max={max}
@@ -1552,6 +1561,7 @@ function WidgetRow({
         ) : null}
         <CommittedTextInput
           initialValue={displayValue}
+          disabled={nodeBypassed}
           onCommit={(nextValue) => {
             onWidgetChange(widget.nodeId, widget.param, nextValue);
           }}
@@ -1596,7 +1606,7 @@ function WidgetRow({
           size="small"
           type={useNumericInput && !isRandomized ? "number" : "text"}
           value={displayValue}
-          disabled={isRandomized}
+          disabled={isRandomized || nodeBypassed}
           onChange={(event) => {
             onWidgetChange(
               widget.nodeId,
@@ -1761,6 +1771,8 @@ interface WidgetGroupSectionProps {
   onExactAspectRatioChange?: (exact: boolean) => void;
   exactAspectRatioTooltip?: string;
   showDivider: boolean;
+  /** Nodes the panel has switched off through their bypass choice. */
+  bypassedNodeIds: ReadonlySet<string>;
 }
 
 function WidgetGroupSection({
@@ -1776,6 +1788,7 @@ function WidgetGroupSection({
   onExactAspectRatioChange,
   exactAspectRatioTooltip,
   showDivider,
+  bypassedNodeIds,
 }: WidgetGroupSectionProps) {
   return (
     <Box
@@ -1792,6 +1805,12 @@ function WidgetGroupSection({
       </Typography>
       {group.widgets.map((widget) => {
         const key = `${widget.nodeId}:${widget.param}`;
+        // A node switched off through its bypass choice keeps its remaining
+        // controls on screen — the panel would otherwise give no sign they
+        // exist — but greyed out, since this run leaves the node out.
+        const nodeBypassed =
+          !widget.config.nodeBypassOption &&
+          bypassedNodeIds.has(widget.nodeId);
         const nodeValues = widgetValues[widget.nodeId] ?? {};
         const value = bypassedWidgetTargets.has(
           getNodeBypassWidgetKey(widget.nodeId, widget.param),
@@ -1806,6 +1825,7 @@ function WidgetGroupSection({
             widget={widget}
             value={value}
             isRandomized={isRandomized}
+            nodeBypassed={nodeBypassed}
             onWidgetChange={onWidgetChange}
             onToggleRandomize={onToggleRandomize}
             showExactAspectRatioControl={
@@ -1897,6 +1917,22 @@ export const GenerationInputs = memo(function GenerationInputs({
             : section.blocks.map((block) => ({ kind: "block", block })),
       ),
     [renderableSections],
+  );
+  // A loader switched off through its bypass choice takes the rest of its
+  // node's controls with it: they configure a node this run leaves out.
+  const bypassedNodeIds = useMemo(
+    () =>
+      new Set(
+        widgetInputs.flatMap((widget) =>
+          widget.config.nodeBypassOption &&
+          bypassedWidgetTargets.has(
+            getNodeBypassWidgetKey(widget.nodeId, widget.param),
+          )
+            ? [widget.nodeId]
+            : [],
+        ),
+      ),
+    [bypassedWidgetTargets, widgetInputs],
   );
   const inputLookup = useMemo(() => buildWorkflowInputLookup(inputs), [inputs]);
   const resolvedExactAspectRatioWidgetKey = useMemo(() => {
@@ -2033,6 +2069,7 @@ export const GenerationInputs = memo(function GenerationInputs({
                   onExactAspectRatioChange={onExactAspectRatioChange}
                   exactAspectRatioTooltip={exactAspectRatioTooltip}
                   showDivider={item.section.blocks.length > 0 || groupIndex > 0}
+                  bypassedNodeIds={bypassedNodeIds}
                 />
               ))}
               {item.section.extension ? (
