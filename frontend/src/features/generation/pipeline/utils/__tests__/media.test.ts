@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  ASPECT_RATIO_RESIZE_VIDEO_BITRATE,
   createOutputCanvas,
   cropImageToAspectRatio,
   cropVideoToAspectRatio,
@@ -444,6 +445,8 @@ describe("video resize and crop", () => {
           width: 640,
           height: 480,
           fit: "fill",
+          // The second lossy pass must not be the one that degrades the output.
+          bitrate: ASPECT_RATIO_RESIZE_VIDEO_BITRATE,
         }),
       }),
     );

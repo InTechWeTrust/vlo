@@ -400,6 +400,18 @@ export async function cropImageToAspectRatio(
   }
 }
 
+/**
+ * Generated video is re-encoded here only to undo the strided generation
+ * canvas, so this pass sits on top of ComfyUI's own encode and feeds an asset
+ * that gets encoded a third time on export. Favour fidelity over size: the
+ * clips are seconds long. Matches the generation feature's other
+ * fidelity-first re-encodes (see `MASK_CROP_VIDEO_BITRATE`).
+ *
+ * Deliberately an explicit rate rather than mediabunny's `QUALITY_HIGH`, which
+ * resolves to ~2.8 Mbps for AVC at 1280x720 and would visibly degrade output.
+ */
+export const ASPECT_RATIO_RESIZE_VIDEO_BITRATE = 20_000_000;
+
 export async function resizeVideoToExactDimensions(
   file: File,
   target: ResizeTarget,
@@ -431,6 +443,7 @@ export async function resizeVideoToExactDimensions(
         width: target.width,
         height: target.height,
         fit: "fill",
+        bitrate: ASPECT_RATIO_RESIZE_VIDEO_BITRATE,
         // `no-preference`, not `prefer-hardware`: mediabunny fails closed on
         // `isConfigSupported`, so preferring hardware throws where software
         // encode would have worked — and the callers here swallow that into a
