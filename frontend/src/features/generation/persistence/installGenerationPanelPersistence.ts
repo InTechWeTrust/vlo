@@ -2,6 +2,7 @@ import { registerPreSaveHook } from "../../../core/persistence/preSaveHooks";
 import { registerProjectClosingHook } from "../../../core/project/projectLifecycleHooks";
 import { useProjectStore } from "../../project";
 import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
+import { TEMP_WORKFLOW_ID } from "../store/constants";
 import { useGenerationStore } from "../useGenerationStore";
 import {
   buildGenerationPanelSnapshot,
@@ -53,6 +54,7 @@ export function installGenerationPanelPersistence(): () => void {
   let writeTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingWrite: Promise<void> = Promise.resolve();
   let lastWritten: string | null = null;
+  let readingSnapshotFor: string | null = null;
 
   const cancelScheduledWrite = () => {
     if (writeTimer !== null) {
@@ -78,6 +80,15 @@ export function installGenerationPanelPersistence(): () => void {
     // lose them for good. Applying the state changes the panel values, which
     // schedules the write this one declines to make.
     if (state.pendingReplayPanelState !== null) return pendingWrite;
+    // Regenerating an in-editor asset puts the panel on the temp workflow,
+    // which holds its graph in memory and has no id to reopen by, so no
+    // snapshot can describe it. That is a reason to leave the saved state
+    // alone, not to erase it: the project keeps the last workflow it can
+    // actually be reopened on.
+    if (state.selectedWorkflowId === TEMP_WORKFLOW_ID) return pendingWrite;
+    // The saved state has not been read back yet, so there is nothing to
+    // compare against and an empty panel would look like a deliberate one.
+    if (readingSnapshotFor !== null) return pendingWrite;
 
     const snapshot = readCurrentSnapshot();
     const serialized = JSON.stringify(snapshot);
@@ -120,6 +131,7 @@ export function installGenerationPanelPersistence(): () => void {
   };
 
   const loadSavedSnapshot = (projectId: string) => {
+    readingSnapshotFor = projectId;
 
     return (async () => {
       try {
@@ -136,6 +148,9 @@ export function installGenerationPanelPersistence(): () => void {
         useGenerationStore.getState().setPendingPanelSnapshot(snapshot);
       } catch (error) {
         console.warn("[Generation] Failed to read saved panel state", error);
+      } finally {
+        // A project opened while this read was in flight owns the flag now.
+        if (readingSnapshotFor === projectId) readingSnapshotFor = null;
       }
     })();
   };
