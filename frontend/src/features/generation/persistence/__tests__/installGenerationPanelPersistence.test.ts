@@ -51,6 +51,7 @@ describe("installGenerationPanelPersistence", () => {
       pendingReplayPanelState: null,
       isRestoringPanelSnapshot: false,
       selectedWorkflowId: null,
+      targetResolution: 1080,
     });
   });
 
@@ -170,6 +171,69 @@ describe("installGenerationPanelPersistence", () => {
     expect(write.mock.calls[0]?.[0]).toMatchObject({
       replayState: { textValues: { "6:text": "a cat" } },
     });
+  });
+
+  it("keeps the saved state when regeneration loads an in-editor workflow", async () => {
+    openProject("project-a");
+    uninstall = installGenerationPanelPersistence();
+    await vi.waitFor(() =>
+      expect(useGenerationStore.getState().pendingPanelSnapshot).not.toBeNull(),
+    );
+    useGenerationStore.setState({
+      pendingPanelSnapshot: null,
+      selectedWorkflowId: "wan-i2v.json",
+    });
+    await vi.advanceTimersByTimeAsync(2_000);
+    write.mockClear();
+
+    // Regenerating an in-editor asset selects the temp workflow, which no
+    // snapshot can describe. Erasing the file over it loses the workflow the
+    // project would otherwise reopen on.
+    useGenerationStore.setState({ selectedWorkflowId: "__temp__" });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(write).not.toHaveBeenCalled();
+
+    // Picking a real workflow again resumes saving.
+    useGenerationStore.setState({ selectedWorkflowId: "flux.json" });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]?.[0]).toMatchObject({ workflowId: "flux.json" });
+  });
+
+  it("does not write before the saved state has been read back", async () => {
+    let releaseRead: ((document: unknown) => void) | null = null;
+    vi.spyOn(projectPersistenceService, "readGenerationPanel").mockReturnValue(
+      new Promise((resolve) => {
+        releaseRead = resolve as (document: unknown) => void;
+      }) as never,
+    );
+
+    openProject("project-a");
+    uninstall = installGenerationPanelPersistence();
+
+    // A project whose panel document is slow to read — a cold or synced
+    // folder — must not have its saved state erased by the empty panel that
+    // is on screen until the read lands.
+    useGenerationStore.setState({ targetResolution: 480 });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(write).not.toHaveBeenCalled();
+
+    releaseRead!({
+      documentType: "vlo.generation-panel",
+      schemaVersion: 1,
+      updated_at: 0,
+      panel: JSON.parse(JSON.stringify(savedSnapshot)),
+    });
+    await vi.waitFor(() =>
+      expect(useGenerationStore.getState().pendingPanelSnapshot).toEqual(
+        savedSnapshot,
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("does not rewrite a project that has nothing saved", async () => {

@@ -293,29 +293,9 @@ function pruneStage(
       return null;
     }
 
-    // `config.postprocess.targets` reference output resize nodes, so they go
-    // stale the same way the stage's own targets do. Left unpruned they would
-    // survive into a workflow that no longer has the node, and the backend
-    // would report a partial application for a target the user already
-    // removed.
-    const postprocess = stage.config?.postprocess;
-    const postprocessTargets = Array.isArray(postprocess?.targets)
-      ? postprocess.targets.filter((target) =>
-          isRuleFragmentApplicable(target, workflowNodeIds),
-        )
-      : null;
-
     return {
       ...stage,
       targets,
-      ...(postprocess && postprocessTargets
-        ? {
-            config: {
-              ...stage.config,
-              postprocess: { ...postprocess, targets: postprocessTargets },
-            },
-          }
-        : {}),
     };
   }
 
@@ -555,7 +535,6 @@ export interface LostRuleFragments {
   derivedWidgetIds: string[];
   effectSwitchIds: string[];
   effectSwitchCaseCount: number;
-  postprocessTargetCount: number;
   rewriteCount: number;
   mediaFallbackCount: number;
   hasLoss: boolean;
@@ -618,21 +597,6 @@ export function findLostRuleFragments(
     }
     effectSwitchCaseCount += Math.max(0, prevCases - nextCases);
   }
-  // Losing an output resize target silently changes where the resize happens
-  // — the browser takes over for outputs the graph used to size — so count it
-  // for the same reason a dropped effect-switch case counts.
-  const countPostprocessTargets = (
-    rules: WorkflowRules | null | undefined,
-  ): number =>
-    (rules?.pipeline ?? []).reduce((total, stage) => {
-      if (stage.kind !== "aspect_ratio") return total;
-      return total + (stage.config?.postprocess?.targets?.length ?? 0);
-    }, 0);
-  const postprocessTargetCount = Math.max(
-    0,
-    countPostprocessTargets(previousRules) - countPostprocessTargets(nextRules),
-  );
-
   const mediaFallbackCount = Math.max(
     0,
     (previousRules?.media_fallbacks?.length ?? 0) -
@@ -645,7 +609,6 @@ export function findLostRuleFragments(
     derivedWidgetIds,
     effectSwitchIds,
     effectSwitchCaseCount,
-    postprocessTargetCount,
     rewriteCount,
     mediaFallbackCount,
     hasLoss:
@@ -654,7 +617,6 @@ export function findLostRuleFragments(
       derivedWidgetIds.length > 0 ||
       effectSwitchIds.length > 0 ||
       effectSwitchCaseCount > 0 ||
-      postprocessTargetCount > 0 ||
       rewriteCount > 0 ||
       mediaFallbackCount > 0,
   };

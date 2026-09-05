@@ -1062,13 +1062,6 @@
           "default": "stretch_exact",
           "title": "Mode",
           "type": "string"
-        },
-        "targets": {
-          "items": {
-            "$ref": "#/$defs/AspectRatioTargetNode"
-          },
-          "title": "Targets",
-          "type": "array"
         }
       },
       "title": "WorkflowAspectRatioPostprocessConfig",

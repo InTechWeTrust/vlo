@@ -22,32 +22,6 @@ def _to_positive_int(value: Any) -> int | None:
     return None
 
 
-# H.264 / yuv420p cannot represent an odd dimension, and encoders round up:
-# the installed VHS combiner pads odd frames with `ReplicationPad2d` before
-# handing them to ffmpeg. Declaring an odd delivery size would therefore
-# promise something no encoder in the chain can produce.
-ENCODER_DIMENSION_ALIGNMENT = 2
-
-
-def align_dimensions_for_encoder(width: int, height: int) -> tuple[int, int]:
-    """
-    Round a delivery size up to what the encoder can actually emit.
-
-    Rounds *up* to match how the encoders in the chain pad, so the size vlo
-    declares is the size that lands on disk. Applied to the delivered target
-    only — the requested dimensions stay as asked, and the strided search still
-    aims at the unrounded aspect.
-    """
-
-    def align(value: int) -> int:
-        remainder = value % ENCODER_DIMENSION_ALIGNMENT
-        if remainder == 0:
-            return value
-        return value + (ENCODER_DIMENSION_ALIGNMENT - remainder)
-
-    return align(width), align(height)
-
-
 def _normalize_param_ref(value: Any) -> tuple[str, str] | None:
     if not isinstance(value, dict):
         return None
@@ -236,150 +210,6 @@ def _normalize_resize_image_mask_target(
     inputs["scale_method"] = scale_method
 
 
-def _apply_target_nodes(
-    workflow: dict[str, Any],
-    target_nodes: list[Any],
-    width: int,
-    height: int,
-    warnings: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """
-    Write ``width``/``height`` into every configured target node.
-
-    Used twice per stage: once with the strided generation dimensions, and
-    once with the requested (true) dimensions for `postprocess.targets` — the
-    resize nodes placed after the decode.
-    """
-    applied_nodes: list[dict[str, Any]] = []
-    for node_cfg in target_nodes:
-        if not isinstance(node_cfg, dict):
-            continue
-
-        width_ref = _normalize_param_ref(node_cfg.get("width"))
-        height_ref = _normalize_param_ref(node_cfg.get("height"))
-        if width_ref is not None and height_ref is not None:
-            width_node_id, width_param = width_ref
-            height_node_id, height_param = height_ref
-
-            width_node = workflow.get(width_node_id)
-            if not isinstance(width_node, dict):
-                warnings.append(
-                    pipeline_warning(
-                        "aspect_ratio_processing_target_node_missing",
-                        "Configured aspect_ratio_processing width target was not found in workflow",
-                        details={"node_id": width_node_id, "axis": "width"},
-                    )
-                )
-                continue
-            width_inputs = width_node.get("inputs")
-            if not isinstance(width_inputs, dict):
-                warnings.append(
-                    pipeline_warning(
-                        "aspect_ratio_processing_target_node_inputs_missing",
-                        "Configured width target does not expose an inputs object",
-                        details={"node_id": width_node_id, "axis": "width"},
-                    )
-                )
-                continue
-
-            height_node = workflow.get(height_node_id)
-            if not isinstance(height_node, dict):
-                warnings.append(
-                    pipeline_warning(
-                        "aspect_ratio_processing_target_node_missing",
-                        "Configured aspect_ratio_processing height target was not found in workflow",
-                        details={"node_id": height_node_id, "axis": "height"},
-                    )
-                )
-                continue
-            height_inputs = height_node.get("inputs")
-            if not isinstance(height_inputs, dict):
-                warnings.append(
-                    pipeline_warning(
-                        "aspect_ratio_processing_target_node_inputs_missing",
-                        "Configured height target does not expose an inputs object",
-                        details={"node_id": height_node_id, "axis": "height"},
-                    )
-                )
-                continue
-
-            if width_node_id == height_node_id:
-                _normalize_resize_image_mask_target(
-                    width_node,
-                    width_inputs,
-                    width,
-                    height,
-                )
-
-            width_inputs[width_param] = width
-            height_inputs[height_param] = height
-            applied_nodes.append(
-                {
-                    "width": {
-                        "node_id": width_node_id,
-                        "param": width_param,
-                    },
-                    "height": {
-                        "node_id": height_node_id,
-                        "param": height_param,
-                    },
-                }
-            )
-            continue
-
-        node_id = node_cfg.get("node_id")
-        width_param = node_cfg.get("width_param")
-        height_param = node_cfg.get("height_param")
-        if (
-            not isinstance(node_id, str)
-            or not isinstance(width_param, str)
-            or not isinstance(height_param, str)
-            or not node_id.strip()
-            or not width_param.strip()
-            or not height_param.strip()
-        ):
-            continue
-
-        node = workflow.get(node_id)
-        if not isinstance(node, dict):
-            warnings.append(
-                pipeline_warning(
-                    "aspect_ratio_processing_target_node_missing",
-                    "Configured aspect_ratio_processing target node was not found in workflow",
-                    details={"node_id": node_id},
-                )
-            )
-            continue
-        inputs = node.get("inputs")
-        if not isinstance(inputs, dict):
-            warnings.append(
-                pipeline_warning(
-                    "aspect_ratio_processing_target_node_inputs_missing",
-                    "Configured target node does not expose an inputs object",
-                    details={"node_id": node_id},
-                )
-            )
-            continue
-
-        _normalize_resize_image_mask_target(
-            node,
-            inputs,
-            width,
-            height,
-        )
-        inputs[width_param] = width
-        inputs[height_param] = height
-        applied_nodes.append(
-            {
-                "node_id": node_id,
-                "width_param": width_param,
-                "height_param": height_param,
-            }
-        )
-
-    return applied_nodes
-
-
 def apply_aspect_ratio_processing(
     workflow: dict[str, Any],
     rules: dict[str, Any],
@@ -487,13 +317,132 @@ def apply_aspect_ratio_processing(
         )
         return None, warnings
 
-    applied_nodes = _apply_target_nodes(
-        workflow,
-        target_nodes,
-        best["width"],
-        best["height"],
-        warnings,
-    )
+    applied_nodes: list[dict[str, Any]] = []
+    for node_cfg in target_nodes:
+        if not isinstance(node_cfg, dict):
+            continue
+
+        width_ref = _normalize_param_ref(node_cfg.get("width"))
+        height_ref = _normalize_param_ref(node_cfg.get("height"))
+        if width_ref is not None and height_ref is not None:
+            width_node_id, width_param = width_ref
+            height_node_id, height_param = height_ref
+
+            width_node = workflow.get(width_node_id)
+            if not isinstance(width_node, dict):
+                warnings.append(
+                    pipeline_warning(
+                        "aspect_ratio_processing_target_node_missing",
+                        "Configured aspect_ratio_processing width target was not found in workflow",
+                        details={"node_id": width_node_id, "axis": "width"},
+                    )
+                )
+                continue
+            width_inputs = width_node.get("inputs")
+            if not isinstance(width_inputs, dict):
+                warnings.append(
+                    pipeline_warning(
+                        "aspect_ratio_processing_target_node_inputs_missing",
+                        "Configured width target does not expose an inputs object",
+                        details={"node_id": width_node_id, "axis": "width"},
+                    )
+                )
+                continue
+
+            height_node = workflow.get(height_node_id)
+            if not isinstance(height_node, dict):
+                warnings.append(
+                    pipeline_warning(
+                        "aspect_ratio_processing_target_node_missing",
+                        "Configured aspect_ratio_processing height target was not found in workflow",
+                        details={"node_id": height_node_id, "axis": "height"},
+                    )
+                )
+                continue
+            height_inputs = height_node.get("inputs")
+            if not isinstance(height_inputs, dict):
+                warnings.append(
+                    pipeline_warning(
+                        "aspect_ratio_processing_target_node_inputs_missing",
+                        "Configured height target does not expose an inputs object",
+                        details={"node_id": height_node_id, "axis": "height"},
+                    )
+                )
+                continue
+
+            if width_node_id == height_node_id:
+                _normalize_resize_image_mask_target(
+                    width_node,
+                    width_inputs,
+                    best["width"],
+                    best["height"],
+                )
+
+            width_inputs[width_param] = best["width"]
+            height_inputs[height_param] = best["height"]
+            applied_nodes.append(
+                {
+                    "width": {
+                        "node_id": width_node_id,
+                        "param": width_param,
+                    },
+                    "height": {
+                        "node_id": height_node_id,
+                        "param": height_param,
+                    },
+                }
+            )
+            continue
+
+        node_id = node_cfg.get("node_id")
+        width_param = node_cfg.get("width_param")
+        height_param = node_cfg.get("height_param")
+        if (
+            not isinstance(node_id, str)
+            or not isinstance(width_param, str)
+            or not isinstance(height_param, str)
+            or not node_id.strip()
+            or not width_param.strip()
+            or not height_param.strip()
+        ):
+            continue
+
+        node = workflow.get(node_id)
+        if not isinstance(node, dict):
+            warnings.append(
+                pipeline_warning(
+                    "aspect_ratio_processing_target_node_missing",
+                    "Configured aspect_ratio_processing target node was not found in workflow",
+                    details={"node_id": node_id},
+                )
+            )
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            warnings.append(
+                pipeline_warning(
+                    "aspect_ratio_processing_target_node_inputs_missing",
+                    "Configured target node does not expose an inputs object",
+                    details={"node_id": node_id},
+                )
+            )
+            continue
+
+        _normalize_resize_image_mask_target(
+            node,
+            inputs,
+            best["width"],
+            best["height"],
+        )
+        inputs[width_param] = best["width"]
+        inputs[height_param] = best["height"]
+        applied_nodes.append(
+            {
+                "node_id": node_id,
+                "width_param": width_param,
+                "height_param": height_param,
+            }
+        )
 
     if not applied_nodes:
         warnings.append(
@@ -518,79 +467,6 @@ def apply_aspect_ratio_processing(
         if isinstance(raw_apply_to, str) and raw_apply_to.strip():
             postprocess_apply_to = raw_apply_to.strip()
 
-    # `postprocess.targets` are resize nodes sitting after the decode. Giving
-    # them the true dimensions makes ComfyUI emit the final size directly, so
-    # the browser never decodes and re-encodes the delivered video. When none
-    # apply — a renamed or removed node — `applied_nodes` stays empty and the
-    # frontend postprocess resizes as before, which is why this degrades
-    # rather than failing.
-    # What the encoder can actually emit, which is what the frontend must be
-    # told to expect and what the in-graph resize node must be given.
-    delivered_width, delivered_height = align_dimensions_for_encoder(
-        true_width, true_height
-    )
-
-    postprocess_targets = (
-        postprocess_cfg.get("targets") if isinstance(postprocess_cfg, dict) else None
-    )
-    declared_postprocess_targets = (
-        len(postprocess_targets) if isinstance(postprocess_targets, list) else 0
-    )
-    postprocess_applied_nodes: list[dict[str, Any]] = []
-    all_visual_outputs_handled = False
-
-    if declared_postprocess_targets and not postprocess_enabled:
-        # The node is wired into the graph and vlo cannot unwire it here, so
-        # leaving it at its authored size would silently deliver that size.
-        # Feeding it the generation size makes it an identity resize (PIL
-        # short-circuits an equal-size resample to a copy), which is what
-        # "postprocess disabled" is documented to mean: outputs stay strided.
-        _apply_target_nodes(
-            workflow,
-            postprocess_targets,
-            best["width"],
-            best["height"],
-            warnings,
-        )
-        warnings.append(
-            pipeline_warning(
-                "aspect_ratio_processing_postprocess_disabled_with_targets",
-                "postprocess.enabled is false but postprocess.targets are "
-                "declared; the resize nodes were neutralised to the generation "
-                "size. Bypass or remove them to disable this cleanly.",
-                details={"declared_targets": declared_postprocess_targets},
-            )
-        )
-    elif declared_postprocess_targets:
-        postprocess_applied_nodes = _apply_target_nodes(
-            workflow,
-            postprocess_targets,
-            delivered_width,
-            delivered_height,
-            warnings,
-        )
-        # Fail closed. The frontend skips resizing *every* output on the
-        # strength of this flag, so a partial application — one node written,
-        # another missing — must not suppress the fallback for the outputs the
-        # missing node was meant to cover.
-        all_visual_outputs_handled = (
-            len(postprocess_applied_nodes) == declared_postprocess_targets
-        )
-        if not all_visual_outputs_handled:
-            warnings.append(
-                pipeline_warning(
-                    "aspect_ratio_processing_postprocess_nodes_not_applied",
-                    "Only "
-                    f"{len(postprocess_applied_nodes)} of "
-                    f"{declared_postprocess_targets} postprocess.targets could "
-                    "be applied; outputs will be resized in the browser instead",
-                    details={
-                        "declared_targets": declared_postprocess_targets,
-                        "applied_targets": len(postprocess_applied_nodes),
-                    },
-                )
-            )
-
     metadata = {
         "enabled": True,
         "requested": {
@@ -613,10 +489,8 @@ def apply_aspect_ratio_processing(
             "enabled": postprocess_enabled,
             "mode": postprocess_mode,
             "apply_to": postprocess_apply_to,
-            "target_width": delivered_width,
-            "target_height": delivered_height,
-            "applied_nodes": postprocess_applied_nodes,
-            "all_visual_outputs_handled": all_visual_outputs_handled,
+            "target_width": true_width,
+            "target_height": true_height,
         },
     }
 

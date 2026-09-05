@@ -102,27 +102,6 @@ function parsePythonFloat(text: string): number | null {
 }
 
 /**
- * H.264 / yuv420p cannot represent an odd dimension, and the encoders in the
- * chain round up rather than down (ComfyUI's VHS combiner pads odd frames
- * before ffmpeg sees them). Mirrors the backend's
- * `align_dimensions_for_encoder` so both agree on the delivered size.
- */
-export const ENCODER_DIMENSION_ALIGNMENT = 2;
-
-export function alignDimensionsForEncoder(
-  width: number,
-  height: number,
-): [number, number] {
-  const align = (value: number): number => {
-    const remainder = value % ENCODER_DIMENSION_ALIGNMENT;
-    return remainder === 0
-      ? value
-      : value + (ENCODER_DIMENSION_ALIGNMENT - remainder);
-  };
-  return [align(width), align(height)];
-}
-
-/**
  * Project resolution is interpreted as the short-edge length,
  * e.g. 720 at 16:9 → 1280×720.
  */
@@ -363,22 +342,12 @@ export function buildAspectRatioProcessingPlan(
   }
 
   const postprocessConfig = config.postprocess;
-  const [deliveredWidth, deliveredHeight] = alignDimensionsForEncoder(
-    trueWidth,
-    trueHeight,
-  );
   const postprocess: AspectRatioProcessingPostprocess = {
     enabled: postprocessConfig?.enabled ?? true,
     mode: "stretch_exact",
     apply_to: "all_visual_outputs",
-    target_width: deliveredWidth,
-    target_height: deliveredHeight,
-    // This path resizes media itself rather than mutating the graph, so no
-    // in-workflow resize node is ever driven — same reason `applied_nodes` is
-    // empty at the top level — and the outputs are therefore never
-    // workflow-sized.
-    applied_nodes: [],
-    all_visual_outputs_handled: false,
+    target_width: trueWidth,
+    target_height: trueHeight,
   };
   if (
     typeof postprocessConfig?.mode === "string" &&

@@ -130,7 +130,6 @@ export interface WorkflowAspectRatioPostprocessConfig {
   enabled?: boolean;
   mode?: "stretch_exact";
   apply_to?: "all_visual_outputs";
-  targets?: Array<AspectRatioTargetNode>;
 }
 
 export interface WorkflowAspectRatioStage {

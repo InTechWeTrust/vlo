@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  alignDimensionsForEncoder,
   buildAspectRatioProcessingPlan,
   deriveTrueDimensionsFromShortEdge,
   findBestStridedDimensions,
@@ -107,22 +106,6 @@ describe("findBestStridedDimensions", () => {
   });
 });
 
-describe("alignDimensionsForEncoder", () => {
-  it("rounds odd dimensions up, matching how the encoders pad", () => {
-    // The three 16:9 ladder rungs whose long edge is odd.
-    expect(alignDimensionsForEncoder(427, 240)).toEqual([428, 240]);
-    expect(alignDimensionsForEncoder(853, 480)).toEqual([854, 480]);
-    expect(alignDimensionsForEncoder(1067, 600)).toEqual([1068, 600]);
-    // ...and their portrait counterparts.
-    expect(alignDimensionsForEncoder(240, 427)).toEqual([240, 428]);
-  });
-
-  it("leaves already-even dimensions untouched", () => {
-    expect(alignDimensionsForEncoder(1280, 720)).toEqual([1280, 720]);
-    expect(alignDimensionsForEncoder(720, 1280)).toEqual([720, 1280]);
-  });
-});
-
 describe("buildAspectRatioProcessingPlan", () => {
   it("builds metadata with strided dims and true-dimension postprocess", () => {
     const { metadata, warnings } = buildAspectRatioProcessingPlan({
@@ -148,24 +131,7 @@ describe("buildAspectRatioProcessingPlan", () => {
       apply_to: "all_visual_outputs",
       target_width: 1280,
       target_height: 720,
-      // This path resizes media itself, so it never drives an in-workflow
-      // resize node and never covers the outputs.
-      applied_nodes: [],
-      all_visual_outputs_handled: false,
     });
-  });
-
-  it("promises an encoder-safe target for an odd rung", () => {
-    const { metadata } = buildAspectRatioProcessingPlan({
-      targetAspectRatio: "16:9",
-      targetResolution: 240,
-      config: { stride: 32, search_steps: 2 },
-    });
-
-    // Asked for 427x240; no yuv420p encoder can emit that.
-    expect(metadata?.requested.width).toBe(427);
-    expect(metadata?.postprocess.target_width).toBe(428);
-    expect(metadata?.postprocess.target_height).toBe(240);
   });
 
   it("warns and returns null without a target aspect ratio", () => {

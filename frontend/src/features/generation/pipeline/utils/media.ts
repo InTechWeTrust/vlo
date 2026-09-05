@@ -179,21 +179,6 @@ export function resolveResizeTarget(
   return { width, height };
 }
 
-/**
- * True only when the workflow itself emitted *every* visual output at the
- * delivered size, so the browser resize — a full decode plus a second lossy
- * encode — can be skipped.
- *
- * Fail-closed on purpose: this reads the backend's explicit verdict, never the
- * length of `applied_nodes`. A stage that declares two resize nodes and writes
- * one has covered only some outputs, and the rest still need resizing here.
- */
-export function didWorkflowSizeAllVisualOutputs(
-  metadata: AspectRatioProcessingMetadata | null | undefined,
-): boolean {
-  return metadata?.postprocess?.all_visual_outputs_handled === true;
-}
-
 // ---------------------------------------------------------------------------
 // Canvas helpers
 // ---------------------------------------------------------------------------

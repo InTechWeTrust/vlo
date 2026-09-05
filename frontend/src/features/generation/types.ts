@@ -85,19 +85,6 @@ export interface AspectRatioProcessingPostprocess {
   apply_to: "all_visual_outputs";
   target_width: number;
   target_height: number;
-  /**
-   * Resize nodes the backend drove with the delivered dimensions. Diagnostic
-   * only — a partial application lands here too, so it must not be used to
-   * decide whether the frontend can skip its own resize.
-   */
-  applied_nodes?: AspectRatioProcessingAppliedNode[];
-  /**
-   * Set only when *every* declared postprocess target applied, meaning ComfyUI
-   * emitted all visual outputs at `target_width`x`target_height` itself. This
-   * is the sole signal that lets the frontend skip resizing; it is fail-closed
-   * and absent on metadata persisted before in-workflow resizing existed.
-   */
-  all_visual_outputs_handled?: boolean;
 }
 
 export interface AspectRatioProcessingMetadata {

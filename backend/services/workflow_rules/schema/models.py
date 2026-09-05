@@ -548,15 +548,6 @@ class WorkflowAspectRatioPostprocessConfig(WorkflowRuleBaseModel):
     enabled: bool = True
     mode: AspectRatioPostprocessMode = "stretch_exact"
     apply_to: AspectRatioPostprocessApplyTo = "all_visual_outputs"
-    """
-    Resize nodes placed after the decode that receive the *requested* (true)
-    dimensions, so ComfyUI emits the final size directly and the browser never
-    re-encodes the result.
-
-    Declaring these asserts that every visual output of the graph flows through
-    them. Outputs that bypass them are delivered at the strided size.
-    """
-    targets: list[AspectRatioTargetNode] = Field(default_factory=list)
 
 
 class WorkflowResolutionLadder(WorkflowRuleBaseModel):

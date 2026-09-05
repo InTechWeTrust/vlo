@@ -170,40 +170,6 @@ function rulesFixture(): WorkflowRules {
   } as unknown as WorkflowRules;
 }
 
-function aspectRatioRulesWithOutputResize(): WorkflowRules {
-  return {
-    version: 3,
-    name: "Output resize",
-    pipeline: [
-      {
-        id: "aspect_ratio",
-        kind: "aspect_ratio",
-        targets: [
-          {
-            width: { node_id: "145", param: "value" },
-            height: { node_id: "145", param: "value" },
-          },
-        ],
-        config: {
-          postprocess: {
-            enabled: true,
-            targets: [
-              {
-                width: { node_id: "152", param: "resize_type.width" },
-                height: { node_id: "152", param: "resize_type.height" },
-              },
-              {
-                width: { node_id: "153", param: "resize_type.width" },
-                height: { node_id: "153", param: "resize_type.height" },
-              },
-            ],
-          },
-        },
-      },
-    ],
-  } as unknown as WorkflowRules;
-}
-
 describe("workflowState rule pruning", () => {
   it("returns stable empty/default rules for absent workflows", () => {
     expect(pruneWorkflowRulesForWorkflows([], null)).toBe(EMPTY_WORKFLOW_RULES);
@@ -450,45 +416,6 @@ describe("workflowState compatibility helpers", () => {
     expect(loss.mediaFallbackCount).toBe(4);
     expect(loss.hasLoss).toBe(true);
     expect(findLostRuleFragments(null, null).hasLoss).toBe(false);
-  });
-
-  it("prunes output resize targets that reference a removed node", () => {
-    const rules = aspectRatioRulesWithOutputResize();
-
-    const pruned = pruneWorkflowRulesForWorkflows(
-      [workflow({ "145": "PrimitiveInt", "152": "ResizeImageMaskNode" })],
-      rules,
-    );
-
-    const stage = (pruned.pipeline ?? []).find(
-      (candidate) => candidate.kind === "aspect_ratio",
-    );
-    if (stage?.kind !== "aspect_ratio") {
-      throw new Error("aspect_ratio stage was pruned away");
-    }
-    // The surviving node keeps its target; the removed "153" does not linger
-    // as a stale reference the backend would later report as a partial apply.
-    expect(stage.config?.postprocess?.targets).toEqual([
-      {
-        width: { node_id: "152", param: "resize_type.width" },
-        height: { node_id: "152", param: "resize_type.height" },
-      },
-    ]);
-  });
-
-  it("counts a dropped output resize target as loss", () => {
-    const rules = aspectRatioRulesWithOutputResize();
-    const next = pruneWorkflowRulesForWorkflows(
-      [workflow({ "145": "PrimitiveInt", "152": "ResizeImageMaskNode" })],
-      rules,
-    );
-
-    const loss = findLostRuleFragments(rules, next);
-    // The stage survives, so stage ids report nothing — but losing one target
-    // silently hands those outputs back to the browser resize.
-    expect(loss.pipelineStageIds).toEqual([]);
-    expect(loss.postprocessTargetCount).toBe(1);
-    expect(loss.hasLoss).toBe(true);
   });
 
   it("counts a dropped effect-switch case as loss", () => {

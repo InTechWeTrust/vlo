@@ -777,13 +777,7 @@ model-valid (width, height) pair and writes it back into the workflow.
   "postprocess": {
     "enabled": true,
     "mode": "stretch_exact",
-    "apply_to": "all_visual_outputs",
-    "targets": [
-      {
-        "width": { "node_id": "152", "param": "resize_type.width" },
-        "height": { "node_id": "152", "param": "resize_type.height" }
-      }
-    ]
+    "apply_to": "all_visual_outputs"
   }
 }
 ```
@@ -797,7 +791,6 @@ model-valid (width, height) pair and writes it back into the workflow.
 | `postprocess.enabled`  | Whether to post-stretch outputs back to the requested aspect           |
 | `postprocess.mode`     | Currently only `"stretch_exact"`                                       |
 | `postprocess.apply_to` | Currently only `"all_visual_outputs"`                                  |
-| `postprocess.targets`  | Resize nodes after the decode that receive the *requested* size         |
 
 ### Targets
 
@@ -805,64 +798,6 @@ Each target is a pair of `{ width, height }` param refs that receive the
 resolved dimensions. Multiple targets are supported for workflows where
 several nodes need the same (w, h) — for example a sampler latent size and
 a mask resize node.
-
-Targets receive the **strided** size — the model-valid canvas the search
-picked, which is deliberately not the size the user asked for.
-
-### Resizing the output inside the workflow
-
-The requested size is restored by stretching the outputs back. By default the
-browser does that after download, which costs a full decode and a second lossy
-encode of every frame.
-
-`postprocess.targets` moves that work into the graph. Point it at a resize node
-placed **after** the decode and before whatever saves or combines the frames,
-and the backend drives it with the *requested* dimensions instead of the
-strided ones. ComfyUI then emits the final size directly and the frontend
-leaves the download untouched. The encode happens once, at the final size, with
-the workflow's own encoder settings.
-
-```text
-VAEDecode ──▶ ResizeImageMaskNode ──▶ VHS_VideoCombine
-              (postprocess.targets)
-   strided          requested             requested
-```
-
-Three things to get right:
-
-- **Declare the stage's own `targets` too.** When a stage declares no
-  top-level targets, auto-discovery fills them in from the graph — and it would
-  happily pick up the output resize node and feed it the strided size.
-- **Every visual output must flow through the declared nodes.** Anything that
-  bypasses them is delivered at the strided size, because the frontend resize
-  is skipped once *all* declared targets apply.
-- **`enabled: false` does not remove the node.** vlo cannot unwire a node that
-  is in your graph, so a disabled postprocess points the declared nodes at the
-  generation size instead — an identity resize, leaving outputs strided as
-  documented — and warns
-  (`aspect_ratio_processing_postprocess_disabled_with_targets`). To disable it
-  cleanly, bypass or remove the node.
-
-Fulfillment is fail-closed. The stage reports
-`postprocess.all_visual_outputs_handled` only when *every* declared target was
-written, and that flag alone is what suppresses the frontend resize. A partial
-application — two nodes declared, one missing — warns
-(`aspect_ratio_processing_postprocess_nodes_not_applied`) and hands all outputs
-back to the frontend, because the outputs the missing node covered are still
-strided.
-
-### Delivered size vs requested size
-
-The size written into these nodes is the requested size rounded **up** to an
-even number on each axis, because H.264 / yuv420p cannot represent an odd
-dimension and every encoder in the chain pads rather than crops. A 16:9 project
-at the 240 rung asks for 427x240 and is delivered 428x240; the metadata records
-`requested` as asked and `postprocess.target_width` / `target_height` as
-delivered. Three of the five 16:9 rungs are affected, and their 9:16
-counterparts.
-
-A generation mask attached to the result is always resized in the frontend: it
-is built for the strided dispatch and never passes through the graph.
 
 ### Resolution ladder vs. resolutions
 
