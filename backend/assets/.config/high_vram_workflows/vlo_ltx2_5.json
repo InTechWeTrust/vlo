@@ -1,8 +1,8 @@
 {
   "id": "e17720c0-7de4-4ca6-9db4-567ef3a55cfb",
   "revision": 0,
-  "last_node_id": 245,
-  "last_link_id": 345,
+  "last_node_id": 246,
+  "last_link_id": 346,
   "nodes": [
     {
       "id": 70,
@@ -1316,7 +1316,7 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [271]
+          "links": [346]
         }
       ],
       "title": "Get_final_video",
@@ -3567,12 +3567,97 @@
       "bgcolor": "rgba(24,24,27,.9)"
     },
     {
+      "id": 246,
+      "type": "ResizeImageMaskNode",
+      "title": "Output Resize",
+      "pos": [3210, 3490],
+      "size": [270, 154],
+      "flags": {},
+      "order": 109,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "input",
+          "name": "input",
+          "type": "IMAGE,MASK",
+          "link": 346
+        },
+        {
+          "localized_name": "resize_type",
+          "name": "resize_type",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "resize_type"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "resize_type.width",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "resize_type.height",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crop",
+          "name": "resize_type.crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_type.crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "scale_method",
+          "name": "scale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "scale_method"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "resized",
+          "name": "resized",
+          "type": "IMAGE",
+          "links": [271]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResizeImageMaskNode",
+        "cnr_id": "comfy-core",
+        "ver": "0.19.3",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": ["scale dimensions", 1280, 720, "disabled", "lanczos"],
+      "widgets_values_named": {
+        "resize_type": "scale dimensions",
+        "resize_type.width": 1280,
+        "resize_type.height": 720,
+        "resize_type.crop": "disabled",
+        "scale_method": "lanczos"
+      }
+    },
+    {
       "id": 43,
       "type": "VHS_VideoCombine",
       "pos": [3060, 3260],
       "size": [590, 675.75],
       "flags": {},
-      "order": 109,
+      "order": 110,
       "mode": 0,
       "inputs": [
         {
@@ -4008,7 +4093,7 @@
     [263, 198, 0, 197, 0, "MODEL"],
     [264, 197, 0, 199, 0, "MODEL"],
     [265, 200, 0, 36, 0, "MODEL"],
-    [271, 203, 0, 43, 0, "IMAGE"],
+    [271, 246, 0, 43, 0, "IMAGE"],
     [274, 207, 0, 36, 2, "CONDITIONING"],
     [275, 208, 0, 36, 1, "CONDITIONING"],
     [279, 16, 0, 10, 0, "CONDITIONING"],
@@ -4050,7 +4135,8 @@
     [342, 229, 0, 239, 0, "AUDIO"],
     [343, 239, 0, 228, 0, "AUDIO"],
     [344, 244, 0, 44, 0, "IMAGE"],
-    [345, 245, 0, 48, 0, "IMAGE"]
+    [345, 245, 0, 48, 0, "IMAGE"],
+    [346, 203, 0, 246, 0, "IMAGE"]
   ],
   "groups": [
     {

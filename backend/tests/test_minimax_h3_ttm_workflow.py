@@ -35,6 +35,17 @@ def _only(workflow: dict[str, Any], node_type: str) -> dict[str, Any]:
     return matches[0]
 
 
+def _postprocess_target_node_ids() -> set[int]:
+    """Node ids the aspect-ratio stage drives with the delivered dimensions."""
+    rules, warnings = load_rules_model_for_workflow(WORKFLOW_DIRS[0], WORKFLOW_NAME)
+    assert warnings == []
+    stage = get_pipeline_stage(rules, "aspect_ratio")
+    assert stage is not None
+    return {
+        int(target.width.node_id) for target in stage.config.postprocess.targets
+    }
+
+
 def test_ttm_workflow_is_packaged_in_both_modes():
     default_workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
     high_vram_workflow = _load_json(WORKFLOW_DIRS[1] / WORKFLOW_NAME)
@@ -132,12 +143,32 @@ def test_reference_latents_and_sampled_latent_share_a_frame_count():
     for consumer, param in [(h3, "length")] + [(t, "num_frames") for t in trims]:
         assert origin_of(consumer, param) == snap["id"]
 
-    # The same canvas feeds the resize nodes and the latent the sampler starts from.
+    # The same canvas feeds the *input* resize nodes and the latent the sampler
+    # starts from. The output resize is deliberately excluded: it restores the
+    # requested size after generation, so wiring it to the generation canvas
+    # would defeat it.
     width = origin_of(h3, "width")
     height = origin_of(h3, "height")
-    for resize in _nodes_by_type(workflow, "ResizeImageMaskNode"):
+    output_resize_ids = _postprocess_target_node_ids()
+    input_resizes = [
+        node
+        for node in _nodes_by_type(workflow, "ResizeImageMaskNode")
+        if node["id"] not in output_resize_ids
+    ]
+    assert input_resizes, "expected at least one input resize node"
+    for resize in input_resizes:
         assert origin_of(resize, "resize_type.width") == width
         assert origin_of(resize, "resize_type.height") == height
+
+    # The output resize takes its dimensions from the aspect-ratio stage at
+    # dispatch, so its width/height must stay unlinked widgets for the backend
+    # to write into.
+    for node_id in output_resize_ids:
+        node = by_id[node_id]
+        assert node["type"] == "ResizeImageMaskNode"
+        for param in ("resize_type.width", "resize_type.height"):
+            spec = next(i for i in node["inputs"] if i["name"] == param)
+            assert spec["link"] is None, f"{param} must not be wired to the canvas"
 
     encode = _only(workflow, "VAEEncode")
     assert origin_of(_only(workflow, "vloTimeToMove"), "reference_latents") == encode["id"]

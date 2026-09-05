@@ -351,6 +351,186 @@ def test_aspect_ratio_processing_normalizes_resize_image_mask_targets_in_v3_sche
     assert workflow["693"]["inputs"]["resize_type.height"] % 32 == 0
 
 
+def _postprocess_targets_workflow_and_rules():
+    workflow = {
+        "145": {"class_type": "PrimitiveInt", "inputs": {"value": 0}},
+        "146": {"class_type": "PrimitiveInt", "inputs": {"value": 0}},
+        "152": {
+            "class_type": "ResizeImageMaskNode",
+            "inputs": {
+                "resize_type": "scale by multiplier",
+                "scale_method": "lanczos",
+                "input": ["122", 0],
+            },
+        },
+    }
+    rules = {
+        "version": 3,
+        "pipeline": [
+            {
+                "id": "aspect_ratio",
+                "kind": "aspect_ratio",
+                "config": {
+                    "stride": 32,
+                    "search_steps": 2,
+                    "resolution_ladder": {"min": 240, "max": 720, "steps": 5},
+                    "postprocess": {
+                        "enabled": True,
+                        "mode": "stretch_exact",
+                        "apply_to": "all_visual_outputs",
+                        "targets": [
+                            {
+                                "width": {
+                                    "node_id": "152",
+                                    "param": "resize_type.width",
+                                },
+                                "height": {
+                                    "node_id": "152",
+                                    "param": "resize_type.height",
+                                },
+                            }
+                        ],
+                    },
+                },
+                "targets": [
+                    {
+                        "width": {"node_id": "145", "param": "value"},
+                        "height": {"node_id": "146", "param": "value"},
+                    }
+                ],
+            }
+        ],
+    }
+    return workflow, rules
+
+
+def test_aspect_ratio_postprocess_targets_receive_true_dimensions():
+    workflow, rules = _postprocess_targets_workflow_and_rules()
+
+    metadata, warnings = apply_aspect_ratio_processing(workflow, rules, "16:9", 720)
+
+    assert warnings == []
+    assert metadata is not None
+
+    # The generation canvas is strided; the post-decode resize is not.
+    assert workflow["145"]["inputs"]["value"] == metadata["strided"]["width"]
+    assert workflow["146"]["inputs"]["value"] == metadata["strided"]["height"]
+    assert workflow["145"]["inputs"]["value"] % 32 == 0
+    assert workflow["146"]["inputs"]["value"] % 32 == 0
+
+    assert workflow["152"]["inputs"]["resize_type"] == "scale dimensions"
+    assert workflow["152"]["inputs"]["resize_type.crop"] == "disabled"
+    assert workflow["152"]["inputs"]["resize_type.width"] == 1280
+    assert workflow["152"]["inputs"]["resize_type.height"] == 720
+    # The authored scale method survives normalization.
+    assert workflow["152"]["inputs"]["scale_method"] == "lanczos"
+
+    # The two dimension sets genuinely differ, so this test would catch the
+    # postprocess target being fed the strided numbers by mistake.
+    assert (
+        metadata["strided"]["width"],
+        metadata["strided"]["height"],
+    ) != (1280, 720)
+
+    assert metadata["postprocess"]["target_width"] == 1280
+    assert metadata["postprocess"]["target_height"] == 720
+    assert metadata["postprocess"]["applied_nodes"] == [
+        {
+            "width": {"node_id": "152", "param": "resize_type.width"},
+            "height": {"node_id": "152", "param": "resize_type.height"},
+        }
+    ]
+    assert metadata["postprocess"]["all_visual_outputs_handled"] is True
+
+
+def test_aspect_ratio_postprocess_targets_degrade_when_node_is_missing():
+    workflow, rules = _postprocess_targets_workflow_and_rules()
+    del workflow["152"]
+
+    metadata, warnings = apply_aspect_ratio_processing(workflow, rules, "16:9", 720)
+
+    assert metadata is not None
+    # The strided dispatch still applies; only the in-workflow resize is lost.
+    assert workflow["145"]["inputs"]["value"] == metadata["strided"]["width"]
+    assert metadata["postprocess"]["applied_nodes"] == []
+    assert metadata["postprocess"]["all_visual_outputs_handled"] is False
+
+    codes = {warning["code"] for warning in warnings}
+    assert "aspect_ratio_processing_target_node_missing" in codes
+    assert "aspect_ratio_processing_postprocess_nodes_not_applied" in codes
+
+
+def test_aspect_ratio_postprocess_disabled_neutralises_the_output_resize_node():
+    """
+    A disabled postprocess cannot unwire a node that is already in the graph.
+    Leaving it at its authored size would deliver that size, so it is pointed
+    at the generation size instead — an identity resize, which is what
+    "outputs stay strided" means in practice.
+    """
+    workflow, rules = _postprocess_targets_workflow_and_rules()
+    rules["pipeline"][0]["config"]["postprocess"]["enabled"] = False
+    workflow["152"]["inputs"]["resize_type.width"] = 1280
+    workflow["152"]["inputs"]["resize_type.height"] = 720
+
+    metadata, warnings = apply_aspect_ratio_processing(workflow, rules, "16:9", 240)
+
+    assert metadata is not None
+    assert metadata["postprocess"]["enabled"] is False
+    assert metadata["postprocess"]["applied_nodes"] == []
+    assert metadata["postprocess"]["all_visual_outputs_handled"] is False
+
+    # The authored 1280x720 would otherwise have been delivered for a 240p
+    # request; the node now matches the generation canvas exactly.
+    assert workflow["152"]["inputs"]["resize_type.width"] == metadata["strided"]["width"]
+    assert (
+        workflow["152"]["inputs"]["resize_type.height"] == metadata["strided"]["height"]
+    )
+    assert [w["code"] for w in warnings] == [
+        "aspect_ratio_processing_postprocess_disabled_with_targets"
+    ]
+
+
+def test_aspect_ratio_postprocess_target_is_encoder_aligned():
+    """16:9 at 240 wants 427x240; no yuv420p encoder can emit an odd width."""
+    workflow, rules = _postprocess_targets_workflow_and_rules()
+
+    metadata, warnings = apply_aspect_ratio_processing(workflow, rules, "16:9", 240)
+
+    assert warnings == []
+    assert metadata is not None
+    # The request is recorded as asked...
+    assert metadata["requested"]["width"] == 427
+    # ...but what is promised and written is what an encoder can produce.
+    assert metadata["postprocess"]["target_width"] == 428
+    assert metadata["postprocess"]["target_height"] == 240
+    assert workflow["152"]["inputs"]["resize_type.width"] == 428
+    assert workflow["152"]["inputs"]["resize_type.height"] == 240
+    assert metadata["postprocess"]["all_visual_outputs_handled"] is True
+
+
+def test_aspect_ratio_postprocess_partial_application_does_not_claim_coverage():
+    """
+    One written node must not suppress the frontend fallback for the outputs a
+    second, missing node was meant to cover.
+    """
+    workflow, rules = _postprocess_targets_workflow_and_rules()
+    rules["pipeline"][0]["config"]["postprocess"]["targets"].append(
+        {
+            "width": {"node_id": "153", "param": "resize_type.width"},
+            "height": {"node_id": "153", "param": "resize_type.height"},
+        }
+    )
+
+    metadata, warnings = apply_aspect_ratio_processing(workflow, rules, "16:9", 720)
+
+    assert metadata is not None
+    assert len(metadata["postprocess"]["applied_nodes"]) == 1
+    assert metadata["postprocess"]["all_visual_outputs_handled"] is False
+
+    codes = {w["code"] for w in warnings}
+    assert "aspect_ratio_processing_postprocess_nodes_not_applied" in codes
+
+
 def test_ic_edit_rules_allow_frontend_control_prompt_enhancer_rewrites():
     rules_model, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,

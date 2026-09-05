@@ -1,8 +1,8 @@
 {
   "id": "b7f3c2d1-4a8e-4f52-9c31-6d0e8a7b45f2",
   "revision": 0,
-  "last_node_id": 104,
-  "last_link_id": 49,
+  "last_node_id": 105,
+  "last_link_id": 50,
   "nodes": [
     {
       "id": 1,
@@ -761,7 +761,7 @@
           "name": "IMAGE",
           "type": "IMAGE",
           "links": [
-            47
+            50
           ]
         }
       ],
@@ -1157,6 +1157,105 @@
       }
     },
     {
+      "id": 105,
+      "type": "ResizeImageMaskNode",
+      "title": "Output Resize",
+      "pos": [
+        1853.9732747544435,
+        5161.702952966518
+      ],
+      "size": [
+        270,
+        154
+      ],
+      "flags": {},
+      "order": 45,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "input",
+          "name": "input",
+          "type": "IMAGE,MASK",
+          "link": 50
+        },
+        {
+          "localized_name": "resize_type",
+          "name": "resize_type",
+          "type": "COMFY_DYNAMICCOMBO_V3",
+          "widget": {
+            "name": "resize_type"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "resize_type.width",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "resize_type.height",
+          "type": "INT",
+          "widget": {
+            "name": "resize_type.height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crop",
+          "name": "resize_type.crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "resize_type.crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "scale_method",
+          "name": "scale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "scale_method"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "resized",
+          "name": "resized",
+          "type": "IMAGE",
+          "links": [
+            47
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ResizeImageMaskNode",
+        "cnr_id": "comfy-core",
+        "ver": "0.19.3",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "scale dimensions",
+        1280,
+        720,
+        "disabled",
+        "lanczos"
+      ],
+      "widgets_values_named": {
+        "resize_type": "scale dimensions",
+        "resize_type.width": 1280,
+        "resize_type.height": 720,
+        "resize_type.crop": "disabled",
+        "scale_method": "lanczos"
+      }
+    },
+    {
       "id": 63,
       "type": "VHS_VideoCombine",
       "pos": [
@@ -1168,7 +1267,7 @@
         334
       ],
       "flags": {},
-      "order": 45,
+      "order": 46,
       "mode": 0,
       "inputs": [
         {
@@ -2580,7 +2679,7 @@
     ],
     [
       47,
-      41,
+      105,
       0,
       63,
       0,
@@ -2601,6 +2700,14 @@
       63,
       4,
       "FLOAT"
+    ],
+    [
+      50,
+      41,
+      0,
+      105,
+      0,
+      "IMAGE"
     ]
   ],
   "groups": [

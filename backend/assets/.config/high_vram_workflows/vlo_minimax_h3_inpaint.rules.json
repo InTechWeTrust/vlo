@@ -329,7 +329,13 @@
         "postprocess": {
           "enabled": true,
           "mode": "stretch_exact",
-          "apply_to": "all_visual_outputs"
+          "apply_to": "all_visual_outputs",
+          "targets": [
+            {
+              "width": { "node_id": "96", "param": "resize_type.width" },
+              "height": { "node_id": "96", "param": "resize_type.height" }
+            }
+          ]
         }
       },
       "targets": [
