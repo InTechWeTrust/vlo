@@ -71,7 +71,10 @@ export async function cropVideoToRect(
           height: cropHeight,
         },
         ...(options.bitrate !== undefined ? { bitrate: options.bitrate } : {}),
-        hardwareAcceleration: "prefer-hardware",
+        // `no-preference`, not `prefer-hardware`: mediabunny fails closed on
+        // `isConfigSupported`, so preferring hardware throws where software
+        // encode would have worked. See TextureOutputEncoder for the rationale.
+        hardwareAcceleration: "no-preference",
       },
     });
     if (options.signal) {

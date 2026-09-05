@@ -431,7 +431,11 @@ export async function resizeVideoToExactDimensions(
         width: target.width,
         height: target.height,
         fit: "fill",
-        hardwareAcceleration: "prefer-hardware",
+        // `no-preference`, not `prefer-hardware`: mediabunny fails closed on
+        // `isConfigSupported`, so preferring hardware throws where software
+        // encode would have worked — and the callers here swallow that into a
+        // silently unprocessed output. See TextureOutputEncoder for the rationale.
+        hardwareAcceleration: "no-preference",
       },
     });
     await conversion.execute();
@@ -497,7 +501,11 @@ export async function cropVideoToAspectRatio(
         width: cropTarget.width,
         height: cropTarget.height,
         fit: "cover",
-        hardwareAcceleration: "prefer-hardware",
+        // `no-preference`, not `prefer-hardware`: mediabunny fails closed on
+        // `isConfigSupported`, so preferring hardware throws where software
+        // encode would have worked — and the callers here swallow that into a
+        // silently unprocessed output. See TextureOutputEncoder for the rationale.
+        hardwareAcceleration: "no-preference",
       },
     });
     await conversion.execute();

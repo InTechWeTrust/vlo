@@ -105,23 +105,28 @@ const REQUIRED_CONFIGS: MediaConfigSpec[] = [
  * them would fail the capability and playback canaries for a capability they
  * never touch. Specs that encode should assert these explicitly.
  *
- * These mirror what `TextureOutputEncoder.ts:187-192` actually issues for a
- * 1080p WebM bake — including `hardwareAcceleration: "prefer-hardware"`, which
- * is the whole point. An earlier version of this file probed 640x360
- * `vp09.00.10.08` with no acceleration preference; that combination is
- * supported in software and reported a false all-clear for a configuration the
- * app never issues.
+ * These mirror what `TextureOutputEncoder.ts:186-202` actually issues for a
+ * 1080p WebM bake. An earlier version of this file probed 640x360
+ * `vp09.00.10.08`; that combination is supported in software and reported a
+ * false all-clear for a configuration the app never issues. The resolution and
+ * codec profile are the part that must stay faithful.
+ *
+ * The acceleration hint must stay faithful too, in the other direction: the
+ * encoder issues `no-preference`, so probing `prefer-hardware` reported a false
+ * *failure* on machines with no hardware VP9 encoder — exactly the SwiftShader
+ * case — and pointed the reader at a hardware red herring for an export the app
+ * would have completed in software.
  */
 export const ENCODE_CONFIGS: MediaConfigSpec[] = [
     {
         kind: 'video-encode',
-        label: 'VP9 1080p bake output (TextureOutputEncoder, prefer-hardware)',
+        label: 'VP9 1080p bake output (TextureOutputEncoder, no-preference)',
         config: {
             codec: 'vp09.00.40.08',
             width: 1920,
             height: 1080,
             bitrate: 6_000_000,
-            hardwareAcceleration: 'prefer-hardware',
+            hardwareAcceleration: 'no-preference',
         },
     },
     {
