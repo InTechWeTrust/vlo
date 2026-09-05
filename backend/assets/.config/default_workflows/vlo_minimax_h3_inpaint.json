@@ -2,7 +2,7 @@
   "id": "5307784b-d1d0-403e-9f5b-6d184c299114",
   "revision": 0,
   "last_node_id": 96,
-  "last_link_id": 155,
+  "last_link_id": 156,
   "nodes": [
     {
       "id": 3,
@@ -1986,6 +1986,14 @@
             "name": "length"
           },
           "link": 137
+        },
+        {
+          "name": "use_embedded_video_audio",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "use_embedded_video_audio"
+          },
+          "link": 156
         }
       ],
       "outputs": [
@@ -2566,7 +2574,9 @@
           "name": "use audio",
           "shape": 6,
           "type": "BOOLEAN",
-          "links": null
+          "links": [
+            156
+          ]
         }
       ],
       "properties": {
@@ -4174,6 +4184,14 @@
       96,
       0,
       "IMAGE"
+    ],
+    [
+      156,
+      84,
+      1,
+      81,
+      10,
+      "BOOLEAN"
     ]
   ],
   "groups": [
