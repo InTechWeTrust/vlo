@@ -32,6 +32,12 @@
 /frontend/src/testUtils/comfyBridgeSubgraph.ts extension-surface=fixture
 /backend/tests/test_extension*.py extension-surface=fixture
 /backend/tests/test_backend_extension_runtime.py extension-surface=fixture
+# Conformance suites that drive an out-of-tree package installed into the
+# git-ignored extension root, behind an on-disk presence check. They exercise
+# the seams rather than implementing them, so they are fixtures despite living
+# under the host spine above.
+/frontend/src/features/extensions/views/__tests__/MinimaxSubjectsConformance.test.tsx extension-surface=fixture
+/frontend/src/features/extensions/views/__tests__/minimaxPromptPackageLoader.ts extension-surface=fixture
 
 # Distributed frontend adapters that dispatch or persist extension behaviour.
 # gradeSchema owns the V1 grade parameter contract that `api.color.grade` mirrors;
