@@ -42,7 +42,16 @@ Use `openModal(localId, input?)` to open only the caller's modal. Keep input and
 result finite JSON. Handle an `undefined` result as cancellation or disposal.
 Omitted modal size defaults to `medium`.
 
-Register `kind: "trusted-view"` at one of five `defaultRegion` values:
+**A modal cannot accept library drags.** The modal host is app-wide — it has to
+work on the projects page, before any project is open — so it mounts *outside*
+the editor's drag context. `runtime.panelUi`'s `AssetDropSlot` and
+`AssetBatchDropSlot` use the host's own dnd-kit instance, which means an
+extension needs no drag library, but also that a drop slot inside a modal
+**never fires, and produces no error to debug.** View regions mount inside that
+context and work; for a non-blocking workspace that takes drags, use
+`editor-overlay`.
+
+Register `kind: "trusted-view"` at one of six `defaultRegion` values:
 
 - `"right-sidebar"` — clip and generation editors;
 - `"left-sidebar"` — an input-source tab alongside Assets, Text, Composite,
@@ -51,7 +60,10 @@ Register `kind: "trusted-view"` at one of five `defaultRegion` values:
 - `"player-aside"` — a column beside the player canvas, for tools that have to
   sit next to the picture. It takes no space until something registers there;
 - `"bottom-dock"` — the dock between the player and the timeline, where the
-  video scopes live.
+  video scopes live;
+- `"editor-overlay"` — a draggable, resizable panel floating over the editor,
+  for a workspace that must stay open while the user works in the surface
+  behind it. Like the bottom dock it starts closed.
 
 Use `openView(localId)` to select it. Views mount lazily on first selection, then
 remain mounted to preserve state. Observe the `active` prop and pause animation
@@ -249,6 +261,11 @@ layout model and translate it to the chosen model's JSON only at commit time.
 `loading`/`ready`/`error`, the panel inputs, `canSubmit`, `busy`, and the node
 catalogue: each node's `id`, `classType`, `title`, `mode`, and widgets.
 
+A panel input carries `value` for a **text input only**; a media input's
+contents are in `media`, and the batch ceiling in `repeatable`. See "Read what
+is attached to a media input" below — a media slot is not "present but empty"
+just because `value` is absent.
+
 `instanceId` is `null` until the ComfyUI bridge reports identity, and a node `id`
 is an execution ID — `<id>` at the root, `<instanceId>:<innerId>` inside a
 subgraph instance. Match nodes by `classType` and widget metadata. There are no
@@ -294,9 +311,136 @@ function LoaderPicker({ api }: { api: ExtensionGenerationApi }) {
 }
 ```
 
-Register that component through `context.api.ui.registerComponent()` in the
-`generation.inputs.after` slot and close over `context.api.generation`; there is
-no separate generation panel API.
+### Where that component goes
+
+There are two placements, and the difference is *who decides where it appears*:
+
+- **`api.generation.ui.registerSection()`** — the body of a panel section the
+  *workflow* selects. The workflow's rules sidecar carries the placement half
+  (`extension_section` with your `extension_id`, a `contribution_id` matching
+  the section's `id`, and an optional `config` object your component receives).
+  Use this when a particular workflow should decide whether and where your UI
+  shows up, which is what you want for anything workflow-specific.
+- **`api.ui.registerComponent()`** in a host slot such as
+  `generation.inputs.after` — a component that appears for *every* workflow.
+  Use this when the extension, not the workflow, owns the decision.
+
+Both close over `context.api.generation` for reads and writes.
+
+```ts
+context.api.generation.ui.registerSection({
+  id: "loader-picker",
+  apiVersion: 1,
+  kind: "trusted-react",
+  component: LoaderPicker,
+});
+```
+
+### Accepting library drags
+
+`runtime.panelUi` exports `AssetDropSlot` and `AssetBatchDropSlot`, which use
+the *host's own* dnd-kit instance. An extension needs no drag library of its
+own — but it does need to be mounted inside the editor's drag context:
+
+- **View regions are inside it.** `left-sidebar`, `right-sidebar`,
+  `player-aside`, `bottom-dock`, and `editor-overlay` all work.
+- **Modals are not.** `ui.registerModal` mounts app-wide, because it has to
+  work on the projects page before any project is open. A drop slot inside a
+  modal **never fires, with no error to debug.**
+
+If you want a non-blocking workspace that stays open over the editor and takes
+drags, register a view in `editor-overlay` and open it with `openView`.
+
+## Read what is attached to a media input
+
+`ExtensionGenerationInputSnapshot.value` is **text inputs only**. A media
+input's contents are in `media`, an ordered list of the slots that are actually
+filled:
+
+```ts
+const references = api
+  .getSession()
+  ?.inputs.find((input) => input.id === "10:images")?.media ?? [];
+
+for (const item of references) {
+  // item.ordinal is the delivery position — the number a reference tag counts.
+  // Never infer order from item.slotId.
+  console.log(item.ordinal, item.displayName, item.mediaType);
+}
+```
+
+Four things about this list decide whether your code is correct:
+
+- **`ordinal` counts filled slots**, matching what the backend's batch loader
+  and ComfyUI's `Autogrow` expansion do. It is not the slot index and not the
+  array index of some wider fixed-size list.
+- **`mediaType` is what the slot delivers, not what the asset is.** A video
+  attached to an *audio* input contributes its soundtrack and reads as `audio`.
+- **`hasAudio` is `boolean | null`, and `null` is not `false`.** It means the
+  host cannot know yet: an unrendered timeline selection, or a video ingested
+  before the flag was probed. Code that treats `null` as "no soundtrack" will
+  be wrong about exactly the cases that matter.
+- **A slot being prepared before its value exists is absent from the list, but
+  it is not free.** It appears in `reservedSlotIds` instead, and once its value
+  lands it moves into `media` with `preparing: true` until it is final. The
+  room left in a batch is `repeatable.max - media.length -
+  reservedSlotIds.length`, never `max - media.length`.
+
+`repeatable` on the input tells you the batch ceiling and which per-item switch
+ids it offers; each item's `options` tells you which of them apply to *that*
+item, with their current state.
+
+## Write media inputs
+
+The same labelled transaction carries `attachAsset`, `moveMedia`,
+`removeMedia`, and `setMediaOption`. Media commands are **ordered and
+cumulative** — each is judged against the state the ones before it left — so
+attaching a set of references and switching one on is a single atomic write:
+
+```ts
+const result = api.transaction("Attach subject", (t) => {
+  t.attachAsset("10:images", firstAssetId, { itemOptions: { audio: true } });
+  t.attachAsset("10:images", secondAssetId); // takes the next slot
+});
+```
+
+Set a new item's switches through `attachAsset`'s `itemOptions`, not a
+following `setMediaOption`: the item you just staged has no slot id to name
+until the transaction commits, and `setMediaOption` addresses items that
+already exist. Positions are ordinals; which *slot* an attach lands in is the
+host's to decide, and it skips slots reserved for a value still being produced.
+
+Every media write is validated exactly as the equivalent drag would be: you
+cannot place an asset a user could not drag into the same slot. Attaching a
+silent video to an audio input fails with `asset_type_rejected`, just as the
+drop target would refuse it. The refusals worth branching on are
+`asset_not_found`, `asset_type_rejected`, `batch_full`,
+`ordinal_out_of_range`, `input_not_repeatable`, `media_not_found`, and
+`option_not_available`.
+
+`changed` in the result means something actually moved. A reorder onto the
+position an item already holds, or a switch written to the value it already
+has, validates but reports `changed: false` — the same rule text and widget
+writes follow, so it is safe to gate follow-up work on.
+
+## Claim a text input
+
+An extension that composes a prompt from structured parts needs the box it
+writes to stop taking free edits behind its back:
+
+```ts
+const claimed = api.generation.claimTextInput("6:text", {
+  reason: "The prompt composer is writing this prompt.",
+  onRevoked: () => markOutOfSync(),
+});
+```
+
+While claimed, the panel renders that box read-only with your `reason` and an
+"Edit anyway" control. If the user takes it back, the claim is gone and
+`onRevoked` fires — **stop tracking the text there rather than overwriting what
+the user then types.** One claim per input: a second fails with
+`input_already_claimed` rather than displacing the first. Dispose the
+registration to release it; claims die with the activation either way.
 
 ## Write a workflow widget
 

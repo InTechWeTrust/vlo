@@ -1,12 +1,15 @@
 import { serializeFiniteJson } from "../../generation/utils/finiteJson";
 import type {
   GenerationEditableWidgetSnapshot,
+  GenerationInputSnapshot,
+  GenerationMediaItemSnapshot,
   GenerationNodeSnapshot,
   GenerationSessionSnapshot,
   GenerationWidgetSnapshot,
 } from "../../generation/services/generationSessionTypes";
 import type {
   ExtensionGenerationInputSnapshot,
+  ExtensionGenerationMediaItem,
   ExtensionGenerationNodeSnapshot,
   ExtensionGenerationSessionSnapshot,
   ExtensionGenerationWidgetSnapshot,
@@ -58,6 +61,12 @@ export const GENERATION_SNAPSHOT_LIMITS = {
   /** Nesting depth of one widget value or default. */
   valueDepth: 8,
   inputs: 128,
+  /** Attached media items published for one input. */
+  mediaPerInput: 256,
+  /** Media items across the whole snapshot. */
+  media: 1_024,
+  /** Per-item switches published for one media item. */
+  optionsPerMediaItem: 32,
   /** Matches the adapter's write bound: what you can write, you can read. */
   inputValueLength: 1_000_000,
   /** Characters across all published input values. */
@@ -407,6 +416,67 @@ function projectNode(
  * extension that read a truncated prompt and wrote it back would silently
  * destroy the user's text.
  */
+/**
+ * One input's attached media, bounded.
+ *
+ * Truncation here is worse than a missing widget: an extension derives tag
+ * ordinals from this list, so a silently shortened one renumbers the user's
+ * prompt. It is still bounded — the projection runs on the panel's render path
+ * — but every drop is reported, and `ordinal` keeps the value the host
+ * assigned rather than being renumbered to the kept prefix.
+ */
+function projectMedia(
+  input: GenerationInputSnapshot,
+  budget: { items: number },
+  notes: string[],
+): readonly ExtensionGenerationMediaItem[] {
+  const media = input.media ?? [];
+  const allowed = Math.max(
+    0,
+    Math.min(GENERATION_SNAPSHOT_LIMITS.mediaPerInput, budget.items),
+  );
+  const kept = media.slice(0, allowed);
+  budget.items -= kept.length;
+  if (media.length > kept.length) {
+    notes.push(
+      `Input '${input.id}' holds ${media.length} media items; only the first ${kept.length} fit the published limits.`,
+    );
+  }
+  return kept.map((item) => projectMediaItem(input, item, notes));
+}
+
+function projectMediaItem(
+  input: GenerationInputSnapshot,
+  item: GenerationMediaItemSnapshot,
+  notes: string[],
+): ExtensionGenerationMediaItem {
+  const optionIds = Object.keys(item.options);
+  const keptOptionIds = optionIds.slice(
+    0,
+    GENERATION_SNAPSHOT_LIMITS.optionsPerMediaItem,
+  );
+  if (optionIds.length > keptOptionIds.length) {
+    notes.push(
+      `Media item '${item.slotId}' on input '${input.id}' offers ${optionIds.length} options; only the first ${keptOptionIds.length} are published.`,
+    );
+  }
+  const options: Record<string, boolean> = {};
+  for (const optionId of keptOptionIds) {
+    options[optionId] = item.options[optionId] === true;
+  }
+  return {
+    slotId: item.slotId,
+    ordinal: item.ordinal,
+    source: item.source,
+    ...(item.assetId !== undefined ? { assetId: item.assetId } : {}),
+    displayName: item.displayName,
+    mediaType: item.mediaType,
+    hasAudio: item.hasAudio,
+    options,
+    preparing: item.preparing,
+  };
+}
+
 function projectInputs(
   inputs: GenerationSessionSnapshot["inputs"],
   notes: string[],
@@ -418,6 +488,7 @@ function projectInputs(
     );
   }
   let bytes: number = GENERATION_SNAPSHOT_LIMITS.inputBytes;
+  const mediaBudget = { items: GENERATION_SNAPSHOT_LIMITS.media };
   return kept.map((input) => {
     let value = input.value;
     if (value !== undefined) {
@@ -443,6 +514,22 @@ function projectInputs(
       label: input.label,
       inputType: input.inputType,
       ...(value !== undefined ? { value } : {}),
+      ...(input.repeatable
+        ? {
+            repeatable: {
+              max: input.repeatable.max,
+              optionIds: [...input.repeatable.optionIds],
+            },
+          }
+        : {}),
+      ...(input.media
+        ? { media: projectMedia(input, mediaBudget, notes) }
+        : {}),
+      // Bounded by the batch ceiling itself, so no separate budget: there can
+      // never be more reservations than an input has slots.
+      ...(input.reservedSlotIds?.length
+        ? { reservedSlotIds: [...input.reservedSlotIds] }
+        : {}),
     };
   });
 }

@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import { generationSessionService } from "../features/generation/services/GenerationSessionService";
 import type {
+  GenerationSessionAssetCandidate,
   GenerationSessionCommit,
   GenerationSessionPublication,
 } from "../features/generation/services/generationSessionTypes";
@@ -31,6 +32,8 @@ export function createGenerationPublication(
 
 export interface MountedGenerationSession {
   readonly commit: ReturnType<typeof vi.fn>;
+  /** Stub library; add assets to it to let an `attachAsset` resolve. */
+  readonly assets: Map<string, GenerationSessionAssetCandidate>;
   publish(overrides?: Partial<GenerationSessionPublication>): void;
   unmount(): void;
 }
@@ -40,10 +43,15 @@ export function mountGenerationSession(
   overrides: Partial<GenerationSessionPublication> = {},
 ): MountedGenerationSession {
   const commit = vi.fn<(update: GenerationSessionCommit) => void>();
-  const unmount = generationSessionService.mount({ commit });
+  const assets = new Map<string, GenerationSessionAssetCandidate>();
+  const unmount = generationSessionService.mount({
+    commit,
+    resolveAsset: (assetId) => assets.get(assetId) ?? null,
+  });
   generationSessionService.publish(createGenerationPublication(overrides));
   return {
     commit,
+    assets,
     publish: (next: Partial<GenerationSessionPublication> = {}) => {
       generationSessionService.publish(createGenerationPublication(next));
     },

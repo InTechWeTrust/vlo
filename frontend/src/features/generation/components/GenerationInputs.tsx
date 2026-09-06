@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo } from "react";
 import {
   Box,
+  Button,
   TextField,
   IconButton,
   Typography,
@@ -41,6 +42,8 @@ import {
   getWorkflowInputValue,
 } from "../utils/workflowInputs";
 import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
+import { generationTextInputClaims } from "../services/GenerationTextInputClaims";
+import { useGenerationTextInputClaim } from "../hooks/useGenerationTextInputClaim";
 import { isAspectRatioWidget } from "../utils/aspectRatioWidgets";
 import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
 import { GenerationPanelSectionHost } from "./GenerationPanelSectionHost";
@@ -893,6 +896,11 @@ function TextInputSection({
   commitInputId,
   onCommit,
 }: TextInputSectionProps) {
+  // Claims are keyed by the canonical input id, which is what the session
+  // publishes and what a claim resolves to; `commitInputId` may be the bare
+  // node-id alias the panel writes through.
+  const claim = useGenerationTextInputClaim(getWorkflowInputId(input));
+
   return (
     <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
       {input.description ? (
@@ -900,8 +908,41 @@ function TextInputSection({
           {input.description}
         </Typography>
       ) : null}
+      {claim ? (
+        <Box
+          sx={{
+            mb: 1,
+            p: 1,
+            borderRadius: 1,
+            bgcolor: "rgba(255, 255, 255, 0.04)",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 1,
+          }}
+        >
+          <Typography
+            sx={{ flex: 1, color: "text.secondary", fontSize: "0.75rem" }}
+          >
+            {claim.reason}
+          </Typography>
+          <Button
+            size="small"
+            onClick={() =>
+              generationTextInputClaims.revoke(getWorkflowInputId(input))
+            }
+            sx={{ flexShrink: 0, fontSize: "0.7rem", py: 0, minWidth: 0 }}
+          >
+            Edit anyway
+          </Button>
+        </Box>
+      ) : null}
       <CommittedTextInput
+        // Remounted when a claim comes or goes, so the buffered field picks up
+        // the composed text instead of redisplaying the draft it was holding.
+        key={claim ? "claimed" : "free"}
         initialValue={value}
+        disabled={claim !== null}
         onCommit={(nextValue) => onCommit(commitInputId, nextValue)}
         commitDebounceMs={PROMPT_COMMIT_DEBOUNCE_MS}
         multiline={true}

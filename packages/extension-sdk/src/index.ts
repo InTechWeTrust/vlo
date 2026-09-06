@@ -2655,7 +2655,16 @@ export type ExtensionUiViewRegion =
    * view registered here is not visible until `openView` — or the user — opens
    * the dock.
    */
-  | "bottom-dock";
+  | "bottom-dock"
+  /**
+   * A draggable, resizable panel floating over the editor, for a workspace
+   * that must stay open while the user works in the surface behind it.
+   *
+   * It starts closed — open it with `openView` — and, unlike a modal, it sits
+   * *inside* the editor's drag context, so `runtime.panelUi` drop slots in it
+   * accept library drags. A modal cannot: see `registerModal`.
+   */
+  | "editor-overlay";
 
 export interface ExtensionUiComponentProps {
   readonly slot: ExtensionUiSlotId;
@@ -3114,6 +3123,16 @@ export interface ExtensionUiApi {
   registerComponent(
     definition: ExtensionTrustedUiComponentDefinition,
   ): ExtensionUiRegistration;
+  /**
+   * Registers a blocking dialog, opened with `openModal`.
+   *
+   * **A modal cannot accept library drags.** The modal host is app-wide — it
+   * has to work on the projects page, before any project is open — so it
+   * mounts *outside* the editor's drag context, and a `runtime.panelUi` drop
+   * slot inside a modal never fires, with no error to debug. Views do mount
+   * inside it: use a view region, `editor-overlay` for a floating workspace
+   * that stays open over the editor.
+   */
   registerModal(
     definition: ExtensionTrustedUiModalDefinition,
   ): ExtensionUiRegistration;
@@ -3221,6 +3240,51 @@ export interface ExtensionMenuApi {
   listMenus(): readonly ExtensionMenuInfo[];
 }
 
+/** Where one attached media item's value came from. */
+export type ExtensionGenerationMediaSource =
+  | "asset"
+  /** A range of the user's timeline, rendered at submission. */
+  | "timeline-selection"
+  /** A still captured from the player, which is not a library asset. */
+  | "frame";
+
+/** One occupied slot of a media input, as the graph will receive it. */
+export interface ExtensionGenerationMediaItem {
+  /** Addressable slot id; the same id every write takes. */
+  readonly slotId: string;
+  /**
+   * Position among *filled* slots — the delivery position, and the number a
+   * reference tag's ordinal counts. Never infer order from `slotId`.
+   */
+  readonly ordinal: number;
+  readonly source: ExtensionGenerationMediaSource;
+  /** Library assets only; resolve it through `assets.get`. */
+  readonly assetId?: string;
+  readonly displayName: string;
+  /** What the slot delivers: a video on an audio slot presents as `audio`. */
+  readonly mediaType: "image" | "video" | "audio";
+  /**
+   * The item really carries a soundtrack. `null` is the host declining to
+   * guess — an unrendered timeline selection, or a video ingested before the
+   * flag was probed — not "no".
+   */
+  readonly hasAudio: boolean | null;
+  /**
+   * Per-item switches this input offers for this item, with their current
+   * state; write one with `setMediaOption`. Absent keys are not available.
+   */
+  readonly options: Readonly<Record<string, boolean>>;
+  /** Still rendering or extracting, so its value is not final. */
+  readonly preparing: boolean;
+}
+
+/** A media input that holds an ordered batch rather than a single item. */
+export interface ExtensionGenerationInputRepeatable {
+  readonly max: number;
+  /** Per-item switch ids this input offers, e.g. `["audio"]`. */
+  readonly optionIds: readonly string[];
+}
+
 export interface ExtensionGenerationInputSnapshot {
   readonly id: string;
   readonly nodeId: string;
@@ -3228,7 +3292,27 @@ export interface ExtensionGenerationInputSnapshot {
   readonly label: string;
   readonly description?: string;
   readonly inputType: "text" | "image" | "video" | "audio";
+  /** Text inputs only. A media input's contents are in `media`. */
   readonly value?: JsonValue;
+  /** Repeatable (batch) media inputs only. */
+  readonly repeatable?: ExtensionGenerationInputRepeatable;
+  /**
+   * Media inputs only: the occupied slots, in delivery order. Present and
+   * empty for a media input with nothing attached; absent for a text input.
+   *
+   * A slot still being prepared before its value exists is not listed — there
+   * is no media to describe and the graph has nothing to deliver from it. It
+   * is still taken: see `reservedSlotIds`.
+   */
+  readonly media?: readonly ExtensionGenerationMediaItem[];
+  /**
+   * Slots held open for a value still being produced — a timeline selection
+   * rendering, a frame being captured. They are absent from `media` but are
+   * *not* free, so the room left in a batch is
+   * `repeatable.max - media.length - reservedSlotIds.length`, never
+   * `max - media.length`. An `attachAsset` skips them for you.
+   */
+  readonly reservedSlotIds?: readonly string[];
 }
 
 /** One widget-backed parameter of one node in the mounted workflow. */
@@ -3315,10 +3399,59 @@ export interface ExtensionGenerationSessionSnapshot {
   readonly busy: boolean;
 }
 
+export interface ExtensionGenerationAttachOptions {
+  /** Position among the filled slots; defaults to after the last one. */
+  readonly at?: number;
+  /**
+   * Per-item switches for the item being attached, keyed by option id. Only
+   * ids the input offers for *this* asset are accepted; anything else fails
+   * with `option_not_available`.
+   */
+  readonly itemOptions?: Readonly<Record<string, boolean>>;
+}
+
+/**
+ * A labelled, atomic batch of panel writes. Nothing applies unless every
+ * staged command validates.
+ *
+ * Media commands are ordered and cumulative: each is judged against the state
+ * the ones before it left, so attaching three assets in one transaction fills
+ * three slots, and attaching a video then toggling its `audio` switch works.
+ * Every media write is validated exactly as the equivalent drag would be — an
+ * extension cannot place an asset a user could not drag into the same slot.
+ */
 export interface ExtensionGenerationTransaction {
   setTextInput(inputId: string, value: string): void;
   /** Write one widget the active snapshot marks `editable`. */
   setWidget(target: ExtensionGenerationWidgetTarget, value: JsonValue): void;
+  /**
+   * Attach a library asset to a media input.
+   *
+   * `at` is a position among the filled slots, defaulting to after the last
+   * one; a single-slot input takes only position 0 and replaces what it holds,
+   * exactly as a drop on it would. Which *slot* that becomes is the host's to
+   * work out — an append skips slots the panel is holding open for a value
+   * still being produced.
+   *
+   * `itemOptions` sets per-item switches on the item this attach creates.
+   * They belong here rather than in a following `setMediaOption` because the
+   * new item has no slot id to name until the transaction commits, and
+   * splitting the write in two would make it non-atomic.
+   */
+  attachAsset(
+    inputId: string,
+    assetId: string,
+    options?: ExtensionGenerationAttachOptions,
+  ): void;
+  /** Reorder within one repeatable input, by delivery position. */
+  moveMedia(inputId: string, fromOrdinal: number, toOrdinal: number): void;
+  removeMedia(inputId: string, slotId: string): void;
+  /**
+   * Write one per-item switch. Only the ids the slot's snapshot lists in
+   * `options` are available; slot ids are unique across the panel, so no input
+   * id is needed.
+   */
+  setMediaOption(slotId: string, optionId: string, value: boolean): void;
 }
 
 export type ExtensionGenerationTransactionResult =
@@ -3334,6 +3467,16 @@ export type ExtensionGenerationTransactionResult =
         | "widget_not_found"
         | "widget_not_editable"
         | "widget_value_invalid"
+        /** A reorder was asked of an input that holds a single slot. */
+        | "input_not_repeatable"
+        | "asset_not_found"
+        /** The slot would not accept that asset from a drag either. */
+        | "asset_type_rejected"
+        | "batch_full"
+        | "ordinal_out_of_range"
+        /** The addressed slot holds nothing, so there is nothing to change. */
+        | "media_not_found"
+        | "option_not_available"
         | "callback_failed";
       readonly message: string;
       readonly label: string;
@@ -3410,10 +3553,50 @@ export interface ExtensionGenerationUiApi {
   ): ExtensionGenerationRegistration;
 }
 
+export interface ExtensionGenerationTextInputClaimOptions {
+  /**
+   * Why the box is read-only, shown to the user beside it. Write it for
+   * someone who has forgotten the extension exists.
+   */
+  readonly reason: string;
+  /**
+   * Called when the *user* takes the input back through "Edit anyway", never
+   * on your own `dispose`. Stop tracking the text here: the claim is gone and
+   * writing over what the user then types is the failure this exists to stop.
+   */
+  readonly onRevoked?: () => void;
+}
+
+export type ExtensionGenerationClaimResult =
+  | { readonly ok: true; readonly registration: ExtensionGenerationRegistration }
+  | {
+      readonly ok: false;
+      readonly code:
+        | "unavailable"
+        | "input_not_found"
+        | "input_type_mismatch"
+        | "invalid_reason"
+        | "input_already_claimed";
+      readonly message: string;
+    };
+
 /** User-event API for the currently mounted generation/workflow panel. */
 export interface ExtensionGenerationApi {
   readonly ui: ExtensionGenerationUiApi;
   listInputs(): readonly ExtensionGenerationInputSnapshot[];
+  /**
+   * Take authorship of one text input.
+   *
+   * While claimed, the panel renders that box read-only with your `reason` and
+   * an "Edit anyway" control; the user taking it back revokes the claim and
+   * calls `onRevoked`. One claim per input — a second fails with
+   * `input_already_claimed` rather than displacing the first. Claims are
+   * released by disposing the registration, and die with the activation.
+   */
+  claimTextInput(
+    inputId: string,
+    options: ExtensionGenerationTextInputClaimOptions,
+  ): ExtensionGenerationClaimResult;
   /** The mounted session, or `null` when no generation panel is mounted. */
   getSession(): ExtensionGenerationSessionSnapshot | null;
   /** Monotonic while the panel stays mounted; pairs with `subscribe`. */

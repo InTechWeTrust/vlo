@@ -1449,6 +1449,32 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     [setMediaInputItemOption],
   );
 
+  /**
+   * Attach a library asset named by id, for callers that address the library
+   * rather than carry a dragged one — the generation session's `attachAsset`.
+   * Placement is `assignAssetToInput`, the same path a drag takes, so the
+   * audio extraction a video on an audio slot needs still happens.
+   */
+  const handleAttachAssetById = useCallback(
+    (slotId: string, assetId: string) => {
+      const asset = useAssetStore
+        .getState()
+        .assets.find((candidate) => candidate.id === assetId);
+      if (!asset) return;
+      assignAssetToInput(slotId, asset);
+    },
+    [assignAssetToInput],
+  );
+
+  /** Read-only library lookup used to validate an attach before it is planned. */
+  const resolveLibraryAsset = useCallback(
+    (assetId: string) =>
+      useAssetStore
+        .getState()
+        .assets.find((candidate) => candidate.id === assetId) ?? null,
+    [],
+  );
+
   const handleClickSelect = useCallback(
     (inputId: string, inputType: "image" | "video" | "audio") => {
       const extractStore = useExtractStore.getState();
@@ -2190,6 +2216,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     handleSwapMediaInputs,
     handleMoveMediaInput,
     handleToggleMediaInputOption,
+    handleAttachAssetById,
+    resolveLibraryAsset,
     handleClickSelect,
     handleEditMedia,
   };

@@ -79,6 +79,10 @@ function mountPanelSession(
 ) {
   const commitTextInputs = vi.fn();
   const applyWidgetValue = vi.fn();
+  const attachAssetToSlot = vi.fn();
+  const moveMediaItem = vi.fn();
+  const removeMediaItem = vi.fn();
+  const setMediaItemOption = vi.fn();
   const rendered = renderHook(() =>
     useGenerationSessionMount({
       workflowInputs,
@@ -90,10 +94,23 @@ function mountPanelSession(
       canSubmit: true,
       commitTextInputs,
       applyWidgetValue,
+      attachAssetToSlot,
+      moveMediaItem,
+      removeMediaItem,
+      setMediaItemOption,
+      resolveAsset: () => null,
       ...overrides,
     }),
   );
-  return { ...rendered, commitTextInputs, applyWidgetValue };
+  return {
+    ...rendered,
+    commitTextInputs,
+    applyWidgetValue,
+    attachAssetToSlot,
+    moveMediaItem,
+    removeMediaItem,
+    setMediaItemOption,
+  };
 }
 
 beforeEach(() => {
@@ -317,6 +334,15 @@ describe("native and extension entry points agree", () => {
       callback_failed: "callback_failed",
       input_not_found: "input_not_found",
       input_type_mismatch: "input_type_mismatch",
+      // Media codes are published as themselves: each names a different repair
+      // for the caller, so collapsing them would leave an extension retrying.
+      input_not_repeatable: "input_not_repeatable",
+      asset_not_found: "asset_not_found",
+      asset_type_rejected: "asset_type_rejected",
+      batch_full: "batch_full",
+      ordinal_out_of_range: "ordinal_out_of_range",
+      media_not_found: "media_not_found",
+      option_not_available: "option_not_available",
       // Published as themselves since E1: with `setWidget` on the surface, an
       // extension has to be able to tell "no such widget" from "no control for
       // it" from "bad value" to decide whether to fall back.

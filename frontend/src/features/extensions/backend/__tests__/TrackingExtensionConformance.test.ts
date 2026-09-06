@@ -179,6 +179,11 @@ function createConformanceApi() {
         }),
       },
       listInputs: () => [],
+      claimTextInput: () => ({
+        ok: false,
+        code: "unavailable",
+        message: "No panel is mounted in this fixture.",
+      }),
       getSession: () => null,
       getRevision: () => 0,
       subscribe: () => () => undefined,

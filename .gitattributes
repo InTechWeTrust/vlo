@@ -52,6 +52,9 @@
 # contributed views, and both must collapse to nothing when they hold none.
 /frontend/src/app/layout/EditorBottomDock.tsx extension-surface=adapter
 /frontend/src/app/layout/PlayerAsidePanel.tsx extension-surface=adapter
+# The floating workspace region (1D). It exists because the app-wide modal host
+# sits outside the editor's DndContext, so a drop into a modal never fires.
+/frontend/src/app/layout/EditorOverlayHost.tsx extension-surface=adapter
 /frontend/src/app/layout/bottomDockHostViews.tsx extension-surface=adapter
 /frontend/src/app/layout/EditorTopBar.tsx extension-surface=adapter
 # The scope table native and contributed scopes converge on, the dock that
@@ -137,6 +140,19 @@
 /frontend/src/features/generation/services/generationSessionValidation.ts extension-surface=adapter
 /frontend/src/features/generation/services/workflowNodeCatalogue.ts extension-surface=adapter
 /frontend/src/features/generation/hooks/useGenerationSessionMount.ts extension-surface=adapter
+# The media half of that seam (docs/minimax-prompt-composer-extension-plan.md
+# §4, 1A-1B): the batch strip and the SDK projection describe the same slots by
+# these rules, and an SDK write is judged by the same drop predicates.
+/frontend/src/features/generation/utils/generationMediaSnapshot.ts extension-surface=adapter
+/frontend/src/features/generation/utils/mediaInputAssets.ts extension-surface=adapter
+/frontend/src/features/generation/utils/audioSlotAssets.ts extension-surface=adapter
+/frontend/src/features/generation/utils/mediaInputItemOptions.ts extension-surface=adapter
+/frontend/src/features/generation/store/mediaInputActions.ts extension-surface=adapter
+# Text-input authorship claims (1C). Owner-neutral: the registry knows a label
+# and a reason, and the panel reads it directly while the adapter adds
+# activation ownership.
+/frontend/src/features/generation/services/GenerationTextInputClaims.ts extension-surface=host
+/frontend/src/features/generation/hooks/useGenerationTextInputClaim.ts extension-surface=adapter
 # The normalized graph-effect path (§3.3): the closed effect union, its source
 # attribution, and the queued-plan capture a future SDK effect surface would
 # have to project. Certified by N1.

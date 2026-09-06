@@ -1,15 +1,25 @@
 import {
+  applyMediaCommitToSnapshot,
   indexEditableWidgets,
+  validateAttachAssetCommand,
+  validateMoveMediaCommand,
+  validateRemoveMediaCommand,
+  validateSetMediaOptionCommand,
   validateTextInputCommand,
   validateWidgetCommand,
   widgetKey,
   widgetValueMatchesSnapshot,
+  type ValidationResult,
 } from "./generationSessionValidation";
 import type {
   GenerationEditableWidgetSnapshot,
+  GenerationInputRepeatableSnapshot,
   GenerationInputSnapshot,
+  GenerationMediaItemSnapshot,
+  GenerationSessionAssetCandidate,
   GenerationSessionHost,
   GenerationSessionJsonValue,
+  GenerationSessionMediaCommit,
   GenerationSessionPublication,
   GenerationSessionSnapshot,
   GenerationSessionTransaction,
@@ -44,7 +54,44 @@ interface StagedWidgetCommand {
   readonly value: unknown;
 }
 
-type StagedCommand = StagedTextCommand | StagedWidgetCommand;
+interface StagedAttachCommand {
+  readonly kind: "attach";
+  readonly inputId: string;
+  readonly assetId: string;
+  readonly at?: number;
+  readonly itemOptions?: Readonly<Record<string, boolean>>;
+}
+
+interface StagedMoveCommand {
+  readonly kind: "move";
+  readonly inputId: string;
+  readonly fromOrdinal: number;
+  readonly toOrdinal: number;
+}
+
+interface StagedRemoveCommand {
+  readonly kind: "remove";
+  readonly inputId: string;
+  readonly slotId: string;
+}
+
+interface StagedMediaOptionCommand {
+  readonly kind: "media-option";
+  readonly slotId: string;
+  readonly optionId: string;
+  readonly value: boolean;
+}
+
+type StagedMediaCommand =
+  | StagedAttachCommand
+  | StagedMoveCommand
+  | StagedRemoveCommand
+  | StagedMediaOptionCommand;
+
+type StagedCommand =
+  | StagedTextCommand
+  | StagedWidgetCommand
+  | StagedMediaCommand;
 
 function failure(
   label: string,
@@ -52,6 +99,40 @@ function failure(
   message: string,
 ): GenerationTransactionResult {
   return { ok: false, code, message, label };
+}
+
+/**
+ * Would this command leave the panel exactly as it found it?
+ *
+ * Only the two commands that can genuinely address their own current state: a
+ * reorder onto the position an item already holds (which `moveMediaInput`
+ * itself early-returns on) and a switch written to the value it already has.
+ * An attach always rewrites its slot's value — re-attaching the same asset
+ * restarts extraction — and a remove is only planned for a slot that holds
+ * something, so neither can be inert.
+ */
+function isMediaNoOp(
+  snapshot: GenerationSessionSnapshot,
+  commit: GenerationSessionMediaCommit,
+): boolean {
+  const input = snapshot.inputs.find(
+    (candidate) => candidate.id === commit.inputId,
+  );
+  const item = (input?.media ?? []).find(
+    (candidate) => candidate.slotId === commit.slotId,
+  );
+  if (commit.kind === "move") return item?.ordinal === commit.toOrdinal;
+  if (commit.kind === "set-option") {
+    return item?.options[commit.optionId] === commit.value;
+  }
+  return false;
+}
+
+function requireId(value: unknown, what: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${what} must be non-empty strings.`);
+  }
+  return value.trim();
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -99,6 +180,52 @@ function sameEditableWidgets(
   });
 }
 
+function sameMediaItems(
+  left: readonly GenerationMediaItemSnapshot[] | undefined,
+  right: readonly GenerationMediaItemSnapshot[] | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((item, index) => {
+    const other = right[index];
+    const optionIds = Object.keys(item.options);
+    return (
+      item.slotId === other.slotId &&
+      item.ordinal === other.ordinal &&
+      item.source === other.source &&
+      item.assetId === other.assetId &&
+      item.displayName === other.displayName &&
+      item.mediaType === other.mediaType &&
+      item.hasAudio === other.hasAudio &&
+      item.preparing === other.preparing &&
+      optionIds.length === Object.keys(other.options).length &&
+      optionIds.every((id) => item.options[id] === other.options[id])
+    );
+  });
+}
+
+function sameSlotIds(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  if (left === right) return true;
+  if ((left?.length ?? 0) !== (right?.length ?? 0)) return false;
+  return (left ?? []).every((slotId, index) => slotId === right?.[index]);
+}
+
+function sameRepeatable(
+  left: GenerationInputRepeatableSnapshot | undefined,
+  right: GenerationInputRepeatableSnapshot | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.max === right.max &&
+    left.optionIds.length === right.optionIds.length &&
+    left.optionIds.every((id, index) => id === right.optionIds[index])
+  );
+}
+
 function sameInputs(
   left: readonly GenerationInputSnapshot[],
   right: readonly GenerationInputSnapshot[],
@@ -114,7 +241,14 @@ function sameInputs(
       input.label === other.label &&
       input.description === other.description &&
       input.inputType === other.inputType &&
-      input.value === other.value
+      input.value === other.value &&
+      sameRepeatable(input.repeatable, other.repeatable) &&
+      // Attaching, reordering, clearing, or toggling a reference has to
+      // republish: the media projection is the only thing that carries it, and
+      // every other field can sit still through all four. So does a slot being
+      // reserved or released, which decides where the next attach lands.
+      sameMediaItems(input.media, other.media) &&
+      sameSlotIds(input.reservedSlotIds, other.reservedSlotIds)
     );
   });
 }
@@ -301,6 +435,66 @@ export class GenerationSessionService {
         }
         staged.push({ kind: "widget", target: { nodeId, widget }, value });
       },
+      attachAsset: (inputId, assetId, options) => {
+        if (!isOpen) throw new Error("The generation transaction is closed.");
+        const normalizedInputId = requireId(inputId, "Generation input IDs");
+        const normalizedAssetId = requireId(assetId, "Asset IDs");
+        const at = options?.at;
+        if (at !== undefined && !Number.isInteger(at)) {
+          throw new Error("Generation attach positions must be integers.");
+        }
+        const itemOptions = options?.itemOptions;
+        if (itemOptions !== undefined) {
+          for (const [optionId, value] of Object.entries(itemOptions)) {
+            if (optionId.trim().length === 0) {
+              throw new Error("Generation option IDs must be non-empty strings.");
+            }
+            if (typeof value !== "boolean") {
+              throw new Error("Generation media options take boolean values.");
+            }
+          }
+        }
+        staged.push({
+          kind: "attach",
+          inputId: normalizedInputId,
+          assetId: normalizedAssetId,
+          ...(at === undefined ? {} : { at }),
+          ...(itemOptions === undefined ? {} : { itemOptions }),
+        });
+      },
+      moveMedia: (inputId, fromOrdinal, toOrdinal) => {
+        if (!isOpen) throw new Error("The generation transaction is closed.");
+        const normalizedInputId = requireId(inputId, "Generation input IDs");
+        if (!Number.isInteger(fromOrdinal) || !Number.isInteger(toOrdinal)) {
+          throw new Error("Generation media ordinals must be integers.");
+        }
+        staged.push({
+          kind: "move",
+          inputId: normalizedInputId,
+          fromOrdinal,
+          toOrdinal,
+        });
+      },
+      removeMedia: (inputId, slotId) => {
+        if (!isOpen) throw new Error("The generation transaction is closed.");
+        staged.push({
+          kind: "remove",
+          inputId: requireId(inputId, "Generation input IDs"),
+          slotId: requireId(slotId, "Generation slot IDs"),
+        });
+      },
+      setMediaOption: (slotId, optionId, value) => {
+        if (!isOpen) throw new Error("The generation transaction is closed.");
+        if (typeof value !== "boolean") {
+          throw new Error("Generation media options take boolean values.");
+        }
+        staged.push({
+          kind: "media-option",
+          slotId: requireId(slotId, "Generation slot IDs"),
+          optionId: requireId(optionId, "Generation option IDs"),
+          value,
+        });
+      },
     };
 
     try {
@@ -345,6 +539,13 @@ export class GenerationSessionService {
 
     const textInputs = new Map<string, string>();
     const widgetCommits = new Map<string, GenerationSessionWidgetCommit>();
+    const mediaCommits: GenerationSessionMediaCommit[] = [];
+    // Media changes are sequential and each depends on the last, so they are
+    // judged against a snapshot that advances with them rather than the one
+    // the transaction opened on. Text and widget writes are independent of
+    // media, so they keep reading the published snapshot.
+    let working = snapshot;
+
     for (const command of staged) {
       if (command.kind === "text") {
         const result = validateTextInputCommand(snapshot, command.inputId);
@@ -359,25 +560,47 @@ export class GenerationSessionService {
         continue;
       }
 
-      const result = validateWidgetCommand(
-        snapshot,
-        editableIndex,
-        command.target,
-        command.value,
-      );
-      if (!result.ok) {
+      if (command.kind === "widget") {
+        const result = validateWidgetCommand(
+          snapshot,
+          editableIndex,
+          command.target,
+          command.value,
+        );
+        if (!result.ok) {
+          return failure(
+            normalizedLabel,
+            result.failure.code,
+            result.failure.message,
+          );
+        }
+        // Later writes to the same target win, matching the graph bridge's
+        // sequential apply order.
+        widgetCommits.set(widgetKey(command.target), {
+          target: command.target,
+          value: result.value,
+        });
+        continue;
+      }
+
+      const planned = this.planMediaCommand(working, host, command);
+      if (!planned.ok) {
         return failure(
           normalizedLabel,
-          result.failure.code,
-          result.failure.message,
+          planned.failure.code,
+          planned.failure.message,
         );
       }
-      // Later writes to the same target win, matching the graph bridge's
-      // sequential apply order.
-      widgetCommits.set(widgetKey(command.target), {
-        target: command.target,
-        value: result.value,
-      });
+      // A command that validates but moves nothing is dropped rather than
+      // committed, the way an unchanged text write is: `changed` is what an
+      // extension gates follow-up work on, so it has to mean something moved.
+      if (isMediaNoOp(working, planned.value.commit)) continue;
+      mediaCommits.push(planned.value.commit);
+      working = applyMediaCommitToSnapshot(
+        working,
+        planned.value.commit,
+        planned.value.asset,
+      );
     }
 
     const changedTextInputs = new Map<string, string>();
@@ -398,19 +621,100 @@ export class GenerationSessionService {
         ),
     );
 
-    if (changedTextInputs.size === 0 && widgets.length === 0) {
+    if (
+      changedTextInputs.size === 0 &&
+      widgets.length === 0 &&
+      mediaCommits.length === 0
+    ) {
       return { ok: true, changed: false, label: normalizedLabel };
     }
 
     // Widget writes always reach the host, even when the snapshot already
     // shows the value: the panel owns the live value and dedupes it there,
     // and the snapshot can trail a keystroke by a render.
-    host.commit({ textInputs: changedTextInputs, widgets });
+    host.commit({
+      textInputs: changedTextInputs,
+      widgets,
+      media: mediaCommits,
+    });
     return {
       ok: true,
-      changed: changedTextInputs.size > 0 || changedWidgets.length > 0,
+      changed:
+        changedTextInputs.size > 0 ||
+        changedWidgets.length > 0 ||
+        // No-ops were dropped above, so anything left here moves something.
+        mediaCommits.length > 0,
       label: normalizedLabel,
     };
+  }
+
+  /**
+   * Validate one staged media command against the working snapshot, resolving
+   * the asset an attach names through the host's library.
+   */
+  private planMediaCommand(
+    working: GenerationSessionSnapshot,
+    host: GenerationSessionHost,
+    command: StagedMediaCommand,
+  ): ValidationResult<{
+    readonly commit: GenerationSessionMediaCommit;
+    readonly asset: GenerationSessionAssetCandidate | null;
+  }> {
+    switch (command.kind) {
+      case "attach": {
+        const asset = host.resolveAsset(command.assetId);
+        const result = validateAttachAssetCommand(working, asset, command);
+        if (!result.ok) return result;
+        return {
+          ok: true,
+          value: {
+            commit: { kind: "attach", ...result.value },
+            asset,
+          },
+        };
+      }
+      case "move": {
+        const result = validateMoveMediaCommand(
+          working,
+          command.inputId,
+          command.fromOrdinal,
+          command.toOrdinal,
+        );
+        if (!result.ok) return result;
+        return {
+          ok: true,
+          value: { commit: { kind: "move", ...result.value }, asset: null },
+        };
+      }
+      case "remove": {
+        const result = validateRemoveMediaCommand(
+          working,
+          command.inputId,
+          command.slotId,
+        );
+        if (!result.ok) return result;
+        return {
+          ok: true,
+          value: { commit: { kind: "remove", ...result.value }, asset: null },
+        };
+      }
+      case "media-option": {
+        const result = validateSetMediaOptionCommand(
+          working,
+          command.slotId,
+          command.optionId,
+          command.value,
+        );
+        if (!result.ok) return result;
+        return {
+          ok: true,
+          value: {
+            commit: { kind: "set-option", ...result.value },
+            asset: null,
+          },
+        };
+      }
+    }
   }
 
   private notify(): void {

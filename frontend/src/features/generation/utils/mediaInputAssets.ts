@@ -2,7 +2,11 @@ import type { Asset } from "../../../types/Asset";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import type { GenerationMediaInputValue } from "../types";
 import { ensureAssetFileLoaded } from "../../userAssets";
-import { isAudioSlotVideoAsset } from "./audioSlotAssets";
+import {
+  canDropAssetOnAudioSlot,
+  isAudioSlotVideoAsset,
+  type AudioSlotAssetCandidate,
+} from "./audioSlotAssets";
 
 function fallbackMimeTypeForAssetType(assetType: Asset["type"]): string {
   if (assetType === "image") {
@@ -76,4 +80,26 @@ export async function resolveAssetFileForGeneration(
     type: blob.type || fallbackMimeTypeForAssetType(asset.type),
     lastModified: Date.now(),
   });
+}
+
+/**
+ * May this library asset be attached to a media input *as an asset*?
+ *
+ * The rule a library drag applies, restated for callers that have an asset id
+ * rather than a drag: an audio slot takes audio or a video that really carries
+ * a soundtrack (`hasAudio` is known for a library asset, so a silent one is
+ * refused up front), and every other slot takes its own media type.
+ *
+ * Narrower than the drop target in one place, on purpose: dragging a video
+ * onto an *image* slot opens the frame chooser and stores the captured still,
+ * not the asset. A caller with only an id has no frame to choose, so it cannot
+ * reach that path and must be told so rather than silently attaching a video.
+ */
+export function canAttachAssetToMediaInput(
+  inputType: "text" | "image" | "video" | "audio",
+  asset: AudioSlotAssetCandidate,
+): boolean {
+  if (inputType === "audio") return canDropAssetOnAudioSlot(asset);
+  if (inputType === "text") return false;
+  return assetMatchesType(asset, inputType);
 }

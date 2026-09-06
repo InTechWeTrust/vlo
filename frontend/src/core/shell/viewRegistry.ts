@@ -27,6 +27,15 @@ export const HOST_VIEW_REGIONS = [
    * rather than "fall back to the first tab".
    */
   "bottom-dock",
+  /**
+   * A draggable, resizable panel floating over the editor, for a workspace
+   * that has to stay open while the user works in the surface behind it.
+   *
+   * Outside the docking model on purpose — it has no edge to resize against
+   * and takes no space from anything — and, like `bottom-dock`, opened only by
+   * `openView` or the user, never by falling back to a first tab.
+   */
+  "editor-overlay",
 ] as const;
 
 export type HostViewRegion = (typeof HOST_VIEW_REGIONS)[number];

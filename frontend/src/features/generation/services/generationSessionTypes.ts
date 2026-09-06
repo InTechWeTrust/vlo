@@ -3,6 +3,7 @@ import type {
   GenerationWidgetTarget,
 } from "../pipeline/types";
 import type { WidgetValueType } from "../types";
+import type { Asset } from "../../../types/Asset";
 
 /**
  * The owner-neutral generation session contract
@@ -64,6 +65,48 @@ export interface GenerationWorkflowSnapshot {
   readonly nodes: readonly GenerationNodeSnapshot[];
 }
 
+/** Where one attached media item's value came from. */
+export type GenerationMediaItemSource = "asset" | "timeline-selection" | "frame";
+
+/**
+ * One occupied slot of a media input, as the graph will receive it.
+ *
+ * Detached: an asset is named by id, never handed over, and nothing here is a
+ * `File`, an object URL, or a live store reference.
+ */
+export interface GenerationMediaItemSnapshot {
+  /** Addressable slot id; the same id every media write takes. */
+  readonly slotId: string;
+  /**
+   * Position among *filled* slots — the delivery position, and the number a
+   * reference tag's ordinal counts. Never infer this from `slotId`.
+   */
+  readonly ordinal: number;
+  readonly source: GenerationMediaItemSource;
+  /** Library assets only; absent for a frame capture or a timeline selection. */
+  readonly assetId?: string;
+  readonly displayName: string;
+  /** What the slot delivers: a video on an audio slot presents as `audio`. */
+  readonly mediaType: "image" | "video" | "audio";
+  /**
+   * The item really carries a soundtrack. `null` where the host cannot yet
+   * know — an unrendered timeline selection, or a video ingested before
+   * `hasAudio` was probed.
+   */
+  readonly hasAudio: boolean | null;
+  /** Per-item switches this input offers for this item, e.g. `audio`. */
+  readonly options: Readonly<Record<string, boolean>>;
+  /** Still rendering or extracting, so its value is not final. */
+  readonly preparing: boolean;
+}
+
+/** A media input that holds an ordered batch rather than a single item. */
+export interface GenerationInputRepeatableSnapshot {
+  readonly max: number;
+  /** Per-item switch ids this input offers, e.g. `["audio"]`. */
+  readonly optionIds: readonly string[];
+}
+
 /** A panel input slot (prompt text or a media slot). */
 export interface GenerationInputSnapshot {
   readonly id: string;
@@ -74,6 +117,20 @@ export interface GenerationInputSnapshot {
   readonly inputType: "text" | "image" | "video" | "audio";
   /** Present for text inputs only. */
   readonly value?: string;
+  /** Repeatable (batch) media inputs only. */
+  readonly repeatable?: GenerationInputRepeatableSnapshot;
+  /** Media inputs only: the occupied slots, in delivery order. */
+  readonly media?: readonly GenerationMediaItemSnapshot[];
+  /**
+   * Slots spoken for by work that has produced no value yet — a timeline
+   * selection rendering, a frame being captured.
+   *
+   * They are not in `media` because there is nothing to describe and nothing
+   * to deliver, but they are *taken*: an append skips them, exactly as the
+   * panel's own batch strip does, or the value on its way would be overwritten
+   * by the attach and then overwrite the attach in turn.
+   */
+  readonly reservedSlotIds?: readonly string[];
 }
 
 /**
@@ -142,9 +199,31 @@ export interface GenerationSessionPublication {
   readonly submission: GenerationSessionSubmission;
 }
 
+export interface GenerationAttachAssetOptions {
+  readonly at?: number;
+  readonly itemOptions?: Readonly<Record<string, boolean>>;
+}
+
 export interface GenerationSessionTransaction {
   setTextInput(inputId: string, value: string): void;
   setWidget(target: GenerationWidgetTarget, value: unknown): void;
+  /**
+   * Attach a library asset to a media input, at `at` among the filled slots
+   * (default: after the last one). A single-slot input takes only position 0
+   * and replaces what it holds, matching a drop on it. `itemOptions` sets
+   * per-item switches on the item the attach creates, which has no slot id to
+   * address until the transaction commits.
+   */
+  attachAsset(
+    inputId: string,
+    assetId: string,
+    options?: GenerationAttachAssetOptions,
+  ): void;
+  /** Reorder within one repeatable input. Ordinals are delivery positions. */
+  moveMedia(inputId: string, fromOrdinal: number, toOrdinal: number): void;
+  removeMedia(inputId: string, slotId: string): void;
+  /** Write one per-item switch the slot's snapshot lists in `options`. */
+  setMediaOption(slotId: string, optionId: string, value: boolean): void;
 }
 
 export type GenerationTransactionFailureCode =
@@ -158,7 +237,17 @@ export type GenerationTransactionFailureCode =
   | "input_type_mismatch"
   | "widget_not_found"
   | "widget_not_editable"
-  | "widget_value_invalid";
+  | "widget_value_invalid"
+  /** A reorder was asked of an input that holds a single slot. */
+  | "input_not_repeatable"
+  | "asset_not_found"
+  /** The asset exists but this slot would not accept it from a drag either. */
+  | "asset_type_rejected"
+  | "batch_full"
+  | "ordinal_out_of_range"
+  /** The addressed slot holds nothing, so there is nothing to change. */
+  | "media_not_found"
+  | "option_not_available";
 
 export type GenerationTransactionResult =
   | { readonly ok: true; readonly changed: boolean; readonly label: string }
@@ -174,13 +263,74 @@ export interface GenerationSessionWidgetCommit {
   readonly value: GenerationSessionJsonValue;
 }
 
+/**
+ * One validated media change, resolved down to the slot it acts on.
+ *
+ * Validation has already turned an ordinal into a slot id and checked the
+ * asset against the input, so the commit side is a direct call into the store
+ * actions the panel's own batch strip uses — it re-derives nothing.
+ */
+export type GenerationSessionMediaCommit =
+  | {
+      readonly kind: "attach";
+      readonly inputId: string;
+      /** The slot the asset lands in before any reorder. */
+      readonly slotId: string;
+      readonly assetId: string;
+      /** Set when the asset must then move up the batch to reach `at`. */
+      readonly moveTo: number | null;
+      /**
+       * Per-item switches to apply to the item this attach creates. The
+       * caller cannot name its slot — it does not exist yet — so they ride the
+       * attach rather than needing a second, non-atomic transaction.
+       */
+      readonly itemOptions: readonly {
+        readonly optionId: GenerationMediaItemOptionId;
+        readonly value: boolean;
+      }[];
+    }
+  | {
+      readonly kind: "move";
+      readonly inputId: string;
+      readonly slotId: string;
+      readonly toOrdinal: number;
+    }
+  | { readonly kind: "remove"; readonly inputId: string; readonly slotId: string }
+  | {
+      readonly kind: "set-option";
+      readonly inputId: string;
+      readonly slotId: string;
+      readonly optionId: GenerationMediaItemOptionId;
+      readonly value: boolean;
+    };
+
+/** Per-item switches the host knows how to write. */
+export type GenerationMediaItemOptionId = "audio";
+
 export interface GenerationSessionCommit {
   /** Canonical input id → value. Empty when the transaction wrote no text. */
   readonly textInputs: ReadonlyMap<string, string>;
   readonly widgets: readonly GenerationSessionWidgetCommit[];
+  /** Applied in the order they were staged; each depends on the last. */
+  readonly media: readonly GenerationSessionMediaCommit[];
 }
+
+/**
+ * The asset fields validation needs to judge an attach. Deliberately a narrow
+ * pick: the session never holds a live library asset, only enough of one to
+ * apply the drop rules.
+ */
+export type GenerationSessionAssetCandidate = Pick<
+  Asset,
+  "id" | "name" | "type" | "file" | "src" | "hasAudio"
+>;
 
 /** The mounting feature's write side. Called at most once per transaction. */
 export interface GenerationSessionHost {
   commit(update: GenerationSessionCommit): void;
+  /**
+   * Resolve a library asset for validation, or `null` when the library has no
+   * such asset. Read-only: the host still owns the asset itself.
+   */
+  resolveAsset(assetId: string): GenerationSessionAssetCandidate | null;
 }

@@ -62,7 +62,7 @@ function publication(
 function mount(overrides: Partial<GenerationSessionPublication> = {}) {
   const service = new GenerationSessionService();
   const commit = vi.fn<(update: GenerationSessionCommit) => void>();
-  const unmount = service.mount({ commit });
+  const unmount = service.mount({ commit, resolveAsset: () => null });
   service.publish(publication(overrides));
   return { service, commit, unmount };
 }
@@ -76,7 +76,7 @@ describe("GenerationSessionService lifecycle", () => {
     service.publish(publication());
     expect(service.getSnapshot()).toBeNull();
 
-    const unmount = service.mount({ commit: vi.fn() });
+    const unmount = service.mount({ commit: vi.fn(), resolveAsset: () => null });
     service.publish(publication());
     expect(service.getSnapshot()?.workflow.sourceId).toBe("workflow-1");
 
@@ -93,7 +93,7 @@ describe("GenerationSessionService lifecycle", () => {
     const service = new GenerationSessionService();
     const listener = vi.fn();
     const unsubscribe = service.subscribe(listener);
-    const unmount = service.mount({ commit: vi.fn() });
+    const unmount = service.mount({ commit: vi.fn(), resolveAsset: () => null });
 
     service.publish(publication());
     expect(listener).toHaveBeenCalledTimes(1);
@@ -114,7 +114,7 @@ describe("GenerationSessionService lifecycle", () => {
     expect(service.getRevision()).not.toBe(revisionBeforeUnmount);
 
     unsubscribe();
-    service.mount({ commit: vi.fn() });
+    service.mount({ commit: vi.fn(), resolveAsset: () => null });
     service.publish(publication());
     expect(listener).toHaveBeenCalledTimes(3);
   });
@@ -286,7 +286,7 @@ describe("GenerationSessionService transactions", () => {
 
     const result = service.transaction("Remounting callback", (transaction) => {
       unmount();
-      service.mount({ commit: replacementCommit });
+      service.mount({ commit: replacementCommit, resolveAsset: () => null });
       service.publish(publication());
       transaction.setTextInput("6:text", "new prompt");
     });

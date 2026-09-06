@@ -499,6 +499,54 @@ describe("ExtensionGenerationBridge session reads", () => {
       expect.arrayContaining([expect.stringContaining("options")]),
     );
   });
+
+  it("reports truncation through listInputs as well as getSession", () => {
+    const report = vi.fn();
+    // A media input whose references overflow the per-input cap. This is the
+    // case truncation hurts most: a missing reference shifts every ordinal
+    // after it, so the caller that gets a short list must be told.
+    const media = Array.from(
+      { length: GENERATION_SNAPSHOT_LIMITS.mediaPerInput + 1 },
+      (_unused, index) => ({
+        slotId: `10:images::repeat::${index}`,
+        ordinal: index,
+        source: "asset" as const,
+        assetId: `asset-${index}`,
+        displayName: `asset-${index}.mp4`,
+        mediaType: "video" as const,
+        hasAudio: true,
+        options: {},
+        preparing: false,
+      }),
+    );
+    const session = mountGenerationSession({
+      inputs: [
+        {
+          id: "10:images",
+          nodeId: "10",
+          param: "images",
+          label: "References",
+          inputType: "video",
+          repeatable: { max: media.length, optionIds: [] },
+          media,
+        },
+      ],
+    });
+    activeUnmount = session.unmount;
+    const api = createExtensionGenerationApi(createScope(report));
+
+    // `listInputs` is the documented way to read the panel's inputs, and it
+    // must not be the quiet way: it goes through the same reporting path.
+    expect(api.listInputs()[0].media).toHaveLength(
+      GENERATION_SNAPSHOT_LIMITS.mediaPerInput,
+    );
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledWith(
+      "warning",
+      expect.stringContaining("truncated"),
+      expect.arrayContaining([expect.stringContaining("media items")]),
+    );
+  });
 });
 
 describe("ExtensionGenerationBridge widget writes", () => {

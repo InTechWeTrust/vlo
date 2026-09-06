@@ -7,6 +7,8 @@ import {
 import type {
   GenerationEditableWidgetSnapshot,
   GenerationInputSnapshot,
+  GenerationMediaItemOptionId,
+  GenerationSessionAssetCandidate,
   GenerationNodeSnapshot,
   GenerationSessionCommit,
   GenerationSessionJsonValue,
@@ -14,7 +16,13 @@ import type {
   GenerationWorkflowSourceMode,
 } from "../services/generationSessionTypes";
 import { TEMP_WORKFLOW_ID, useGenerationStore } from "../useGenerationStore";
+import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 import type { WorkflowInput, WorkflowWidgetInput } from "../types";
+import {
+  buildGenerationMediaItems,
+  buildReservedSlotIds,
+  describeRepeatableInput,
+} from "../utils/generationMediaSnapshot";
 import {
   buildWorkflowInputLookup,
   getWorkflowInputId,
@@ -52,6 +60,23 @@ export interface GenerationSessionMountOptions {
     param: string,
     value: unknown,
   ) => void;
+  /**
+   * The panel's own media handlers, so an SDK write and a drag do the same
+   * thing — including the audio extraction a video landing on an audio slot
+   * starts, and the extraction restarts a reorder or a clear triggers.
+   */
+  readonly attachAssetToSlot: (slotId: string, assetId: string) => void;
+  readonly moveMediaItem: (slotId: string, toOrdinal: number) => void;
+  readonly removeMediaItem: (slotId: string) => void;
+  readonly setMediaItemOption: (
+    slotId: string,
+    optionId: GenerationMediaItemOptionId,
+    value: boolean,
+  ) => void;
+  /** Library lookup for validating an attach; read-only. */
+  readonly resolveAsset: (
+    assetId: string,
+  ) => GenerationSessionAssetCandidate | null;
 }
 
 export interface GenerationSessionMountResult {
@@ -116,6 +141,11 @@ export function useGenerationSessionMount(
     canSubmit,
     commitTextInputs,
     applyWidgetValue,
+    attachAssetToSlot,
+    moveMediaItem,
+    removeMediaItem,
+    setMediaItemOption,
+    resolveAsset,
   } = options;
 
   const syncedWorkflow = useGenerationStore((s) => s.syncedWorkflow);
@@ -128,6 +158,13 @@ export function useGenerationSessionMount(
   const activeJobId = useGenerationStore((s) => s.activeJobId);
   const jobs = useGenerationStore((s) => s.jobs);
   const pipelinePhase = useGenerationStore((s) => s.pipelineStatus.phase);
+  // Media inputs are published from the store rather than passed in: the panel
+  // renders its batch strip straight off the same state, so routing it through
+  // props would let the two drift.
+  const mediaInputs = useGenerationStore((s) => s.mediaInputs);
+  const preparingInputIds = useMediaInputPreparationStore(
+    (s) => s.preparingInputIds,
+  );
 
   // A failed submission leaves an errored job installed as the active one, so
   // job *status* is what says whether work is still in flight — the same rule
@@ -164,13 +201,31 @@ export function useGenerationSessionMount(
     () =>
       workflowInputs.map((input) => {
         const id = getWorkflowInputId(input);
-        const textValue =
-          input.inputType === "text"
-            ? (getWorkflowInputValue(textValues, input, inputLookup) ??
-              (typeof input.currentValue === "string"
-                ? input.currentValue
-                : ""))
-            : undefined;
+        const isText = input.inputType === "text";
+        const textValue = isText
+          ? (getWorkflowInputValue(textValues, input, inputLookup) ??
+            (typeof input.currentValue === "string" ? input.currentValue : ""))
+          : undefined;
+        const repeatable = isText ? undefined : describeRepeatableInput(input);
+        // Media is published for every media input, batch or not: a single
+        // slot is a batch of one as far as delivery order is concerned, and a
+        // consumer that had to special-case arity would get ordinals wrong.
+        const media = isText
+          ? undefined
+          : buildGenerationMediaItems(
+              input,
+              mediaInputs,
+              inputLookup,
+              preparingInputIds,
+            );
+        const reservedSlotIds = isText
+          ? undefined
+          : buildReservedSlotIds(
+              input,
+              mediaInputs,
+              inputLookup,
+              preparingInputIds,
+            );
         return Object.freeze({
           id,
           nodeId: input.nodeId,
@@ -179,9 +234,20 @@ export function useGenerationSessionMount(
           ...(input.description ? { description: input.description } : {}),
           inputType: input.inputType,
           ...(textValue !== undefined ? { value: textValue } : {}),
+          ...(repeatable ? { repeatable: Object.freeze(repeatable) } : {}),
+          ...(media ? { media: Object.freeze(media) } : {}),
+          ...(reservedSlotIds?.length
+            ? { reservedSlotIds: Object.freeze(reservedSlotIds) }
+            : {}),
         }) as GenerationInputSnapshot;
       }),
-    [inputLookup, textValues, workflowInputs],
+    [
+      inputLookup,
+      mediaInputs,
+      preparingInputIds,
+      textValues,
+      workflowInputs,
+    ],
   );
 
   const editableWidgets = useMemo<
@@ -215,7 +281,9 @@ export function useGenerationSessionMount(
   // The host stays identity-stable so the session mounts once per panel and
   // publishes into the same session across re-renders.
   const commitRef = useRef<(update: GenerationSessionCommit) => void>(() => {});
+  const resolveAssetRef = useRef(resolveAsset);
   useEffect(() => {
+    resolveAssetRef.current = resolveAsset;
     commitRef.current = (update: GenerationSessionCommit) => {
       if (update.textInputs.size > 0) commitTextInputs(update.textInputs);
       for (const widget of update.widgets) {
@@ -225,10 +293,49 @@ export function useGenerationSessionMount(
           widget.value,
         );
       }
+      // In staged order: each media change was validated against the state the
+      // one before it left, so applying them out of order would land on slots
+      // that no longer hold what the plan expected.
+      for (const media of update.media) {
+        switch (media.kind) {
+          case "attach":
+            attachAssetToSlot(media.slotId, media.assetId);
+            // Before any reorder: the switches belong to the media and the
+            // store carries them across a move, but they are addressed by the
+            // slot the asset just landed in.
+            for (const option of media.itemOptions) {
+              setMediaItemOption(media.slotId, option.optionId, option.value);
+            }
+            if (media.moveTo !== null) {
+              moveMediaItem(media.slotId, media.moveTo);
+            }
+            break;
+          case "move":
+            moveMediaItem(media.slotId, media.toOrdinal);
+            break;
+          case "remove":
+            removeMediaItem(media.slotId);
+            break;
+          case "set-option":
+            setMediaItemOption(media.slotId, media.optionId, media.value);
+            break;
+        }
+      }
     };
-  }, [applyWidgetValue, commitTextInputs]);
+  }, [
+    applyWidgetValue,
+    attachAssetToSlot,
+    commitTextInputs,
+    moveMediaItem,
+    removeMediaItem,
+    resolveAsset,
+    setMediaItemOption,
+  ]);
   const host = useMemo(
-    () => ({ commit: (update: GenerationSessionCommit) => commitRef.current(update) }),
+    () => ({
+      commit: (update: GenerationSessionCommit) => commitRef.current(update),
+      resolveAsset: (assetId: string) => resolveAssetRef.current(assetId),
+    }),
     [],
   );
 

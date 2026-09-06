@@ -11,6 +11,7 @@ import {
 } from "../../core/shell/layout/layoutTypes";
 import { useShellLayoutRuntime } from "../../core/shell/layout/useShellLayoutRuntime";
 import { useShellLayoutStore } from "../../core/shell/layout/useShellLayoutStore";
+import { EditorOverlayHost } from "./EditorOverlayHost";
 import { ShellPortableViewHost } from "../../core/shell/ShellPortableViewHost";
 import type { ShellViewEntry } from "../../core/shell/viewRegistry";
 import type { ProjectConfig } from "../../features/project";
@@ -135,6 +136,10 @@ export function EditorLayout({
       {/* Above the regions, so a panel keeps its subtree, its subscriptions,
           and its rendering surface when the user moves it (plan §3.6). */}
       <ShellPortableViewHost wrap={wrapPortableView} />
+
+      {/* Inside the editor's drag context, unlike the app-wide modal host, so
+          a floating workspace can accept library drags. */}
+      <EditorOverlayHost />
 
       <EditorRegion
         id="shell-region-left-sidebar"

@@ -372,6 +372,8 @@ export function GenerationPanel() {
     handleSwapMediaInputs,
     handleMoveMediaInput,
     handleToggleMediaInputOption,
+    handleAttachAssetById,
+    resolveLibraryAsset,
     handleClickSelect,
     handleEditMedia,
 
@@ -758,6 +760,13 @@ export function GenerationPanel() {
     canSubmit: canGenerate,
     commitTextInputs: handleTextValuesCommit,
     applyWidgetValue: applyDisplayedWidgetValue,
+    // The panel's own media handlers, so a session write and a drag land in
+    // exactly the same place by exactly the same rules.
+    attachAssetToSlot: handleAttachAssetById,
+    moveMediaItem: handleMoveMediaInput,
+    removeMediaItem: handleInputClear,
+    setMediaItemOption: handleToggleMediaInputOption,
+    resolveAsset: resolveLibraryAsset,
   });
 
   const handleDisplayedWidgetChange = useCallback(

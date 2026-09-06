@@ -1,12 +1,21 @@
 import { serializeFiniteJson } from "../utils/finiteJson";
+import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
+import { isVideoAssetWithAudio } from "../utils/audioSlotAssets";
+import { canAttachAssetToMediaInput } from "../utils/mediaInputAssets";
+import { buildRepeatableInputSlotId } from "../utils/workflowInputs";
 import type {
   GenerationEditableWidgetSnapshot,
+  GenerationInputSnapshot,
+  GenerationMediaItemOptionId,
+  GenerationMediaItemSnapshot,
+  GenerationSessionMediaCommit,
+  GenerationSessionAssetCandidate,
   GenerationSessionJsonValue,
   GenerationSessionSnapshot,
   GenerationTransactionFailureCode,
   GenerationWidgetTarget,
 } from "./generationSessionTypes";
-import type { WidgetValueType } from "../types";
+import type { WidgetValueType, WorkflowInput } from "../types";
 
 /**
  * Deterministic validation for session transactions
@@ -335,4 +344,451 @@ export function widgetValueMatchesSnapshot(
   return bindings.every(
     (binding) => serializeFiniteJson(binding.value) === serialized,
   );
+}
+
+/**
+ * Media validation
+ * (docs/minimax-prompt-composer-extension-plan.md §4, 1B).
+ *
+ * Judged against the published snapshot and the drop predicates the panel
+ * itself uses, so a write cannot place an asset a drag could not, and cannot
+ * address a slot the batch strip does not show.
+ */
+
+/** A snapshot input reduced to what the slot-id helpers need. */
+function slotKey(
+  input: GenerationInputSnapshot,
+): Pick<WorkflowInput, "id" | "nodeId" | "param"> {
+  return { id: input.id, nodeId: input.nodeId, param: input.param };
+}
+
+function resolveMediaInput(
+  snapshot: GenerationSessionSnapshot,
+  inputId: string,
+): ValidationResult<GenerationInputSnapshot> {
+  const input = resolveInput(snapshot, inputId);
+  if (!input) {
+    return failure(
+      "input_not_found",
+      `Generation input '${inputId}' was not found.`,
+    );
+  }
+  if (input.inputType === "text" || !input.media) {
+    return failure(
+      "input_type_mismatch",
+      `Generation input '${inputId}' is not a media input.`,
+    );
+  }
+  return { ok: true, value: input };
+}
+
+/** Slots this input may occupy at all, which a single-slot input caps at one. */
+function inputCapacity(input: GenerationInputSnapshot): number {
+  return input.repeatable ? input.repeatable.max : 1;
+}
+
+export interface AttachAssetCommand {
+  readonly inputId: string;
+  readonly assetId: string;
+  readonly at?: number;
+  /** Per-item switches to apply to the item this attach creates. */
+  readonly itemOptions?: Readonly<Record<string, boolean>>;
+}
+
+export interface AttachAssetPlan {
+  readonly inputId: string;
+  readonly slotId: string;
+  readonly assetId: string;
+  readonly moveTo: number | null;
+  readonly itemOptions: readonly {
+    readonly optionId: GenerationMediaItemOptionId;
+    readonly value: boolean;
+  }[];
+}
+
+/**
+ * The slot an append lands in, or `null` when the input has none free.
+ *
+ * The same scan the batch strip's `slotIdAt` runs, and for the same reason:
+ * slot ids are positional but occupancy is not the filled *count*. A slot the
+ * panel is holding open for a value in flight is taken, and a batch can hold a
+ * transient gap, so the count and the first free index can disagree.
+ */
+function findFreeSlotId(input: GenerationInputSnapshot): string | null {
+  const key = slotKey(input);
+  const taken = new Set<string>([
+    ...(input.media ?? []).map((item) => item.slotId),
+    ...(input.reservedSlotIds ?? []),
+  ]);
+  const max = inputCapacity(input);
+  for (let index = 0; index < max; index += 1) {
+    const slotId = buildRepeatableInputSlotId(key, index);
+    if (!taken.has(slotId)) return slotId;
+  }
+  return null;
+}
+
+/**
+ * Plan an attach.
+ *
+ * Position is expressed in ordinals, never in slot ids: the caller asks for a
+ * delivery position and the host works out which slot that is, because the two
+ * only agree while the batch is gapless and the panel is what keeps it so.
+ */
+export function validateAttachAssetCommand(
+  snapshot: GenerationSessionSnapshot,
+  asset: GenerationSessionAssetCandidate | null,
+  command: AttachAssetCommand,
+): ValidationResult<AttachAssetPlan> {
+  const resolved = resolveMediaInput(snapshot, command.inputId);
+  if (!resolved.ok) return resolved;
+  const input = resolved.value;
+  const media = input.media ?? [];
+
+  if (!asset) {
+    return failure(
+      "asset_not_found",
+      `Asset '${command.assetId}' is not in the project library.`,
+    );
+  }
+  if (!canAttachAssetToMediaInput(input.inputType, asset)) {
+    return failure(
+      "asset_type_rejected",
+      `Input '${input.id}' does not accept the ${asset.type} asset '${asset.name}'.`,
+    );
+  }
+
+  // A single-slot input replaces rather than fills up, exactly as a drop on an
+  // occupied slot does; only a batch can actually run out of room.
+  const slotId = input.repeatable
+    ? findFreeSlotId(input)
+    : buildRepeatableInputSlotId(slotKey(input), 0);
+  if (slotId === null) {
+    return failure(
+      "batch_full",
+      `Input '${input.id}' has no free slot; it holds ${media.length} item${
+        media.length === 1 ? "" : "s"
+      } and its remaining slots are reserved.`,
+    );
+  }
+
+  const appendAt = input.repeatable ? media.length : 0;
+  const at = command.at ?? appendAt;
+  if (!Number.isInteger(at) || at < 0 || at > appendAt) {
+    return failure(
+      "ordinal_out_of_range",
+      `Input '${input.id}' takes an attach position between 0 and ${appendAt}.`,
+    );
+  }
+
+  // Judged against the item this attach will create, so a caller can switch on
+  // a reference it is attaching in the same breath — it cannot name the slot,
+  // because the slot has no item in it yet.
+  const offered = simulateAttachedItem(
+    input,
+    asset,
+    input.repeatable ? null : (media[0] ?? null),
+  ).options;
+  const itemOptions: { optionId: GenerationMediaItemOptionId; value: boolean }[] =
+    [];
+  for (const [optionId, value] of Object.entries(command.itemOptions ?? {})) {
+    if (!(optionId in offered)) {
+      return failure(
+        "option_not_available",
+        `Input '${input.id}' does not offer the option '${optionId}' for '${asset.name}'.`,
+      );
+    }
+    if (optionId !== "audio") {
+      return failure(
+        "option_not_available",
+        `Option '${optionId}' has no host writer.`,
+      );
+    }
+    itemOptions.push({ optionId, value });
+  }
+
+  return {
+    ok: true,
+    value: {
+      inputId: input.id,
+      slotId,
+      assetId: asset.id,
+      moveTo: at === appendAt ? null : at,
+      itemOptions,
+    },
+  };
+}
+
+export interface MoveMediaPlan {
+  readonly inputId: string;
+  readonly slotId: string;
+  readonly toOrdinal: number;
+}
+
+export function validateMoveMediaCommand(
+  snapshot: GenerationSessionSnapshot,
+  inputId: string,
+  fromOrdinal: number,
+  toOrdinal: number,
+): ValidationResult<MoveMediaPlan> {
+  const resolved = resolveMediaInput(snapshot, inputId);
+  if (!resolved.ok) return resolved;
+  const input = resolved.value;
+  if (!input.repeatable) {
+    return failure(
+      "input_not_repeatable",
+      `Input '${input.id}' holds a single slot, so there is nothing to reorder.`,
+    );
+  }
+  const media = input.media ?? [];
+  const inRange = (ordinal: number) =>
+    Number.isInteger(ordinal) && ordinal >= 0 && ordinal < media.length;
+  if (!inRange(fromOrdinal) || !inRange(toOrdinal)) {
+    return failure(
+      "ordinal_out_of_range",
+      `Input '${input.id}' holds ${media.length} items; ordinals run 0 to ${
+        media.length - 1
+      }.`,
+    );
+  }
+  const item = media[fromOrdinal];
+  return {
+    ok: true,
+    value: { inputId: input.id, slotId: item.slotId, toOrdinal },
+  };
+}
+
+export interface RemoveMediaPlan {
+  readonly inputId: string;
+  readonly slotId: string;
+}
+
+export function validateRemoveMediaCommand(
+  snapshot: GenerationSessionSnapshot,
+  inputId: string,
+  slotId: string,
+): ValidationResult<RemoveMediaPlan> {
+  const resolved = resolveMediaInput(snapshot, inputId);
+  if (!resolved.ok) return resolved;
+  const input = resolved.value;
+  const item = (input.media ?? []).find(
+    (candidate) => candidate.slotId === slotId,
+  );
+  if (!item) {
+    return failure(
+      "media_not_found",
+      `Input '${input.id}' has nothing attached at slot '${slotId}'.`,
+    );
+  }
+  return { ok: true, value: { inputId: input.id, slotId: item.slotId } };
+}
+
+export interface SetMediaOptionPlan {
+  readonly inputId: string;
+  readonly slotId: string;
+  readonly optionId: GenerationMediaItemOptionId;
+  readonly value: boolean;
+}
+
+/**
+ * Resolve a per-item switch write.
+ *
+ * Addressed by slot alone because slot ids are unique across the panel, and
+ * because the caller that wants to toggle a reference has the item, not the
+ * input it happens to sit in.
+ *
+ * The gate is the item's own published `options`: the panel offers the switch
+ * only where the rules declare it *and* the value can deliver a soundtrack, so
+ * reading it back is exactly "would the strip render this control".
+ */
+export function validateSetMediaOptionCommand(
+  snapshot: GenerationSessionSnapshot,
+  slotId: string,
+  optionId: string,
+  value: boolean,
+): ValidationResult<SetMediaOptionPlan> {
+  for (const input of snapshot.inputs) {
+    const item = (input.media ?? []).find(
+      (candidate) => candidate.slotId === slotId,
+    );
+    if (!item) continue;
+    if (!(optionId in item.options)) {
+      return failure(
+        "option_not_available",
+        `Slot '${slotId}' does not offer the option '${optionId}'.`,
+      );
+    }
+    if (optionId !== "audio") {
+      return failure(
+        "option_not_available",
+        `Option '${optionId}' has no host writer.`,
+      );
+    }
+    return {
+      ok: true,
+      value: { inputId: input.id, slotId, optionId, value },
+    };
+  }
+  return failure(
+    "media_not_found",
+    `No generation input has media attached at slot '${slotId}'.`,
+  );
+}
+
+/**
+ * Replay one validated media change onto a snapshot.
+ *
+ * A transaction may stage several media changes, and each is judged against
+ * the state the ones before it left — attaching twice must not plan the same
+ * slot twice. Rather than teach the validators about a pending queue, the
+ * service advances this working snapshot between them, so every validator
+ * stays a pure function of one snapshot.
+ *
+ * Slot ids are positional: the store front-packs a batch on every mutation, so
+ * the item at ordinal *i* occupies slot *i*. Renumbering after each change is
+ * what keeps the simulation honest about the ids a later command may address.
+ */
+export function applyMediaCommitToSnapshot(
+  snapshot: GenerationSessionSnapshot,
+  commit: GenerationSessionMediaCommit,
+  asset: GenerationSessionAssetCandidate | null,
+): GenerationSessionSnapshot {
+  const input = snapshot.inputs.find(
+    (candidate) => candidate.id === commit.inputId,
+  );
+  if (!input) return snapshot;
+  const media = [...(input.media ?? [])];
+
+  switch (commit.kind) {
+    case "attach": {
+      if (!asset) return snapshot;
+      const replaced = input.repeatable ? null : (media[0] ?? null);
+      const base = simulateAttachedItem(input, asset, replaced);
+      const item: GenerationMediaItemSnapshot = {
+        ...base,
+        slotId: commit.slotId,
+        options: commit.itemOptions.reduce<Record<string, boolean>>(
+          (options, option) => ({ ...options, [option.optionId]: option.value }),
+          { ...base.options },
+        ),
+      };
+      if (!input.repeatable) {
+        return withMedia(snapshot, input, [item], { renumber: false });
+      }
+      media.splice(commit.moveTo ?? media.length, 0, item);
+      // An append writes one slot and leaves every other alone, reservations
+      // included. Only the reorder that follows a positioned attach rewrites
+      // the batch, and `writeRepeatableSlotValues` front-packs when it does.
+      return withMedia(snapshot, input, media, {
+        renumber: commit.moveTo !== null,
+      });
+    }
+    case "move": {
+      const from = media.findIndex((item) => item.slotId === commit.slotId);
+      if (from < 0) return snapshot;
+      const [moved] = media.splice(from, 1);
+      media.splice(commit.toOrdinal, 0, moved);
+      return withMedia(snapshot, input, media, { renumber: true });
+    }
+    case "remove": {
+      const at = media.findIndex((item) => item.slotId === commit.slotId);
+      if (at < 0) return snapshot;
+      media.splice(at, 1);
+      return withMedia(snapshot, input, media, { renumber: true });
+    }
+    case "set-option":
+      return withMedia(
+        snapshot,
+        input,
+        media.map((item) =>
+          item.slotId === commit.slotId
+            ? {
+                ...item,
+                options: { ...item.options, [commit.optionId]: commit.value },
+              }
+            : item,
+        ),
+        { renumber: false },
+      );
+  }
+}
+
+/**
+ * Replace one input's media list.
+ *
+ * `renumber` mirrors what the store does: a reorder or a clear rewrites the
+ * whole batch front-packed, so slot ids move and any reservation is written
+ * over; a plain attach writes a single slot and disturbs nothing else.
+ */
+function withMedia(
+  snapshot: GenerationSessionSnapshot,
+  input: GenerationInputSnapshot,
+  media: readonly GenerationMediaItemSnapshot[],
+  { renumber }: { readonly renumber: boolean },
+): GenerationSessionSnapshot {
+  const next = media.map((item, index) => ({
+    ...item,
+    ...(renumber
+      ? { slotId: buildRepeatableInputSlotId(slotKey(input), index) }
+      : {}),
+    ordinal: index,
+  }));
+  return {
+    ...snapshot,
+    inputs: snapshot.inputs.map((candidate) =>
+      candidate.id === input.id
+        ? {
+            ...candidate,
+            media: next,
+            ...(renumber ? { reservedSlotIds: [] } : {}),
+          }
+        : candidate,
+    ),
+  };
+}
+
+/**
+ * The item an attach will produce, as the store would build it.
+ *
+ * `slotId` and `ordinal` are placeholders — {@link withMedia} assigns the real
+ * ones. What matters here is `options`, so that attaching a reference and
+ * toggling its audio in the same transaction validates: the switch is offered
+ * on exactly the terms the batch strip offers it, and a fresh attach starts
+ * off unless the store's carry-forward rule applies.
+ */
+function simulateAttachedItem(
+  input: GenerationInputSnapshot,
+  asset: GenerationSessionAssetCandidate,
+  replaced: GenerationMediaItemSnapshot | null,
+): GenerationMediaItemSnapshot {
+  const deliversAudio =
+    input.inputType === "audio" && assetMatchesType(asset, "video");
+  const offersAudioOption =
+    input.inputType === "video" &&
+    input.repeatable?.optionIds.includes("audio") === true &&
+    isVideoAssetWithAudio(asset);
+  // Replacing a slot with the same asset keeps its switches, matching
+  // `carryForwardItemOptions` in the store.
+  const carried =
+    replaced?.assetId === asset.id ? replaced.options.audio === true : false;
+  return {
+    slotId: "",
+    ordinal: 0,
+    source: "asset",
+    assetId: asset.id,
+    displayName: asset.name,
+    mediaType: deliversAudio
+      ? "audio"
+      : asset.type === "video" || asset.type === "audio"
+        ? asset.type
+        : "image",
+    hasAudio: assetMatchesType(asset, "audio")
+      ? true
+      : assetMatchesType(asset, "video")
+        ? (asset.hasAudio ?? null)
+        : false,
+    options: offersAudioOption ? { audio: carried } : {},
+    // A video landing on an audio slot starts extracting immediately.
+    preparing: deliversAudio,
+  };
 }
