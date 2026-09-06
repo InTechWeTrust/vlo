@@ -407,6 +407,39 @@ export interface AttachAssetPlan {
 }
 
 /**
+ * Refuse a change that would repack the batch while a slot is held open.
+ *
+ * Repacking (`writeRepeatableSlotValues`, and the tail-shift in
+ * `clearMediaInput`) rewrites slots densely, which moves some *other* item
+ * into the slot a producer is holding. Nothing cancels or rebases that
+ * producer: both paths that reserve a slot — a frame capture and a timeline
+ * selection confirm — write to the slot id they captured when they started,
+ * unconditionally, seconds later. The item that got moved there would be
+ * silently destroyed.
+ *
+ * So this is refused rather than reconciled. It is retryable and the caller
+ * can see exactly when: `reservedSlotIds` is published, and the session
+ * republishes when it changes.
+ *
+ * An *append* is not repacking — it writes one free slot and disturbs nothing —
+ * so it stays allowed, which is what keeps the common case working while the
+ * user is confirming a selection somewhere else in the batch.
+ */
+function refuseWhileReserved(
+  input: GenerationInputSnapshot,
+  what: string,
+): ValidationResult<never> | null {
+  const reserved = input.reservedSlotIds ?? [];
+  if (reserved.length === 0) return null;
+  return failure(
+    "input_busy",
+    `Input '${input.id}' cannot ${what} while ${reserved.length} slot${
+      reserved.length === 1 ? " is" : "s are"
+    } held open for media still being produced.`,
+  );
+}
+
+/**
  * The slot an append lands in, or `null` when the input has none free.
  *
  * The same scan the batch strip's `slotIdAt` runs, and for the same reason:
@@ -507,13 +540,20 @@ export function validateAttachAssetCommand(
     itemOptions.push({ optionId, value });
   }
 
+  // Only a *positioned* attach repacks: it is an append followed by a reorder.
+  const moveTo = at === appendAt ? null : at;
+  if (moveTo !== null) {
+    const busy = refuseWhileReserved(input, "insert at a position");
+    if (busy) return busy;
+  }
+
   return {
     ok: true,
     value: {
       inputId: input.id,
       slotId,
       assetId: asset.id,
-      moveTo: at === appendAt ? null : at,
+      moveTo,
       itemOptions,
     },
   };
@@ -540,6 +580,8 @@ export function validateMoveMediaCommand(
       `Input '${input.id}' holds a single slot, so there is nothing to reorder.`,
     );
   }
+  const busy = refuseWhileReserved(input, "reorder");
+  if (busy) return busy;
   const media = input.media ?? [];
   const inRange = (ordinal: number) =>
     Number.isInteger(ordinal) && ordinal >= 0 && ordinal < media.length;
@@ -579,6 +621,11 @@ export function validateRemoveMediaCommand(
       "media_not_found",
       `Input '${input.id}' has nothing attached at slot '${slotId}'.`,
     );
+  }
+  // Clearing a repeatable slot shifts every later one down, which is repacking.
+  if (input.repeatable) {
+    const busy = refuseWhileReserved(input, "remove an item");
+    if (busy) return busy;
   }
   return { ok: true, value: { inputId: input.id, slotId: item.slotId } };
 }
@@ -717,8 +764,13 @@ export function applyMediaCommitToSnapshot(
  * Replace one input's media list.
  *
  * `renumber` mirrors what the store does: a reorder or a clear rewrites the
- * whole batch front-packed, so slot ids move and any reservation is written
- * over; a plain attach writes a single slot and disturbs nothing else.
+ * whole batch front-packed, so slot ids move; a plain attach writes a single
+ * slot and disturbs nothing else.
+ *
+ * A repacking commit is only ever planned for an input with no reservations
+ * (see {@link refuseWhileReserved}), so the empty `reservedSlotIds` below is a
+ * restatement of that precondition, not a claim that the commit cancelled a
+ * producer — nothing here can.
  */
 function withMedia(
   snapshot: GenerationSessionSnapshot,

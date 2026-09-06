@@ -342,6 +342,7 @@ describe("native and extension entry points agree", () => {
       batch_full: "batch_full",
       ordinal_out_of_range: "ordinal_out_of_range",
       media_not_found: "media_not_found",
+      input_busy: "input_busy",
       option_not_available: "option_not_available",
       // Published as themselves since E1: with `setWidget` on the surface, an
       // extension has to be able to tell "no such widget" from "no control for

@@ -410,6 +410,75 @@ describe("generation media writes: native drop vs SDK attach", () => {
     rendered.unmount();
   });
 
+  it("refuses to repack a batch while a slot is held open", () => {
+    const rendered = mountPanel();
+    const api = createExtensionGenerationApi(createScope());
+
+    act(() => {
+      api.transaction("Fill", (transaction) => {
+        transaction.attachAsset(REFERENCE_ID, LOUD_VIDEO.id);
+        transaction.attachAsset(REFERENCE_ID, SECOND_VIDEO.id);
+      });
+    });
+    // A third slot is now held open by a timeline selection being rendered.
+    act(() => {
+      useMediaInputPreparationStore
+        .getState()
+        .beginMediaInputPreparation(`${REFERENCE_ID}::repeat::2`);
+    });
+
+    // Repacking would move an existing item into slot 2, and the render that
+    // owns it writes there unconditionally when it finishes — the item would
+    // be destroyed. Nothing here can cancel or rebase that render, so the
+    // write is refused instead of reconciled.
+    for (const [label, run] of [
+      ["reorder", (t: Parameters<Parameters<typeof api.transaction>[1]>[0]) =>
+        t.moveMedia(REFERENCE_ID, 1, 0)],
+      ["remove", (t: Parameters<Parameters<typeof api.transaction>[1]>[0]) =>
+        t.removeMedia(REFERENCE_ID, REFERENCE_ID)],
+      ["insert", (t: Parameters<Parameters<typeof api.transaction>[1]>[0]) =>
+        t.attachAsset(REFERENCE_ID, SILENT_VIDEO.id, { at: 0 })],
+    ] as const) {
+      let outcome;
+      act(() => {
+        outcome = api.transaction(`Repack by ${label}`, run);
+      });
+      expect(outcome, label).toMatchObject({ ok: false, code: "input_busy" });
+    }
+    // Nothing moved, and the reserved slot is still empty and still reserved.
+    expect(readAttachedIds(api)).toEqual([LOUD_VIDEO.id, SECOND_VIDEO.id]);
+    expect(readMediaInputs()[`${REFERENCE_ID}::repeat::2`]).toBeUndefined();
+
+    // Appending is not repacking: it writes one free slot and disturbs
+    // nothing, so it stays available while the render is in flight.
+    let appended;
+    act(() => {
+      appended = api.transaction("Append beside it", (transaction) => {
+        transaction.attachAsset(REFERENCE_ID, SILENT_VIDEO.id);
+      });
+    });
+    expect(appended).toMatchObject({ ok: true, changed: true });
+    expect(readReferences(api)[2]).toMatchObject({
+      assetId: SILENT_VIDEO.id,
+      slotId: `${REFERENCE_ID}::repeat::3`,
+    });
+
+    // And it recovers on its own once the media lands.
+    act(() => {
+      useMediaInputPreparationStore
+        .getState()
+        .endMediaInputPreparation(`${REFERENCE_ID}::repeat::2`);
+    });
+    let recovered;
+    act(() => {
+      recovered = api.transaction("Reorder now", (transaction) => {
+        transaction.moveMedia(REFERENCE_ID, 1, 0);
+      });
+    });
+    expect(recovered).toMatchObject({ ok: true, changed: true });
+    rendered.unmount();
+  });
+
   it("refuses to overfill a batch and to reorder a single slot", () => {
     const rendered = mountPanel();
     const api = createExtensionGenerationApi(createScope());

@@ -415,8 +415,17 @@ cannot place an asset a user could not drag into the same slot. Attaching a
 silent video to an audio input fails with `asset_type_rejected`, just as the
 drop target would refuse it. The refusals worth branching on are
 `asset_not_found`, `asset_type_rejected`, `batch_full`,
-`ordinal_out_of_range`, `input_not_repeatable`, `media_not_found`, and
-`option_not_available`.
+`ordinal_out_of_range`, `input_not_repeatable`, `media_not_found`,
+`option_not_available`, and `input_busy`.
+
+`input_busy` is the one worth handling rather than reporting. While an input
+has `reservedSlotIds`, any write that **repacks** the batch — `moveMedia`,
+`removeMedia`, or an `attachAsset` with an `at` that is not the end — is
+refused. Repacking rewrites slots densely, which would move an existing item
+into the slot a pending render is about to write to, and the host cannot cancel
+that render. Appending is always allowed. The condition clears itself when the
+media lands and the session republishes, so the retry is simply: wait for
+`reservedSlotIds` to empty.
 
 `changed` in the result means something actually moved. A reorder onto the
 position an item already holds, or a switch written to the value it already

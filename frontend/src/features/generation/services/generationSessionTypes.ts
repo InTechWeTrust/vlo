@@ -247,6 +247,11 @@ export type GenerationTransactionFailureCode =
   | "ordinal_out_of_range"
   /** The addressed slot holds nothing, so there is nothing to change. */
   | "media_not_found"
+  /**
+   * The input holds a slot open for a value still being produced, and the
+   * requested change would repack the batch underneath it. Retryable.
+   */
+  | "input_busy"
   | "option_not_available";
 
 export type GenerationTransactionResult =

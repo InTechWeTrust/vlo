@@ -3311,6 +3311,11 @@ export interface ExtensionGenerationInputSnapshot {
    * *not* free, so the room left in a batch is
    * `repeatable.max - media.length - reservedSlotIds.length`, never
    * `max - media.length`. An `attachAsset` skips them for you.
+   *
+   * While this is non-empty the input refuses any write that repacks the batch
+   * — `moveMedia`, `removeMedia`, and a positioned `attachAsset` — with
+   * `input_busy`. It empties on its own when the media lands, and the session
+   * republishes, so waiting for that is the whole retry strategy.
    */
   readonly reservedSlotIds?: readonly string[];
 }
@@ -3433,6 +3438,9 @@ export interface ExtensionGenerationTransaction {
    * work out — an append skips slots the panel is holding open for a value
    * still being produced.
    *
+   * Appending always works. Passing an `at` that is not the end repacks the
+   * batch, so it fails with `input_busy` while `reservedSlotIds` is non-empty.
+   *
    * `itemOptions` sets per-item switches on the item this attach creates.
    * They belong here rather than in a following `setMediaOption` because the
    * new item has no slot id to name until the transaction commits, and
@@ -3443,8 +3451,15 @@ export interface ExtensionGenerationTransaction {
     assetId: string,
     options?: ExtensionGenerationAttachOptions,
   ): void;
-  /** Reorder within one repeatable input, by delivery position. */
+  /**
+   * Reorder within one repeatable input, by delivery position.
+   *
+   * Fails with `input_busy` while the input has `reservedSlotIds`: reordering
+   * repacks the batch, which would move another item into the slot a pending
+   * render is about to write, and the host cannot cancel that render.
+   */
   moveMedia(inputId: string, fromOrdinal: number, toOrdinal: number): void;
+  /** Also `input_busy` while the input has `reservedSlotIds`; see `moveMedia`. */
   removeMedia(inputId: string, slotId: string): void;
   /**
    * Write one per-item switch. Only the ids the slot's snapshot lists in
@@ -3476,6 +3491,12 @@ export type ExtensionGenerationTransactionResult =
         | "ordinal_out_of_range"
         /** The addressed slot holds nothing, so there is nothing to change. */
         | "media_not_found"
+        /**
+         * The input is holding a slot open for media still being produced, and
+         * the change would repack the batch underneath it. Retryable: watch
+         * `reservedSlotIds` and try again once it is empty.
+         */
+        | "input_busy"
         | "option_not_available"
         | "callback_failed";
       readonly message: string;
