@@ -53,7 +53,7 @@
           "control": "slider",
           "slider_display": "number",
           "min": 22,
-          "max": 600,
+          "max": 719,
           "step": 17,
           "default": 124,
           "display_unit": {
