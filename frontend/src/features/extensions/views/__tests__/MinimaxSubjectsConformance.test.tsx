@@ -269,7 +269,7 @@ function mountEditor(
   return render(
     React.createElement(View, {
       viewId: "v",
-      region: "editor-overlay",
+      region: "right-sidebar",
       active: true,
     }),
   );
@@ -310,12 +310,15 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
         .some((view) => view.id === listId),
     ).toBe(true);
 
-    // The editor must be in `editor-overlay`, not the sidebar and not a modal.
-    // The sidebar shows one tab at a time, so a subject edited there could
-    // never sit beside the asset browser its assets are dragged from; and a
-    // modal mounts outside the editor's DndContext, where a drop slot never
-    // fires at all.
-    expect(hostViewRegistry.get(editorId)?.defaultRegion).toBe("editor-overlay");
+    // The editor goes opposite the asset browser. A sidebar shows one tab at
+    // a time, so a subject edited in the *left* sidebar could never sit beside
+    // the assets its references are dragged from.
+    expect(hostViewRegistry.get(editorId)?.defaultRegion).toBe("right-sidebar");
+    // Portable, so the placement is finally the user's to change.
+    expect(hostViewRegistry.get(editorId)?.allowedRegions).toEqual([
+      "right-sidebar",
+      "bottom-dock",
+    ]);
 
     await host.deactivate(EXTENSION_ID);
     activeHost = undefined;
@@ -342,13 +345,12 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     expect(editor?.defaultRegion).not.toBe("left-sidebar");
   });
 
-  it("leaves the floating panel closed until something opens it", async () => {
+  it("opens the editor in the region the list view asks for", async () => {
     const { activate, SUBJECT_EDITOR_VIEW_ID } = await loadPackage();
     const editorId = `${EXTENSION_ID}/${SUBJECT_EDITOR_VIEW_ID}`;
-    hostViewRegistry.clearSelection("editor-overlay");
 
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.21.0",
+      sdkVersion: "1.22.0",
       createApi: createVloExtensionApi,
     });
     activeHost = host;
@@ -357,14 +359,12 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
       { activate: activate as ExtensionModule["activate"] },
     );
 
-    // Registering a floating panel must not put one over the editor.
-    expect(hostViewRegistry.getSelected("editor-overlay")).toBeNull();
-
-    // ...and the region accepts it when asked, which is exactly what the
-    // list view's `openView` call does.
-    expect(hostViewRegistry.select("editor-overlay", editorId)).toBe(true);
-    expect(hostViewRegistry.getSelected("editor-overlay")).toBe(editorId);
-    hostViewRegistry.clearSelection("editor-overlay");
+    // Exactly what the list view's `openView` does, and the move menu will
+    // never offer `left-sidebar` — the region that cannot show this panel and
+    // the asset browser together.
+    expect(hostViewRegistry.select("right-sidebar", editorId)).toBe(true);
+    expect(hostViewRegistry.getSelected("right-sidebar")).toBe(editorId);
+    expect(hostViewRegistry.select("left-sidebar", editorId)).toBe(false);
   });
 
   /**
