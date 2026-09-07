@@ -15,6 +15,7 @@ import type {
 } from "../../types";
 import { hostViewRegistry } from "../../../../core/shell/viewRegistry";
 import { hostContextKeys } from "../../../../core/shell/contextKeys";
+import type { MinimaxPromptPackage } from "./minimaxPromptPackageLoader";
 
 const EXTENSION_ID = "vlo.minimax-prompt";
 
@@ -33,10 +34,8 @@ const PACKAGE_ENTRY_PATH = resolve(
 );
 const packagePresent = existsSync(PACKAGE_ENTRY_PATH);
 
-type PackageExports = typeof import("./minimaxPromptPackageLoader");
-
-async function loadPackage(): Promise<PackageExports> {
-  return (await import("./minimaxPromptPackageLoader")) as PackageExports;
+async function loadPackage(): Promise<MinimaxPromptPackage> {
+  return (await import("./minimaxPromptPackageLoader")).minimaxPromptPackage;
 }
 
 /**
@@ -287,7 +286,7 @@ afterEach(async () => {
 
 describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
   // 2A — package skeleton, and the two surfaces the drag problem forced.
-  it("registers a sidebar tab and a floating editor, and removes both on deactivation", async () => {
+  it("registers a sidebar tab and an editor panel, and removes both on deactivation", async () => {
     const { activate, SUBJECTS_VIEW_ID, SUBJECT_EDITOR_VIEW_ID } =
       await loadPackage();
     const listId = `${EXTENSION_ID}/${SUBJECTS_VIEW_ID}`;
