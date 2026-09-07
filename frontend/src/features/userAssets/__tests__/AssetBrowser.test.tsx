@@ -1128,9 +1128,12 @@ describe("AssetBrowser Component", () => {
     );
     await waitFor(() => {
       expect(
-        screen.getByRole("button", { name: "Extract frame" }),
+        screen.getByRole("button", { name: "Extract" }),
       ).toBeEnabled();
     });
+    expect(screen.queryByTestId("mini-editor-controls")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Extract frame" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
 
     act(() => {
       useMiniEditorStore.getState().setPlayhead(mediaSecondsToTick(2));

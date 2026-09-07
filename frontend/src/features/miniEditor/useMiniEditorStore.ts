@@ -34,6 +34,7 @@ function isWorkingStatus(status: MiniEditorStatus): boolean {
 const MIN_SPAN_TICKS = mediaSecondsToTick(0.1);
 
 interface MiniEditorInternal {
+  previewMode: boolean;
   openerId: string | null;
   autoPlay: boolean;
   prepare: MiniEditorOpenArgs["prepare"] | null;
@@ -79,6 +80,7 @@ export interface MiniEditorState {
   playheadTicks: number;
   isPlaying: boolean;
   extractionMode: MiniEditorExtractionMode;
+  controlsCollapsed: boolean;
 
   _internal: MiniEditorInternal;
 
@@ -107,6 +109,7 @@ export interface MiniEditorState {
   selectRange: (id: string | null) => void;
   setPlayhead: (ticks: number) => void;
   setPlaying: (playing: boolean) => void;
+  setControlsCollapsed: (collapsed: boolean) => void;
   save: () => Promise<void>;
   beginRangeExtraction: () => void;
   beginFrameExtraction: () => void;
@@ -147,6 +150,7 @@ const INITIAL: Omit<
   | "selectRange"
   | "setPlayhead"
   | "setPlaying"
+  | "setControlsCollapsed"
   | "save"
   | "beginRangeExtraction"
   | "beginFrameExtraction"
@@ -171,7 +175,9 @@ const INITIAL: Omit<
   playheadTicks: 0,
   isPlaying: false,
   extractionMode: null,
+  controlsCollapsed: false,
   _internal: {
+    previewMode: false,
     openerId: null,
     autoPlay: false,
     prepare: null,
@@ -208,8 +214,10 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
       presentation: args.presentation ?? "modal",
       status: "preparing",
       title: args.title ?? "Edit video",
+      controlsCollapsed: args.previewMode ?? false,
       ranges: args.initial?.ranges ?? [],
       _internal: {
+        previewMode: args.previewMode ?? false,
         openerId,
         autoPlay: args.autoPlay ?? false,
         prepare: args.prepare,
@@ -479,6 +487,12 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
     set({ isPlaying: playing });
   },
 
+  setControlsCollapsed: (collapsed) => {
+    if (isWorkingStatus(get().status)) return;
+    if (collapsed) get().cancelExtractionSelection();
+    set({ controlsCollapsed: collapsed });
+  },
+
   save: async () => {
     const state = get();
     const { source } = state;
@@ -517,6 +531,7 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
 
     set({
       extractionMode: "range",
+      controlsCollapsed: false,
       error: null,
       notice: null,
       isPlaying: false,
@@ -544,6 +559,7 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
 
     set({
       extractionMode: "frame",
+      controlsCollapsed: false,
       error: null,
       notice: null,
       isPlaying: false,

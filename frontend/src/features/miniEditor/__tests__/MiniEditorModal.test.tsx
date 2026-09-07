@@ -38,6 +38,44 @@ describe("MiniEditorModal", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(["video", "audio"] as const)("keeps %s preview controls unmounted until Extract is chosen", async (mediaType) => {
+    installAnimationFrameMock();
+    const args = {
+      previewMode: true,
+      prepare: async () => ({ ...preparedSource(), mediaType }),
+      onExtractRange: vi.fn(async () => undefined),
+      ...(mediaType === "video" ? { onExtractFrame: vi.fn() } : {}),
+    };
+    await useMiniEditorStore.getState().open(args);
+    render(<MiniEditorModal />);
+    const media = document.querySelector(mediaType) as HTMLMediaElement;
+    expect(media).toHaveAttribute("controls");
+    expect(screen.queryByTestId("mini-editor-controls")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Playhead")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Extract range" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Extract frame" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
+    expect(screen.getByTestId("mini-editor-controls")).toBeInTheDocument();
+    expect(screen.getByLabelText("Playhead")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Extract range" })).toBeEnabled();
+    expect(Boolean(screen.queryByRole("button", { name: "Extract frame" }))).toBe(mediaType === "video");
+    expect(document.querySelector(mediaType)).toBe(media);
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract range" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel selection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByTestId("mini-editor-controls")).not.toBeInTheDocument();
+    expect(document.querySelector(mediaType)).toBe(media);
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
+    await act(async () => {
+      await useMiniEditorStore.getState().open({ ...args, prepare: async () => ({ ...preparedSource(), mediaType }) });
+    });
+    expect(screen.queryByTestId("mini-editor-controls")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Extract" })).toBeEnabled();
+  });
+
   it("shows preparation and preparation failure states", () => {
     useMiniEditorStore.setState({
       isOpen: true,

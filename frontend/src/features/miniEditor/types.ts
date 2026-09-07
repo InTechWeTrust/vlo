@@ -64,6 +64,8 @@ export interface MiniEditorFrameConstraint {
 }
 
 export interface MiniEditorOpenArgs {
+  /** View media first; mount editing controls only after choosing Extract. */
+  previewMode?: boolean;
   /** Stable identity used to coordinate replacement and live opener updates. */
   openerId?: string;
   /** Start video playback on load when the browser permits it. */

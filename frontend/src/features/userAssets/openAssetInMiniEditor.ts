@@ -37,6 +37,7 @@ export async function openAssetInMiniEditor(
   const isTemporal = asset.type === "video" || asset.type === "audio";
 
   const args: MiniEditorOpenArgs = {
+    previewMode: true,
     openerId: options.openerId,
     autoPlay: asset.type === "video",
     presentation: options.presentation ?? "modal",

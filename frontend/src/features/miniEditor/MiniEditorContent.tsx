@@ -586,6 +586,11 @@ interface MiniEditorActionsProps {
 
 /** Shared task actions; the containing presentation owns how closing happens. */
 export function MiniEditorActions({ onRequestClose }: MiniEditorActionsProps) {
+  const previewMode = useMiniEditorStore((state) => state._internal.previewMode);
+  const controlsCollapsed = useMiniEditorStore((state) => state.controlsCollapsed);
+  const setControlsCollapsed = useMiniEditorStore(
+    (state) => state.setControlsCollapsed,
+  );
   const status = useMiniEditorStore((state) => state.status);
   const source = useMiniEditorStore((state) => state.source);
   const extractionMode = useMiniEditorStore((state) => state.extractionMode);
@@ -643,7 +648,21 @@ export function MiniEditorActions({ onRequestClose }: MiniEditorActionsProps) {
           {canSave ? "Cancel" : "Close"}
         </Button>
       )}
-      {canExtractFrame && extractionMode === null ? (
+      {previewMode &&
+      (canExtractFrame || canExtractRange) &&
+      extractionMode === null ? (
+        <Button
+          onClick={() => setControlsCollapsed(!controlsCollapsed)}
+          variant={controlsCollapsed ? "contained" : "outlined"}
+          size="small"
+          disabled={isBusy || !source}
+          aria-expanded={!controlsCollapsed}
+          startIcon={controlsCollapsed ? <ContentCutIcon /> : undefined}
+        >
+          {controlsCollapsed ? "Extract" : "Done"}
+        </Button>
+      ) : null}
+      {!controlsCollapsed && canExtractFrame && extractionMode === null ? (
         <Button
           onClick={beginFrameExtraction}
           variant="outlined"
@@ -654,7 +673,7 @@ export function MiniEditorActions({ onRequestClose }: MiniEditorActionsProps) {
           Extract frame
         </Button>
       ) : null}
-      {canExtractRange && extractionMode === null ? (
+      {!controlsCollapsed && canExtractRange && extractionMode === null ? (
         <Button
           onClick={beginRangeExtraction}
           variant="contained"

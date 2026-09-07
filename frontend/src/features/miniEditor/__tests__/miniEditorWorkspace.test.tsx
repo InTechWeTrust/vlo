@@ -187,6 +187,41 @@ describe("MiniEditor dedicated workspace canary", () => {
     });
   });
 
+  it("collapses the preview workspace controls until Extract and restores shell geometry on exit", async () => {
+    const previousGeometry = useShellLayoutStore.getState().resolved.lowerStage;
+    renderWorkspaceHost();
+    await act(async () => {
+      await openMiniEditorWorkspace({
+        assetId: "preview-only",
+        title: "Preview.mp4",
+        args: {
+          previewMode: true,
+          prepare: async () => source(),
+          onExtractRange: vi.fn(),
+          onExtractFrame: vi.fn(),
+        },
+      });
+    });
+    expect(useShellLayoutStore.getState().resolved.lowerStage.collapsed).toBe(true);
+    expect(screen.queryByTestId("mini-editor-controls")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Extract range" })).not.toBeInTheDocument();
+    const media = document.querySelector("video");
+
+    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
+    expect(useShellLayoutStore.getState().resolved.lowerStage.collapsed).toBe(false);
+    expect(screen.getByTestId("mini-editor-controls")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Extract frame" })).toHaveLength(1);
+    expect(document.querySelector("video")).toBe(media);
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(useShellLayoutStore.getState().resolved.lowerStage.collapsed).toBe(true);
+    expect(screen.queryByLabelText("Playhead")).not.toBeInTheDocument();
+    await act(async () => {
+      await dedicatedWorkspaceController.exit();
+    });
+    expect(useShellLayoutStore.getState().resolved.lowerStage).toEqual(previousGeometry);
+  });
+
   it("closes the workspace after the shared save transaction succeeds", async () => {
     const onSave = vi.fn(async () => undefined);
     const onClose = vi.fn();

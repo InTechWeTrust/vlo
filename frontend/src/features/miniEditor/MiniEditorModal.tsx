@@ -19,6 +19,7 @@ export function MiniEditorModal() {
   const presentation = useMiniEditorStore((state) => state.presentation);
   const title = useMiniEditorStore((state) => state.title);
   const status = useMiniEditorStore((state) => state.status);
+  const controlsCollapsed = useMiniEditorStore((state) => state.controlsCollapsed);
   const extractionMode = useMiniEditorStore((state) => state.extractionMode);
   const close = useMiniEditorStore((state) => state.close);
   const cancelExtractionSelection = useMiniEditorStore(
@@ -59,7 +60,7 @@ export function MiniEditorModal() {
       <DialogContent>
         <Stack spacing={2}>
           <MiniEditorPreview />
-          <MiniEditorControls />
+          {controlsCollapsed ? null : <MiniEditorControls />}
         </Stack>
       </DialogContent>
       <DialogActions>
