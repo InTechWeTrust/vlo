@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import * as React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ExtensionHost } from "../../ExtensionHost";
@@ -147,18 +147,94 @@ const DEFAULT_ASSET_LOOKUP: AssetLookup = (assetId) => ({
 });
 
 /**
- * Mounts the real view with the host singletons stubbed, capturing the props
- * it hands the batch drop slot. dnd-kit itself is host-owned and covered
- * elsewhere; what is this package's to get right is what those callbacks do.
+ * Stand-ins for the host MUI barrel.
+ *
+ * They have to be more than passthrough divs: the view's behaviour lives in
+ * `onClick`, `value`/`onChange` and `title`, so a stub that dropped those
+ * would make every interaction test vacuous. Components are cached because
+ * React keys reconciliation on component identity — a fresh function per
+ * access would remount the tree on every render and lose the editing state
+ * these tests are about.
  */
-function mountView(
-  createSubjectsView: (deps: never) => unknown,
+function createMuiStubs(): Record<string, unknown> {
+  const cache = new Map<string, React.FunctionComponent<Record<string, never>>>();
+  const build = (name: string): React.FunctionComponent<never> => {
+    if (name === "TextField") {
+      return ((props: {
+        value?: string;
+        onChange?: (event: unknown) => void;
+        onKeyDown?: (event: unknown) => void;
+        placeholder?: string;
+      }) =>
+        React.createElement("textarea", {
+          value: props.value ?? "",
+          placeholder: props.placeholder,
+          onChange: props.onChange,
+          onKeyDown: props.onKeyDown,
+        })) as React.FunctionComponent<never>;
+    }
+    if (name === "Button" || name === "IconButton") {
+      return ((props: {
+        children?: React.ReactNode;
+        onClick?: () => void;
+        disabled?: boolean;
+      }) =>
+        React.createElement(
+          "button",
+          { onClick: props.onClick, disabled: props.disabled },
+          props.children,
+        )) as React.FunctionComponent<never>;
+    }
+    if (name === "Tooltip") {
+      return ((props: { children?: React.ReactNode; title?: unknown }) =>
+        React.createElement(
+          "span",
+          { title: typeof props.title === "string" ? props.title : undefined },
+          props.children,
+        )) as React.FunctionComponent<never>;
+    }
+    if (name === "Chip") {
+      return ((props: { label?: React.ReactNode }) =>
+        React.createElement("span", null, props.label)) as React.FunctionComponent<never>;
+    }
+    return ((props: {
+      children?: React.ReactNode;
+      onClick?: () => void;
+      onDoubleClick?: () => void;
+    }) =>
+      React.createElement(
+        "div",
+        { onClick: props.onClick, onDoubleClick: props.onDoubleClick },
+        props.children,
+      )) as React.FunctionComponent<never>;
+  };
+  return new Proxy({} as Record<string, unknown>, {
+    get: (_target, name: string) => {
+      if (!cache.has(name)) {
+        cache.set(
+          name,
+          build(name) as React.FunctionComponent<Record<string, never>>,
+        );
+      }
+      return cache.get(name);
+    },
+  });
+}
+
+/**
+ * Mounts the real subject *editor* view with the host singletons stubbed,
+ * capturing the props it hands the batch drop slot. dnd-kit itself is
+ * host-owned and covered elsewhere; what is this package's to get right is
+ * what those callbacks do.
+ */
+function mountEditor(
+  createSubjectEditorView: (deps: never) => unknown,
   store: unknown,
+  session: { setSubjectId(id: string | null): void },
+  subjectId: string,
   capture: (props: Record<string, unknown>) => void,
   assetLookup: AssetLookup = DEFAULT_ASSET_LOOKUP,
-): { unmount(): void } {
-  const Passthrough = (props: { children?: React.ReactNode }) =>
-    React.createElement("div", null, props.children);
+): ReturnType<typeof render> {
   const api = {
     assets: {
       get: assetLookup,
@@ -167,7 +243,7 @@ function mountView(
     },
     runtime: {
       react: React,
-      mui: new Proxy({}, { get: () => Passthrough }),
+      mui: createMuiStubs(),
       panelUi: {
         AssetBatchDropSlot: (props: Record<string, unknown>) => {
           capture(props);
@@ -176,12 +252,14 @@ function mountView(
       },
     },
   };
+  session.setSubjectId(subjectId);
   // The SDK types a view component as returning `unknown`, because an
   // extension has no React types to name a node with; the host mount casts it
   // the same way.
-  const View = createSubjectsView({
+  const View = createSubjectEditorView({
     api: api as unknown as VloExtensionApi,
     store,
+    session,
     react: React as never,
   } as never) as unknown as React.FunctionComponent<{
     viewId: string;
@@ -191,7 +269,7 @@ function mountView(
   return render(
     React.createElement(View, {
       viewId: "v",
-      region: "left-sidebar",
+      region: "editor-overlay",
       active: true,
     }),
   );
@@ -207,10 +285,12 @@ afterEach(async () => {
 });
 
 describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
-  // 2A — package skeleton.
-  it("registers a left-sidebar tab on activation and removes it on deactivation", async () => {
-    const { activate, SUBJECTS_VIEW_ID } = await loadPackage();
-    const qualifiedId = `${EXTENSION_ID}/${SUBJECTS_VIEW_ID}`;
+  // 2A — package skeleton, and the two surfaces the drag problem forced.
+  it("registers a sidebar tab and a floating editor, and removes both on deactivation", async () => {
+    const { activate, SUBJECTS_VIEW_ID, SUBJECT_EDITOR_VIEW_ID } =
+      await loadPackage();
+    const listId = `${EXTENSION_ID}/${SUBJECTS_VIEW_ID}`;
+    const editorId = `${EXTENSION_ID}/${SUBJECT_EDITOR_VIEW_ID}`;
 
     const host = new ExtensionHost<VloExtensionApi>({
       sdkVersion: "1.21.0",
@@ -222,19 +302,69 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
       { activate: activate as ExtensionModule["activate"] },
     );
 
-    const entry = hostViewRegistry.get(qualifiedId);
-    expect(entry).toBeDefined();
-    expect(entry?.defaultRegion).toBe("left-sidebar");
-    expect(entry?.title).toBe("Subjects");
+    expect(hostViewRegistry.get(listId)?.defaultRegion).toBe("left-sidebar");
+    expect(hostViewRegistry.get(listId)?.title).toBe("Subjects");
     expect(
       hostViewRegistry
         .list("left-sidebar", { includeHidden: true })
-        .some((view) => view.id === qualifiedId),
+        .some((view) => view.id === listId),
     ).toBe(true);
+
+    // The editor must be in `editor-overlay`, not the sidebar and not a modal.
+    // The sidebar shows one tab at a time, so a subject edited there could
+    // never sit beside the asset browser its assets are dragged from; and a
+    // modal mounts outside the editor's DndContext, where a drop slot never
+    // fires at all.
+    expect(hostViewRegistry.get(editorId)?.defaultRegion).toBe("editor-overlay");
 
     await host.deactivate(EXTENSION_ID);
     activeHost = undefined;
-    expect(hostViewRegistry.get(qualifiedId)).toBeUndefined();
+    expect(hostViewRegistry.get(listId)).toBeUndefined();
+    expect(hostViewRegistry.get(editorId)).toBeUndefined();
+  });
+
+  it("does not put the editor in the region that holds the asset browser", async () => {
+    const { activate, SUBJECT_EDITOR_VIEW_ID } = await loadPackage();
+    const host = new ExtensionHost<VloExtensionApi>({
+      sdkVersion: "1.21.0",
+      createApi: createVloExtensionApi,
+    });
+    activeHost = host;
+    await host.activate(
+      { id: EXTENSION_ID, version: "0.1.0" },
+      { activate: activate as ExtensionModule["activate"] },
+    );
+    // Regression guard for the reason this split exists: the drop target and
+    // the asset browser must be able to be on screen at the same time.
+    const editor = hostViewRegistry.get(
+      `${EXTENSION_ID}/${SUBJECT_EDITOR_VIEW_ID}`,
+    );
+    expect(editor?.defaultRegion).not.toBe("left-sidebar");
+  });
+
+  it("leaves the floating panel closed until something opens it", async () => {
+    const { activate, SUBJECT_EDITOR_VIEW_ID } = await loadPackage();
+    const editorId = `${EXTENSION_ID}/${SUBJECT_EDITOR_VIEW_ID}`;
+    hostViewRegistry.clearSelection("editor-overlay");
+
+    const host = new ExtensionHost<VloExtensionApi>({
+      sdkVersion: "1.21.0",
+      createApi: createVloExtensionApi,
+    });
+    activeHost = host;
+    await host.activate(
+      { id: EXTENSION_ID, version: "0.1.0" },
+      { activate: activate as ExtensionModule["activate"] },
+    );
+
+    // Registering a floating panel must not put one over the editor.
+    expect(hostViewRegistry.getSelected("editor-overlay")).toBeNull();
+
+    // ...and the region accepts it when asked, which is exactly what the
+    // list view's `openView` call does.
+    expect(hostViewRegistry.select("editor-overlay", editorId)).toBe(true);
+    expect(hostViewRegistry.getSelected("editor-overlay")).toBe(editorId);
+    hostViewRegistry.clearSelection("editor-overlay");
   });
 
   /**
@@ -343,7 +473,8 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
   // own drop slot. dnd-kit itself is host-owned and covered elsewhere; what is
   // this package's to get right is what the callbacks do.
   it("lands a dropped asset in the subject and persists it", async () => {
-    const { createSubjectStore, createSubjectsView } = await loadPackage();
+    const { createSubjectStore, createSubjectEditorView, createEditorSession } =
+      await loadPackage();
     const values = new Map<string, JsonValue>();
     const store = createSubjectStore(createStoreApi(createScope(values)));
     await whenReady(store);
@@ -351,9 +482,11 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     const subject = store.getState().subjects[0];
 
     let dropSlotProps: Record<string, unknown> | undefined;
-    const view = mountView(
-      createSubjectsView,
+    const view = mountEditor(
+      createSubjectEditorView,
       store,
+      createEditorSession(),
+      subject.id,
       (props) => {
         dropSlotProps = props;
       },
@@ -393,6 +526,65 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     expect(values.get(`subject:${subject.id}`)).toMatchObject({
       assets: [{ assetId: "asset-1" }],
     });
+    view.unmount();
+    store.dispose();
+  });
+
+  it("opens the floating editor on the subject New subject creates", async () => {
+    const { createSubjectStore, createSubjectsListView, createEditorSession } =
+      await loadPackage();
+    const values = new Map<string, JsonValue>();
+    const store = createSubjectStore(createStoreApi(createScope(values)));
+    await whenReady(store);
+    const session = createEditorSession();
+    let opened = 0;
+
+    const api = {
+      assets: {
+        get: DEFAULT_ASSET_LOOKUP,
+        subscribe: () => () => undefined,
+        getRevision: () => 0,
+      },
+      runtime: {
+        react: React,
+        mui: createMuiStubs(),
+        panelUi: {},
+      },
+    };
+    const View = (
+      createSubjectsListView as (deps: never) => unknown
+    )({
+      api: api as unknown as VloExtensionApi,
+      store,
+      session,
+      react: React as never,
+      openEditor: () => {
+        opened += 1;
+      },
+    } as never) as unknown as React.FunctionComponent<{
+      viewId: string;
+      region: string;
+      active: boolean;
+    }>;
+    const view = render(
+      React.createElement(View, {
+        viewId: "v",
+        region: "left-sidebar",
+        active: true,
+      }),
+    );
+
+    const newSubject = view.getByText("New subject");
+    await act(async () => {
+      fireEvent.click(newSubject);
+    });
+
+    // Creating has to land the user in the overlay: the first thing a subject
+    // needs is assets, and they can only be dragged from the browser this tab
+    // would otherwise be covering.
+    expect(store.getState().subjects).toHaveLength(1);
+    expect(session.getSubjectId()).toBe(store.getState().subjects[0].id);
+    expect(opened).toBe(1);
     view.unmount();
     store.dispose();
   });
@@ -581,6 +773,235 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     store.dispose();
   });
 
+  // Editing a committed sentence.
+  it("round-trips a committed line through edit unchanged", async () => {
+    const { bindLine, renderLineForEditing, deriveTags } = await loadPackage();
+    const tags = deriveTags([
+      { key: "asset-a", mediaType: "image" },
+      { key: "asset-b", mediaType: "image" },
+    ]);
+    const stored = bindLine(
+      "<Subject 1> is the person shown in <Picture 2>.",
+      tags,
+      1,
+    );
+    // Opening the editor shows resolved ordinals; saving without touching
+    // anything must produce byte-identical storage.
+    const editable = renderLineForEditing(stored, tags, "<Subject 1>");
+    expect(editable).toBe("<Subject 1> is the person shown in <Picture 2>.");
+    expect(bindLine(editable, tags, 1)).toBe(stored);
+  });
+
+  it("keeps a dangling reference intact through an edit", async () => {
+    const {
+      bindLine,
+      renderLine,
+      renderLineForEditing,
+      deriveTags,
+      MISSING_REFERENCE_TEXT,
+    } = await loadPackage();
+    const authored = deriveTags([{ key: "asset-a", mediaType: "image" }]);
+    const stored = bindLine("Shown in <Picture 1>.", authored, 1);
+
+    // The asset leaves the subject. The *display* says so...
+    const emptied = deriveTags([]);
+    expect(renderLine(stored, emptied, "<Subject 1>")).toContain(
+      MISSING_REFERENCE_TEXT,
+    );
+
+    // ...but the edit box must show the raw marker, not that friendly text,
+    // or saving would store the words "missing reference" and destroy the
+    // knowledge of which asset the sentence was about.
+    const editable = renderLineForEditing(stored, emptied, "<Subject 1>");
+    expect(editable).not.toContain(MISSING_REFERENCE_TEXT);
+    expect(editable).toContain("{{ref:Picture:asset-a}}");
+
+    // Editing the prose around it and saving keeps the binding, so restoring
+    // the asset restores the sentence.
+    const edited = bindLine(`Clearly ${editable}`, emptied, 1);
+    expect(renderLine(edited, authored, "<Subject 1>")).toBe(
+      "Clearly Shown in <Picture 1>.",
+    );
+  });
+
+  it("replaces one line with the lines an edit produced", async () => {
+    const { replaceLine } = await loadPackage();
+    const subject = {
+      id: "s",
+      label: "S",
+      assets: [],
+      lines: ["one", "two", "three"],
+      updatedAt: 0,
+    };
+    expect(replaceLine(1, ["two a", "two b"])(subject).lines).toEqual([
+      "one",
+      "two a",
+      "two b",
+      "three",
+    ]);
+    // An edit that empties the box removes the line.
+    expect(replaceLine(1, [])(subject).lines).toEqual(["one", "three"]);
+    expect(replaceLine(9, ["x"])(subject)).toBe(subject);
+  });
+
+  it("binds an edit against the tags the author saw, not a later reorder", async () => {
+    const { bindLine, renderLineForEditing, renderLine, deriveTags } =
+      await loadPackage();
+    const atEditStart = deriveTags([
+      { key: "asset-a", mediaType: "image" },
+      { key: "asset-b", mediaType: "image" },
+    ]);
+    const stored = bindLine("Shown in <Picture 1>.", atEditStart, 1);
+    const editable = renderLineForEditing(stored, atEditStart, "<Subject 1>");
+
+    // While the box is open the user drags the images around, so `<Picture 1>`
+    // now names asset-b. The text on screen still says what it said, so the
+    // save must bind against the snapshot taken when editing began.
+    const afterReorder = deriveTags([
+      { key: "asset-b", mediaType: "image" },
+      { key: "asset-a", mediaType: "image" },
+    ]);
+    const saved = bindLine(editable, atEditStart, 1);
+    expect(saved).toBe("Shown in {{ref:Picture:asset-a}}.");
+    expect(renderLine(saved, afterReorder, "<Subject 1>")).toBe(
+      "Shown in <Picture 2>.",
+    );
+
+    // Binding against the current tags instead would have silently retargeted
+    // the sentence onto asset-b.
+    expect(bindLine(editable, afterReorder, 1)).toBe(
+      "Shown in {{ref:Picture:asset-b}}.",
+    );
+  });
+
+  it("edits a committed line through the view", async () => {
+    const {
+      createSubjectStore,
+      createSubjectEditorView,
+      createEditorSession,
+      attachAssetAt,
+      appendLines,
+      bindLine,
+      deriveTags,
+    } = await loadPackage();
+    const values = new Map<string, JsonValue>();
+    const store = createSubjectStore(createStoreApi(createScope(values)));
+    await whenReady(store);
+    await store.create("Amelia");
+    const id = store.getState().subjects[0].id;
+    await store.update(id, attachAssetAt("asset-1", 0));
+    const tags = deriveTags([{ key: "asset-1", mediaType: "image" }]);
+    await store.update(
+      id,
+      appendLines([bindLine("Shown in <Picture 1>.", tags, 1)]),
+    );
+
+    const view = mountEditor(
+      createSubjectEditorView,
+      store,
+      createEditorSession(),
+      id,
+      () => undefined,
+    );
+
+    // The stored line is displayed with its ordinal resolved.
+    expect(view.getByText("Shown in <Picture 1>.")).toBeTruthy();
+
+    // The pencil button itself, not the tooltip wrapping it: a click on the
+    // parent does not reach a child's handler.
+    await act(async () => {
+      fireEvent.click(view.getByText("\u270e"));
+    });
+    // Several text boxes are on screen (the subject label, the draft box);
+    // the edit box is the one seeded with the line's resolved text.
+    const boxes = [
+      ...view.container.querySelectorAll("textarea"),
+    ] as HTMLTextAreaElement[];
+    const box = boxes.find((candidate) => candidate.value === "Shown in <Picture 1>.");
+    expect(box).toBeDefined();
+
+    await act(async () => {
+      fireEvent.change(box!, {
+        target: { value: "Clearly shown in <Picture 1>." },
+      });
+    });
+    await act(async () => {
+      fireEvent.click(view.getByText("Save"));
+    });
+
+    // Stored bound, displayed resolved.
+    expect(store.getState().subjects[0].lines).toEqual([
+      "Clearly shown in {{ref:Picture:asset-1}}.",
+    ]);
+    expect(view.getByText("Clearly shown in <Picture 1>.")).toBeTruthy();
+    view.unmount();
+    store.dispose();
+  });
+
+  it("keeps an edit bound to its own asset when the strip is reordered mid-edit", async () => {
+    const {
+      createSubjectStore,
+      createSubjectEditorView,
+      createEditorSession,
+      attachAssetAt,
+      appendLines,
+      bindLine,
+      deriveTags,
+    } = await loadPackage();
+    const values = new Map<string, JsonValue>();
+    const store = createSubjectStore(createStoreApi(createScope(values)));
+    await whenReady(store);
+    await store.create("Amelia");
+    const id = store.getState().subjects[0].id;
+    await store.update(id, attachAssetAt("asset-1", 0));
+    await store.update(id, attachAssetAt("asset-2", 1));
+    const tags = deriveTags([
+      { key: "asset-1", mediaType: "image" },
+      { key: "asset-2", mediaType: "image" },
+    ]);
+    await store.update(
+      id,
+      appendLines([bindLine("Shown in <Picture 1>.", tags, 1)]),
+    );
+
+    let dropSlotProps: Record<string, unknown> | undefined;
+    const view = mountEditor(
+      createSubjectEditorView,
+      store,
+      createEditorSession(),
+      id,
+      (props) => {
+        dropSlotProps = props;
+      },
+    );
+
+    await act(async () => {
+      fireEvent.click(view.getByText("\u270e"));
+    });
+
+    // The user drags asset-1 to the end while the edit box is open, so
+    // `<Picture 1>` now names asset-2 — but the text on screen still says what
+    // it said when they opened it.
+    await act(async () => {
+      (dropSlotProps?.onReorder as (slotId: string, to: number) => void)(
+        "asset-1",
+        1,
+      );
+    });
+
+    await act(async () => {
+      fireEvent.click(view.getByText("Save"));
+    });
+
+    // Saving must bind to the asset the author was looking at, not to
+    // whatever ordinal 1 became while they typed.
+    expect(store.getState().subjects[0].lines).toEqual([
+      "Shown in {{ref:Picture:asset-1}}.",
+    ]);
+    view.unmount();
+    store.dispose();
+  });
+
   // Review finding 2 — the batch slot's index names the tile that was dropped
   // on, which the native generation panel treats as "assign to this slot".
   it("replaces the targeted position when dropping on an occupied tile", async () => {
@@ -612,8 +1033,12 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
   });
 
   it("drops a different asset onto an occupied tile through the view", async () => {
-    const { createSubjectStore, createSubjectsView, attachAssetAt } =
-      await loadPackage();
+    const {
+      createSubjectStore,
+      createSubjectEditorView,
+      createEditorSession,
+      attachAssetAt,
+    } = await loadPackage();
     const values = new Map<string, JsonValue>();
     const store = createSubjectStore(createStoreApi(createScope(values)));
     await whenReady(store);
@@ -622,9 +1047,15 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     await store.update(id, attachAssetAt("asset-1", 0));
 
     let dropSlotProps: Record<string, unknown> | undefined;
-    const view = mountView(createSubjectsView, store, (props) => {
-      dropSlotProps = props;
-    });
+    const view = mountEditor(
+      createSubjectEditorView,
+      store,
+      createEditorSession(),
+      id,
+      (props) => {
+        dropSlotProps = props;
+      },
+    );
 
     await act(async () => {
       (dropSlotProps?.onDrop as (index: number, asset: { id: string }) => void)(

@@ -18,6 +18,12 @@ export * from "../../../../../../extensions/installed/vlo.minimax-prompt/fronten
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
 export * from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/suggestions";
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
-export * from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/SubjectsView";
+export * from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/SubjectsListView";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+export * from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/SubjectEditorView";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+export * from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/subjectPresentation";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+export * from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/editorSession";
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
 export * from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/lineBindings";
