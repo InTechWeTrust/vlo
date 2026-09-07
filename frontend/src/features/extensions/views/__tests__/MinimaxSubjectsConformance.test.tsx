@@ -14,6 +14,7 @@ import type {
   VloExtensionApi,
 } from "../../types";
 import { hostViewRegistry } from "../../../../core/shell/viewRegistry";
+import { hostContextKeys } from "../../../../core/shell/contextKeys";
 
 const EXTENSION_ID = "vlo.minimax-prompt";
 
@@ -345,13 +346,22 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     expect(editor?.defaultRegion).not.toBe("left-sidebar");
   });
 
-  it("opens the editor in the region the list view asks for", async () => {
-    const { activate, SUBJECT_EDITOR_VIEW_ID } = await loadPackage();
+  it("keeps the editor out of the sidebar until a subject is being edited", async () => {
+    const { activate, SUBJECT_EDITOR_VIEW_ID, EDITING_CONTEXT_KEY } =
+      await loadPackage();
     const editorId = `${EXTENSION_ID}/${SUBJECT_EDITOR_VIEW_ID}`;
+    const contextKey = `extension.${EXTENSION_ID}.${EDITING_CONTEXT_KEY}`;
 
+    // The host refuses to let anything but the owning extension write an
+    // `extension.` key, so the test drives the same api the package does
+    // rather than forging the context key.
+    let api: VloExtensionApi | undefined;
     const host = new ExtensionHost<VloExtensionApi>({
       sdkVersion: "1.22.0",
-      createApi: createVloExtensionApi,
+      createApi: (scope) => {
+        api = createVloExtensionApi(scope);
+        return api;
+      },
     });
     activeHost = host;
     await host.activate(
@@ -359,12 +369,57 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
       { activate: activate as ExtensionModule["activate"] },
     );
 
-    // Exactly what the list view's `openView` does, and the move menu will
-    // never offer `left-sidebar` — the region that cannot show this panel and
-    // the asset browser together.
+    // Registering does not cost a tab. The right sidebar already reaches five
+    // tabs with a clip selected, and this panel is only meaningful on demand.
+    expect(hostContextKeys.get(contextKey)).toBe(false);
+    expect(
+      hostViewRegistry
+        .list("right-sidebar", { includeHidden: true })
+        .some((view) => view.id === editorId),
+    ).toBe(false);
+    expect(hostViewRegistry.select("right-sidebar", editorId)).toBe(false);
+
+    // Opening a subject is what brings it in — this is the key the extension
+    // publishes when the list view hands it a subject.
+    act(() => void api?.ui.commands.setContextKey(EDITING_CONTEXT_KEY, true));
+    expect(
+      hostViewRegistry
+        .list("right-sidebar", { includeHidden: true })
+        .some((view) => view.id === editorId),
+    ).toBe(true);
     expect(hostViewRegistry.select("right-sidebar", editorId)).toBe(true);
-    expect(hostViewRegistry.getSelected("right-sidebar")).toBe(editorId);
+    // Never the region that holds the asset browser, whatever the key says.
     expect(hostViewRegistry.select("left-sidebar", editorId)).toBe(false);
+
+    act(() => void api?.ui.commands.setContextKey(EDITING_CONTEXT_KEY, false));
+    expect(
+      hostViewRegistry
+        .list("right-sidebar", { includeHidden: true })
+        .some((view) => view.id === editorId),
+    ).toBe(false);
+  });
+
+  it("keeps unsaved text per subject and across the panel unmounting", async () => {
+    const { createEditorSession } = await loadPackage();
+    const session = createEditorSession();
+
+    session.setSubjectId("a");
+    session.updateDraft("a", { text: "half a sentence about A" });
+    // Switching subjects must not carry the text across — which is what
+    // component state used to do, since it is per-mount, not per-subject.
+    session.setSubjectId("b");
+    expect(session.getDraft("b").text).toBe("");
+    session.updateDraft("b", { text: "about B" });
+
+    // Ending the session unmounts the panel; the text survives it.
+    session.setSubjectId(null);
+    expect(session.getDraft("a").text).toBe("half a sentence about A");
+    session.setSubjectId("a");
+    expect(session.getDraft("a").text).toBe("half a sentence about A");
+
+    session.clearDraft("a");
+    expect(session.getDraft("a").text).toBe("");
+    expect(session.getDraft("b").text).toBe("about B");
   });
 
   /**
