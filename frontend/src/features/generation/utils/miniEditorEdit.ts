@@ -13,7 +13,10 @@ import type {
 } from "../pipeline/types";
 import { createClipFromAsset } from "../../timeline";
 import { tickToMediaSeconds } from "../../../core/time";
-import { calculateClipTime } from "../../transformations";
+import {
+  calculateClipTime,
+  mapSourceTimeToVisualTime,
+} from "../../transformations";
 import { getTicksPerFrame, snapTickToFrame } from "../../timelineSelection";
 import { useProjectStore } from "../../project";
 import type {
@@ -30,6 +33,85 @@ import {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+interface SelectionEditorRange {
+  clipId: string;
+  componentId: string;
+  range: EditorRangeMask;
+}
+
+function collectSelectionEditorRanges(
+  selection: TimelineSelection,
+): SelectionEditorRange[] {
+  return selection.clips.flatMap((clip) => {
+    if (clip.type === "mask" || clip.type === "audio") return [];
+    const start = Math.max(selection.start, clip.start);
+    const end = Math.min(
+      selection.end ?? clip.start + clip.timelineDuration,
+      clip.start + clip.timelineDuration,
+    );
+    return (clip.components ?? []).flatMap((component) => {
+      if (component.type !== "range_mask") return [];
+      const a =
+        clip.start +
+        mapSourceTimeToVisualTime(clip, component.parameters.startSourceTicks);
+      const b =
+        clip.start +
+        mapSourceTimeToVisualTime(clip, component.parameters.endSourceTicks);
+      const rangeStart = Math.max(start, Math.min(a, b));
+      const rangeEnd = Math.min(end, Math.max(a, b));
+      if (rangeEnd <= rangeStart) return [];
+      return [
+        {
+          clipId: clip.id,
+          componentId: component.id,
+          range: {
+            ...component.parameters,
+            isActive:
+              component.isEnabled !== false && component.parameters.isActive,
+            // Component ids need only be unique within their owning clip.
+            id: JSON.stringify([clip.id, component.id]),
+            startSourceTicks: Math.round(rangeStart - selection.start),
+            endSourceTicks: Math.round(rangeEnd - selection.start),
+          },
+        },
+      ];
+    });
+  });
+}
+
+function removeSelectionEditorRanges(
+  selection: TimelineSelection,
+  entries: SelectionEditorRange[],
+): TimelineSelection {
+  return {
+    ...selection,
+    clips: selection.clips.map((clip) => {
+      if (clip.type === "mask") return clip;
+      const ids = new Set(
+        entries
+          .filter((entry) => entry.clipId === clip.id)
+          .map((entry) => entry.componentId),
+      );
+      if (ids.size === 0) return clip;
+      return {
+        ...clip,
+        components: clip.components?.filter(
+          (component) => !ids.has(component.id),
+        ),
+      };
+    }),
+  };
+}
+
+/** Restore editable ranges and preview the underlying video without baking them in. */
+export function getTimelineSelectionEditorState(selection: TimelineSelection) {
+  const entries = collectSelectionEditorRanges(selection);
+  return {
+    ranges: entries.map((entry) => entry.range),
+    previewSelection: removeSelectionEditorRanges(selection, entries),
+  };
 }
 
 /**
@@ -51,7 +133,7 @@ function toClipInputTimeTicks(
 }
 
 /**
- * Adds range_mask components to every clip that intersects each active range.
+ * Adds range_mask components to every clip that intersects each range.
  *
  * Ranges are expressed in editor-local ticks (0 == the start of the rendered
  * selection); `selectionStartTicks` shifts them back onto the global timeline.
@@ -69,10 +151,10 @@ export function addRangeMasksToClips(
   ranges: EditorRangeMask[],
   selectionStartTicks: number,
 ): TimelineClip[] {
-  const activeRanges = ranges.filter(
-    (range) => range.isActive && range.endSourceTicks > range.startSourceTicks,
+  const validRanges = ranges.filter(
+    (range) => range.endSourceTicks > range.startSourceTicks,
   );
-  if (activeRanges.length === 0) {
+  if (validRanges.length === 0) {
     return clips;
   }
 
@@ -87,7 +169,7 @@ export function addRangeMasksToClips(
     const clipEnd = clip.start + clip.timelineDuration;
     const newComponents: RangeMaskComponent[] = [];
 
-    for (const range of activeRanges) {
+    for (const range of validRanges) {
       const globalStart = selectionStartTicks + range.startSourceTicks;
       const globalEnd = selectionStartTicks + range.endSourceTicks;
       const overlapStart = Math.max(clipStart, globalStart);
@@ -107,7 +189,12 @@ export function addRangeMasksToClips(
       newComponents.push({
         id: `range_${crypto.randomUUID()}`,
         type: "range_mask",
-        parameters: { startSourceTicks, endSourceTicks, isActive: true },
+        parameters: {
+          startSourceTicks,
+          endSourceTicks,
+          isActive: range.isActive,
+          ...(range.name === undefined ? {} : { name: range.name }),
+        },
       });
     }
 
@@ -130,7 +217,7 @@ export function addRangeMasksToClips(
  *    clips (a non-mutating edit of the stored selection's clips).
  *
  * The result renders through the normal selection pipeline, so the original
- * timeline masks, transforms and metadata are preserved and the derived mask
+ * spatial masks, transforms and metadata are preserved and the derived mask
  * is recomputed from real transparency — no baked-in re-render or mask OR.
  */
 export function buildEditedTimelineSelection(
@@ -151,7 +238,20 @@ export function buildEditedTimelineSelection(
   const newStart = base + snap(cropStart);
   const newEnd = Math.max(newStart + 1, base + snap(cropEnd));
 
-  const clips = addRangeMasksToClips(source.clips, spec.ranges, base);
+  // Replace the ranges exposed by the editor, including deletions. Existing
+  // ranges remain scoped to their clip; newly added ranges span the selection.
+  const entries = collectSelectionEditorRanges(source);
+  const owners = new Map(entries.map((entry) => [entry.range.id, entry.clipId]));
+  const editableSource = removeSelectionEditorRanges(source, entries);
+  const clips = editableSource.clips.flatMap((clip) =>
+    addRangeMasksToClips(
+      [clip],
+      spec.ranges.filter(
+        (range) => !owners.has(range.id) || owners.get(range.id) === clip.id,
+      ),
+      base,
+    ),
+  );
 
   return {
     ...source,

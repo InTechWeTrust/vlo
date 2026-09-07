@@ -33,6 +33,7 @@ import {
 import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
 import {
   buildEditedTimelineSelection,
+  getTimelineSelectionEditorState,
   renderSyntheticEditedOutputs,
 } from "../utils/miniEditorEdit";
 import {
@@ -1745,7 +1746,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       // to it. A baked input re-opens its *source*, not its bake: the bake has
       // no clips, so extracting it would render an empty timeline.
       let bakeOriginAssetId: string | null = null;
-      let bakedInitial: MiniEditorInitialState | undefined;
+      let editorInitial: MiniEditorInitialState | undefined;
       // Per-item audio inclusion belongs to the media, and a bake replaces the
       // value in place (asset -> baked selection), so it has to be carried
       // across the kind change explicitly.
@@ -1785,7 +1786,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
               (candidate) => candidate.id === value.bakedEdit?.assetId,
             )
           : undefined;
-        bakedInitial = value.bakedEdit?.spec;
+        editorInitial = value.bakedEdit?.spec;
         if (originAsset) {
           bakeOriginAssetId = originAsset.id;
           prepare = prepareFromAsset(originAsset);
@@ -1794,7 +1795,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           // is already cropped, so the stored spec no longer applies to it.
           const bakedFile = value.preparedVideoFile;
           if (!bakedFile) return;
-          bakedInitial = undefined;
+          editorInitial = undefined;
           prepare = async () => {
             const videoUrl = URL.createObjectURL(bakedFile);
             return {
@@ -1809,11 +1810,18 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         value.mediaType === "video"
       ) {
         const selection = value.timelineSelection;
-        const existingPrepared = value.preparedVideoFile;
+        const { ranges, previewSelection } =
+          getTimelineSelectionEditorState(selection);
+        editorInitial = { ranges };
+        // A cached render may already contain these masks. Preview their
+        // underlying frames so shrinking or deleting a range reveals video.
+        const existingPrepared =
+          ranges.length === 0 ? value.preparedVideoFile : null;
         sourceSelection = selection;
         prepare = async () => {
           const file =
-            existingPrepared ?? (await renderTimelineSelectionToMp4(selection));
+            existingPrepared ??
+            (await renderTimelineSelectionToMp4(previewSelection));
           const videoUrl = URL.createObjectURL(file);
           const durationTicks =
             typeof selection.end === "number"
@@ -1955,7 +1963,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         title: input?.label ? `Edit: ${input.label}` : "Edit video",
         prepare,
         onSave,
-        initial: bakedInitial,
+        initial: editorInitial,
         frameConstraint: {
           fps: constraintFps,
           frameStep: constraintFrameStep,

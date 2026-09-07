@@ -16,7 +16,13 @@ vi.mock("../inputSelection", () => ({
 
 import type { ProjectData } from "../../../renderer";
 import type { ResolvedEditorSource } from "../../../miniEditor";
-import { renderSyntheticEditedOutputs } from "../miniEditorEdit";
+import type { TimelineSelection, VideoTimelineClip } from "../../../../types/TimelineTypes";
+import type { RangeMaskComponent } from "../../../../types/Components";
+import {
+  buildEditedTimelineSelection,
+  getTimelineSelectionEditorState,
+  renderSyntheticEditedOutputs,
+} from "../miniEditorEdit";
 
 function createSource(
   overrides: Partial<ResolvedEditorSource> = {},
@@ -31,6 +37,192 @@ function createSource(
 
 const spec = { cropStartTicks: 0, cropEndTicks: 5_000, ranges: [] };
 const dims = { width: 640, height: 480 };
+
+function videoClip(overrides: Partial<VideoTimelineClip> = {}): VideoTimelineClip {
+  return {
+    id: "clip-1",
+    type: "video",
+    name: "Video",
+    assetId: "asset-1",
+    trackId: "track-1",
+    start: 10_000,
+    timelineDuration: 10_000,
+    sourceDuration: 10_000,
+    transformedDuration: 10_000,
+    transformedOffset: 0,
+    croppedSourceDuration: 10_000,
+    offset: 0,
+    transformations: [],
+    ...overrides,
+  };
+}
+
+function rangeComponent(overrides: Partial<RangeMaskComponent> = {}): RangeMaskComponent {
+  return {
+    id: "existing-range",
+    type: "range_mask",
+    parameters: { startSourceTicks: 0, endSourceTicks: 10_000, isActive: true },
+    ...overrides,
+  };
+}
+
+function clipComponents(selection: TimelineSelection, index = 0) {
+  const clip = selection.clips[index];
+  if (clip.type === "mask") throw new Error("Expected a standard clip");
+  return clip.components;
+}
+
+describe("timeline selection mini editor round trips", () => {
+  const crop = { cropStartTicks: 0, cropEndTicks: 10_000 };
+
+  it("restores a full-length mask and replaces it with the smaller edited range", () => {
+    const source: TimelineSelection = {
+      start: 10_000, end: 20_000, clips: [videoClip()],
+    };
+    const full = buildEditedTimelineSelection(source, {
+      ...crop,
+      ranges: [{ id: "full", startSourceTicks: 0, endSourceTicks: 10_000, isActive: true }],
+    });
+    const reopened = getTimelineSelectionEditorState(full);
+    expect(reopened.ranges).toHaveLength(1);
+    expect(reopened.ranges[0]).toMatchObject({
+      startSourceTicks: 0, endSourceTicks: 10_000, isActive: true,
+    });
+    expect(clipComponents(reopened.previewSelection)).toEqual([]);
+
+    const smaller = buildEditedTimelineSelection(full, {
+      ...crop,
+      ranges: [{ ...reopened.ranges[0], startSourceTicks: 2_000, endSourceTicks: 4_000 }],
+    });
+    expect(clipComponents(smaller)).toHaveLength(1);
+    expect(clipComponents(smaller)?.[0].parameters).toMatchObject({
+      startSourceTicks: 2_000, endSourceTicks: 4_000,
+    });
+    const again = getTimelineSelectionEditorState(smaller);
+    expect(again.ranges[0]).toMatchObject({ startSourceTicks: 2_000, endSourceTicks: 4_000 });
+    const unchanged = buildEditedTimelineSelection(smaller, { ...crop, ranges: again.ranges });
+    expect(clipComponents(unchanged)).toHaveLength(1);
+    expect(clipComponents(source)).toBeUndefined();
+    expect(clipComponents(full)?.[0].parameters).toMatchObject({ endSourceTicks: 10_000 });
+  });
+
+  it("deletes existing masks without touching other components or the source snapshot", () => {
+    const mask = rangeComponent();
+    const spatialMask = { id: "spatial", type: "mask_ref" as const, parameters: { maskClipId: "mask-1" } };
+    const source: TimelineSelection = {
+      start: 10_000, end: 20_000,
+      clips: [videoClip({ components: [mask, spatialMask] })],
+    };
+    const edited = buildEditedTimelineSelection(source, { ...crop, ranges: [] });
+    expect(clipComponents(edited)).toEqual([spatialMask]);
+    expect(clipComponents(getTimelineSelectionEditorState(source).previewSelection))
+      .toEqual([spatialMask]);
+    expect(getTimelineSelectionEditorState(edited).ranges).toEqual([]);
+    expect(clipComponents(source)).toEqual([mask, spatialMask]);
+  });
+
+  it("keeps disabled ranges editable across saves", () => {
+    const source: TimelineSelection = {
+      start: 10_000, end: 20_000,
+      clips: [videoClip({ components: [rangeComponent({ isEnabled: false })] })],
+    };
+    const initial = getTimelineSelectionEditorState(source);
+    expect(initial.ranges[0].isActive).toBe(false);
+    const disabled = buildEditedTimelineSelection(source, { ...crop, ranges: initial.ranges });
+    const reopened = getTimelineSelectionEditorState(disabled);
+    expect(reopened.ranges).toHaveLength(1);
+    expect(reopened.ranges[0].isActive).toBe(false);
+    const enabled = buildEditedTimelineSelection(disabled, {
+      ...crop, ranges: [{ ...reopened.ranges[0], isActive: true }],
+    });
+    expect(getTimelineSelectionEditorState(enabled).ranges[0].isActive).toBe(true);
+  });
+
+  it("keeps existing masks on their original clip when clips overlap", () => {
+    const source: TimelineSelection = {
+      start: 10_000, end: 20_000,
+      clips: [
+        videoClip({ components: [rangeComponent()] }),
+        videoClip({ id: "clip-2", components: [rangeComponent()] }),
+      ],
+    };
+    const { ranges } = getTimelineSelectionEditorState(source);
+    expect(new Set(ranges.map((range) => range.id)).size).toBe(2);
+    const edited = buildEditedTimelineSelection(source, {
+      ...crop, ranges: [{ ...ranges[0], endSourceTicks: 3_000 }],
+    });
+    expect(clipComponents(edited)).toHaveLength(1);
+    expect(clipComponents(edited, 1)).toEqual([]);
+  });
+
+  it("splits a new range across neighboring clips and restores both portions", () => {
+    const source: TimelineSelection = {
+      start: 10_000,
+      end: 30_000,
+      clips: [videoClip(), videoClip({ id: "clip-2", start: 20_000 })],
+    };
+    const edited = buildEditedTimelineSelection(source, {
+      cropStartTicks: 0,
+      cropEndTicks: 20_000,
+      ranges: [{
+        id: "spanning",
+        startSourceTicks: 5_000,
+        endSourceTicks: 15_000,
+        isActive: true,
+      }],
+    });
+    expect(getTimelineSelectionEditorState(edited).ranges).toMatchObject([
+      { startSourceTicks: 5_000, endSourceTicks: 10_000 },
+      { startSourceTicks: 10_000, endSourceTicks: 15_000 },
+    ]);
+    const cleared = buildEditedTimelineSelection(edited, {
+      cropStartTicks: 0, cropEndTicks: 20_000, ranges: [],
+    });
+    expect(clipComponents(cleared)).toEqual([]);
+    expect(clipComponents(cleared, 1)).toEqual([]);
+  });
+
+  it.each([2, -2])("round-trips source timing at speed %s after cropping", (factor) => {
+    const source: TimelineSelection = {
+      start: 12_000, end: 18_000,
+      clips: [videoClip({
+        transformedOffset: factor < 0 ? -10_000 : 2_000,
+        transformations: [{ id: "speed", type: "speed", isEnabled: true, parameters: { factor } }],
+        components: [rangeComponent({
+          parameters: { startSourceTicks: 10_000, endSourceTicks: 14_000, isActive: true },
+        })],
+      })],
+    };
+    const { ranges } = getTimelineSelectionEditorState(source);
+    expect(ranges).toHaveLength(1);
+    expect(ranges[0]).toMatchObject({ startSourceTicks: 1_000, endSourceTicks: 3_000 });
+    const edited = buildEditedTimelineSelection(source, {
+      cropStartTicks: 0, cropEndTicks: 6_000, ranges,
+    });
+    expect(clipComponents(edited)?.[0].parameters).toMatchObject({
+      startSourceTicks: 10_000, endSourceTicks: 14_000,
+    });
+  });
+
+  it("rebases masks when reopening a cropped selection and leaves out-of-view masks intact", () => {
+    const outside = rangeComponent({
+      id: "outside", parameters: { startSourceTicks: 8_000, endSourceTicks: 9_000, isActive: true },
+    });
+    const source: TimelineSelection = {
+      start: 10_000, end: 20_000,
+      clips: [videoClip({ components: [rangeComponent(), outside] })],
+    };
+    const cropped = { ...source, start: 12_000, end: 16_000 };
+    const { ranges, previewSelection } = getTimelineSelectionEditorState(cropped);
+    expect(ranges).toHaveLength(1);
+    expect(ranges[0]).toMatchObject({ startSourceTicks: 0, endSourceTicks: 4_000 });
+    expect(clipComponents(previewSelection)).toEqual([outside]);
+    const edited = buildEditedTimelineSelection(cropped, {
+      cropStartTicks: 0, cropEndTicks: 4_000, ranges: [],
+    });
+    expect(clipComponents(edited)).toEqual([outside]);
+  });
+});
 
 function renderedProjectData(mock: ReturnType<typeof vi.fn>): ProjectData {
   const options = mock.mock.calls[0].at(-1) as {
