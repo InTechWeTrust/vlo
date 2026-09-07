@@ -37,7 +37,9 @@
 # the seams rather than implementing them, so they are fixtures despite living
 # under the host spine above.
 /frontend/src/features/extensions/views/__tests__/MinimaxSubjectsConformance.test.tsx extension-surface=fixture
+/frontend/src/features/extensions/views/__tests__/MinimaxComposerConformance.test.tsx extension-surface=fixture
 /frontend/src/features/extensions/views/__tests__/minimaxPromptPackageLoader.ts extension-surface=fixture
+/frontend/src/features/extensions/views/__tests__/minimaxHostStubs.tsx extension-surface=fixture
 
 # Distributed frontend adapters that dispatch or persist extension behaviour.
 # gradeSchema owns the V1 grade parameter contract that `api.color.grade` mirrors;

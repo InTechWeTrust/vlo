@@ -44,6 +44,12 @@ import * as editorViewModule from "../../../../../../extensions/installed/vlo.mi
 import * as presentationModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/subjectPresentation";
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
 import * as editorSessionModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/editorSession";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+import * as promptSectionsModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/promptSections";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+import * as composerSessionModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/composerSession";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+import * as composerViewModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/ComposerView";
 import type { ExtensionModule, JsonValue } from "../../types";
 
 /** A reference in emission order. Mirrors the package's `DerivedTag`. */
@@ -94,23 +100,79 @@ export interface LoadedEditorSession {
   getRevision(): number;
 }
 
+/** One authored block of the prompt. Mirrors the package's `PromptSection`. */
+export interface LoadedPromptSection {
+  readonly id: string;
+  readonly label: string | null;
+  readonly text: string;
+}
+
+/** Mirrors the package's `ParsedPrompt`. */
+export interface LoadedParsedPrompt {
+  readonly guideId: "base" | "reference";
+  readonly preamble: string;
+  readonly sections: readonly LoadedPromptSection[];
+  readonly unstructured: string | null;
+}
+
+export interface LoadedPromptGuide {
+  readonly id: "base" | "reference";
+  readonly title: string;
+  readonly sections: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly title: string;
+    readonly hint: string;
+  }[];
+}
+
+export interface LoadedComposerSession {
+  getDraft(key: string): LoadedParsedPrompt | null;
+  setDraft(key: string, parsed: LoadedParsedPrompt): void;
+  clear(key: string): void;
+  subscribe(listener: () => void): () => void;
+  getRevision(): number;
+}
+
 /**
- * Everything MinimaxSubjectsConformance.test.tsx reaches for. Adding a test
- * that needs a new export means adding it here too — which is the point: the
- * host suite's dependency on an out-of-tree package should be visible.
+ * Everything the MiniMax conformance suites reach for. Adding a test that
+ * needs a new export means adding it here too — which is the point: the host
+ * suite's dependency on an out-of-tree package should be visible.
  */
 export interface MinimaxPromptPackage {
   readonly activate: ExtensionModule["activate"];
   readonly SUBJECTS_VIEW_ID: string;
   readonly SUBJECT_EDITOR_VIEW_ID: string;
+  readonly COMPOSER_VIEW_ID: string;
+  readonly COMPOSER_COMMAND_ID: string;
+  readonly COMPOSER_SECTION_ID: string;
+  readonly COMPOSER_MENU_ID: string;
+  readonly COMPOSE_TRANSACTION_LABEL: string;
   readonly EDITING_CONTEXT_KEY: string;
   readonly SUBJECT_INDEX_KEY: string;
   readonly MISSING_REFERENCE_TEXT: string;
+  readonly BASE_GUIDE: LoadedPromptGuide;
+  readonly REFERENCE_GUIDE: LoadedPromptGuide;
+  readonly UNSTRUCTURED_REASON_TEXT: Readonly<Record<string, string>>;
 
   createSubjectStore(api: unknown): LoadedSubjectStore;
   createEditorSession(): LoadedEditorSession;
+  createComposerSession(): LoadedComposerSession;
   createSubjectsListView(deps: never): unknown;
   createSubjectEditorView(deps: never): unknown;
+  createComposerView(deps: never): unknown;
+
+  guideForNodeClasses(classTypes: readonly string[]): LoadedPromptGuide | null;
+  parsePrompt(text: string, guide: LoadedPromptGuide): LoadedParsedPrompt;
+  serializePrompt(parsed: LoadedParsedPrompt): string;
+  setSectionText(
+    parsed: LoadedParsedPrompt,
+    sectionId: string,
+    text: string,
+  ): LoadedParsedPrompt;
+  setPreamble(parsed: LoadedParsedPrompt, preamble: string): LoadedParsedPrompt;
+  composerDraftKey(workflowFingerprint: string, inputId: string): string;
+  promptInput(session: unknown): { readonly id: string } | null;
 
   parseSubject(id: string, value: JsonValue): LoadedSubject | null;
   serializeSubject(subject: LoadedSubject): JsonValue;
@@ -166,6 +228,9 @@ export interface MinimaxPromptPackage {
 
 export const minimaxPromptPackage = {
   ...indexModule,
+  ...promptSectionsModule,
+  ...composerSessionModule,
+  ...composerViewModule,
   ...subjectModelModule,
   ...subjectStoreModule,
   ...tagsModule,

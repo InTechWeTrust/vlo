@@ -16,6 +16,7 @@ import type {
 import { hostViewRegistry } from "../../../../core/shell/viewRegistry";
 import { hostContextKeys } from "../../../../core/shell/contextKeys";
 import type { MinimaxPromptPackage } from "./minimaxPromptPackageLoader";
+import { createMuiStubs } from "./minimaxHostStubs";
 
 const EXTENSION_ID = "vlo.minimax-prompt";
 
@@ -145,81 +146,6 @@ const DEFAULT_ASSET_LOOKUP: AssetLookup = (assetId) => ({
   type: "image" as const,
   src: `blob:${assetId}`,
 });
-
-/**
- * Stand-ins for the host MUI barrel.
- *
- * They have to be more than passthrough divs: the view's behaviour lives in
- * `onClick`, `value`/`onChange` and `title`, so a stub that dropped those
- * would make every interaction test vacuous. Components are cached because
- * React keys reconciliation on component identity — a fresh function per
- * access would remount the tree on every render and lose the editing state
- * these tests are about.
- */
-function createMuiStubs(): Record<string, unknown> {
-  const cache = new Map<string, React.FunctionComponent<Record<string, never>>>();
-  const build = (name: string): React.FunctionComponent<never> => {
-    if (name === "TextField") {
-      return ((props: {
-        value?: string;
-        onChange?: (event: unknown) => void;
-        onKeyDown?: (event: unknown) => void;
-        placeholder?: string;
-      }) =>
-        React.createElement("textarea", {
-          value: props.value ?? "",
-          placeholder: props.placeholder,
-          onChange: props.onChange,
-          onKeyDown: props.onKeyDown,
-        })) as React.FunctionComponent<never>;
-    }
-    if (name === "Button" || name === "IconButton") {
-      return ((props: {
-        children?: React.ReactNode;
-        onClick?: () => void;
-        disabled?: boolean;
-      }) =>
-        React.createElement(
-          "button",
-          { onClick: props.onClick, disabled: props.disabled },
-          props.children,
-        )) as React.FunctionComponent<never>;
-    }
-    if (name === "Tooltip") {
-      return ((props: { children?: React.ReactNode; title?: unknown }) =>
-        React.createElement(
-          "span",
-          { title: typeof props.title === "string" ? props.title : undefined },
-          props.children,
-        )) as React.FunctionComponent<never>;
-    }
-    if (name === "Chip") {
-      return ((props: { label?: React.ReactNode }) =>
-        React.createElement("span", null, props.label)) as React.FunctionComponent<never>;
-    }
-    return ((props: {
-      children?: React.ReactNode;
-      onClick?: () => void;
-      onDoubleClick?: () => void;
-    }) =>
-      React.createElement(
-        "div",
-        { onClick: props.onClick, onDoubleClick: props.onDoubleClick },
-        props.children,
-      )) as React.FunctionComponent<never>;
-  };
-  return new Proxy({} as Record<string, unknown>, {
-    get: (_target, name: string) => {
-      if (!cache.has(name)) {
-        cache.set(
-          name,
-          build(name) as React.FunctionComponent<Record<string, never>>,
-        );
-      }
-      return cache.get(name);
-    },
-  });
-}
 
 /**
  * Mounts the real subject *editor* view with the host singletons stubbed,

@@ -191,7 +191,12 @@ export function EditorOverlayHost() {
           </IconButton>
         </Tooltip>
       </Box>
-      <Box sx={{ position: "relative", flexGrow: 1, minHeight: 0 }}>
+      {/* `overflow: auto` as the bottom dock and player aside do it: the panel
+          is user-resizable, so a workspace taller than the frame has to scroll
+          rather than be clipped by the frame's own `overflow: hidden`. */}
+      <Box
+        sx={{ position: "relative", flexGrow: 1, minHeight: 0, overflow: "auto" }}
+      >
         <ViewRegionMount
           region="editor-overlay"
           views={views}
