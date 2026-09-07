@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { Box } from "@mui/material";
 import type { EditorRangeMask } from "../types";
 import type { MiniEditorExtractionMode } from "../useMiniEditorStore";
+import type { RangeEditEdge } from "../utils/rangeBounds";
 
 const TRACK_HEIGHT = 72;
 const HANDLE_WIDTH = 10;
@@ -13,8 +14,13 @@ interface EditorTrackProps {
   ranges: EditorRangeMask[];
   selectedRangeId: string | null;
   playheadTicks: number;
-  onSetCrop: (startTicks: number, endTicks: number) => void;
-  onUpdateRange: (id: string, startTicks: number, endTicks: number) => void;
+  onSetCrop: (startTicks: number, endTicks: number, edge?: "start" | "end") => void;
+  onUpdateRange: (
+    id: string,
+    startTicks: number,
+    endTicks: number,
+    edge?: RangeEditEdge,
+  ) => void;
   onSelectRange: (id: string | null) => void;
   onSeek: (ticks: number) => void;
   extractionMode?: MiniEditorExtractionMode;
@@ -69,19 +75,19 @@ export function EditorTrack({
           onSeek(tick);
           break;
         case "crop-start":
-          onSetCrop(tick, cropEndTicks);
+          onSetCrop(tick, cropEndTicks, "start");
           break;
         case "crop-end":
-          onSetCrop(cropStartTicks, tick);
+          onSetCrop(cropStartTicks, tick, "end");
           break;
         case "range-start": {
           const range = ranges.find((r) => r.id === drag.id);
-          if (range) onUpdateRange(drag.id, tick, range.endSourceTicks);
+          if (range) onUpdateRange(drag.id, tick, range.endSourceTicks, "start");
           break;
         }
         case "range-end": {
           const range = ranges.find((r) => r.id === drag.id);
-          if (range) onUpdateRange(drag.id, range.startSourceTicks, tick);
+          if (range) onUpdateRange(drag.id, range.startSourceTicks, tick, "end");
           break;
         }
         case "range-move": {
@@ -89,7 +95,7 @@ export function EditorTrack({
           if (range) {
             const len = range.endSourceTicks - range.startSourceTicks;
             const start = tick - drag.grabOffsetTicks;
-            onUpdateRange(drag.id, start, start + len);
+            onUpdateRange(drag.id, start, start + len, "move");
           }
           break;
         }
@@ -121,8 +127,25 @@ export function EditorTrack({
       event.stopPropagation();
       dragRef.current = drag;
       containerRef.current?.setPointerCapture(event.pointerId);
+      if (drag.kind === "crop-start") onSeek(cropStartTicks);
+      if (drag.kind === "crop-end") onSeek(cropEndTicks);
+      if (
+        drag.kind === "range-start" ||
+        drag.kind === "range-end" ||
+        drag.kind === "range-move"
+      ) {
+        onSelectRange(drag.id);
+        const range = ranges.find((entry) => entry.id === drag.id);
+        if (range) {
+          onSeek(
+            drag.kind === "range-end"
+              ? range.endSourceTicks
+              : range.startSourceTicks,
+          );
+        }
+      }
     },
-    [],
+    [cropStartTicks, cropEndTicks, onSeek, onSelectRange, ranges],
   );
 
   const handleSx = {
@@ -256,7 +279,6 @@ export function EditorTrack({
               cursor: "grab",
             }}
             onPointerDown={(event) => {
-              onSelectRange(range.id);
               const grab =
                 tickFromClientX(event.clientX) - range.startSourceTicks;
               beginDrag(event, {

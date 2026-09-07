@@ -61,6 +61,7 @@ export async function openAssetInMiniEditor(
         sourceUrl: URL.createObjectURL(file),
         sourceFile: file,
         durationTicks: mediaSecondsToTick(durationSeconds),
+        fps: hydrated?.fps ?? asset.fps,
         mediaType: asset.type,
       };
     },

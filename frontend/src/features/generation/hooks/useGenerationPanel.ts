@@ -1764,6 +1764,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
               : await probeVideoDurationTicks(videoUrl);
           return {
             assetId: asset.id,
+            fps: asset.fps,
             sourceUrl: videoUrl,
             sourceFile: file,
             durationTicks,
@@ -1827,7 +1828,12 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             typeof selection.end === "number"
               ? Math.max(0, selection.end - selection.start)
               : await probeVideoDurationTicks(videoUrl);
-          return { sourceUrl: videoUrl, sourceFile: file, durationTicks };
+          return {
+            sourceUrl: videoUrl,
+            sourceFile: file,
+            durationTicks,
+            fps: selection.fps,
+          };
         };
       } else {
         return;

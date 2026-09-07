@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mediaSecondsToTick } from "../../../core/time";
+import { ticksPerFrame } from "../../../core/time/frameGrid";
 import { resetZustandStore } from "../../../testUtils/zustand";
 import type { ResolvedEditorSource } from "../types";
 import { useMiniEditorStore } from "../useMiniEditorStore";
@@ -256,6 +257,101 @@ describe("useMiniEditorStore", () => {
       sourceWidth: 1920,
       sourceHeight: 1080,
       isPlaying: true,
+    });
+  });
+
+  it("restores and saves mask bounds on the selection frame grid, independently of crop steps", async () => {
+    const onSave = vi.fn();
+    await useMiniEditorStore.getState().open({
+      prepare: async () => source(),
+      frameConstraint: { fps: 24, frameStep: 17, frameOffset: 5 },
+      initial: { ranges: [{
+        id: "mask", startSourceTicks: 4_800, endSourceTicks: 9_100, isActive: true,
+      }] },
+      onSave,
+    });
+    expect(useMiniEditorStore.getState().ranges[0]).toMatchObject({
+      startSourceTicks: 4_000, endSourceTicks: 8_000,
+    });
+    useMiniEditorStore.getState().updateRange("mask", 4_000, 13_100, "end");
+    expect(useMiniEditorStore.getState()).toMatchObject({
+      playheadTicks: 12_000,
+      ranges: [{ startSourceTicks: 4_000, endSourceTicks: 12_000 }],
+    });
+    await useMiniEditorStore.getState().save();
+    expect(onSave.mock.calls[0][0].ranges[0]).toMatchObject({
+      startSourceTicks: 4_000, endSourceTicks: 12_000,
+    });
+  });
+
+  it.each([24, 60, 29.97])("uses asset fps %s for ranges and seeking instead of workflow fps", async (fps) => {
+    const frame = ticksPerFrame(fps);
+    await useMiniEditorStore.getState().open({
+      prepare: async () => ({ ...source(), fps }),
+      frameConstraint: { fps: 10, frameStep: 4 },
+    });
+    useMiniEditorStore.getState().setPlayhead(3.2 * frame);
+    useMiniEditorStore.getState().addRangeAtPlayhead();
+    const range = useMiniEditorStore.getState().ranges[0];
+    expect(range.startSourceTicks).toBeCloseTo(3 * frame);
+    expect(range.endSourceTicks / frame).toBeCloseTo(Math.round(range.endSourceTicks / frame));
+    useMiniEditorStore.getState().setPlaying(true);
+    useMiniEditorStore.getState().updateRange(range.id, 5.4 * frame, 9.2 * frame, "start");
+    expect(useMiniEditorStore.getState().isPlaying).toBe(false);
+    expect(useMiniEditorStore.getState().playheadTicks).toBeCloseTo(5 * frame);
+    expect(useMiniEditorStore.getState().ranges[0].endSourceTicks).toBeCloseTo(9 * frame);
+  });
+
+  it("keeps the opposite mask handle fixed when crossing it and permits a single frame", async () => {
+    await useMiniEditorStore.getState().open({
+      prepare: async () => ({ ...source(), fps: 60 }),
+      initial: { ranges: [{
+        id: "mask", startSourceTicks: 3_200, endSourceTicks: 8_000, isActive: true,
+      }] },
+    });
+    useMiniEditorStore.getState().updateRange("mask", 20_000, 8_000, "start");
+    expect(useMiniEditorStore.getState()).toMatchObject({
+      playheadTicks: 6_400,
+      ranges: [{ startSourceTicks: 6_400, endSourceTicks: 8_000 }],
+    });
+    useMiniEditorStore.getState().updateRange("mask", 6_400, 0, "end");
+    expect(useMiniEditorStore.getState()).toMatchObject({
+      playheadTicks: 8_000,
+      ranges: [{ startSourceTicks: 6_400, endSourceTicks: 8_000 }],
+    });
+  });
+
+  it("keeps moved masks the same length and clamps to complete source frames", async () => {
+    await useMiniEditorStore.getState().open({
+      prepare: async () => ({ ...source("blob:short", 20_500), fps: 24 }),
+      initial: { ranges: [{
+        id: "mask", startSourceTicks: 4_000, endSourceTicks: 12_000, isActive: true,
+      }] },
+    });
+    useMiniEditorStore.getState().updateRange("mask", -10_000, -2_000, "move");
+    expect(useMiniEditorStore.getState().ranges[0]).toMatchObject({
+      startSourceTicks: 0, endSourceTicks: 8_000,
+    });
+    useMiniEditorStore.getState().updateRange("mask", 19_000, 27_000, "move");
+    expect(useMiniEditorStore.getState()).toMatchObject({
+      playheadTicks: 12_000,
+      ranges: [{ startSourceTicks: 12_000, endSourceTicks: 20_000 }],
+    });
+    useMiniEditorStore.getState().setPlayhead(20_500);
+    expect(useMiniEditorStore.getState().playheadTicks).toBe(20_000);
+  });
+
+  it("scrubs crop handles to the accepted workflow edge", async () => {
+    await useMiniEditorStore.getState().open({
+      prepare: async () => source(),
+      frameConstraint: { fps: 10, frameStep: 4 },
+    });
+    useMiniEditorStore.getState().setPlaying(true);
+    useMiniEditorStore.getState().setCrop(0, mediaSecondsToTick(0.63), "end");
+    expect(useMiniEditorStore.getState()).toMatchObject({
+      cropEndTicks: mediaSecondsToTick(0.5),
+      playheadTicks: mediaSecondsToTick(0.5),
+      isPlaying: false,
     });
   });
 

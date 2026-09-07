@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import { mediaSecondsToTick, TICKS_PER_SECOND } from "../../core/time";
+import { snapTickToGrid, ticksPerFrame } from "../../core/time/frameGrid";
 import { getTicksPerFrame, snapSteppedRangeEdge } from "../timelineSelection";
+import { normalizeRangeBounds } from "./utils/rangeBounds";
+import type { RangeEditEdge } from "./utils/rangeBounds";
 import type {
   EditorRangeMask,
   ResolvedEditorSource,
@@ -91,9 +94,14 @@ export interface MiniEditorState {
   ) => void;
   close: () => void;
   setSourceDimensions: (width: number, height: number) => void;
-  setCrop: (startTicks: number, endTicks: number) => void;
+  setCrop: (startTicks: number, endTicks: number, edge?: "start" | "end") => void;
   addRangeAtPlayhead: () => void;
-  updateRange: (id: string, startTicks: number, endTicks: number) => void;
+  updateRange: (
+    id: string,
+    startTicks: number,
+    endTicks: number,
+    edge?: RangeEditEdge,
+  ) => void;
   removeRange: (id: string) => void;
   toggleRange: (id: string) => void;
   selectRange: (id: string | null) => void;
@@ -109,6 +117,15 @@ export interface MiniEditorState {
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
+
+function sourceFrameTicks(
+  source: ResolvedEditorSource | null,
+  fallback: number | null,
+): number | null {
+  return source?.fps && Number.isFinite(source.fps) && source.fps > 0
+    ? ticksPerFrame(source.fps)
+    : fallback;
+}
 
 function revokeSource(source: ResolvedEditorSource | null) {
   if (source) {
@@ -230,6 +247,16 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
         return;
       }
       const duration = source.durationTicks;
+      const frameTicks = sourceFrameTicks(source, get()._internal.ticksPerFrame);
+      const ranges = (args.initial?.ranges ?? []).flatMap((range) => {
+        const bounds = normalizeRangeBounds(
+          range.startSourceTicks,
+          range.endSourceTicks,
+          duration,
+          frameTicks,
+        );
+        return bounds ? [{ ...range, ...bounds }] : [];
+      });
       const cropStart = clamp(
         args.initial?.cropStartTicks ?? 0,
         0,
@@ -247,6 +274,7 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
         status: "ready",
         source,
         durationTicks: duration,
+        ranges,
         cropStartTicks: cropStart,
         cropEndTicks: cropEnd,
         playheadTicks: cropStart,
@@ -293,7 +321,7 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
     }
   },
 
-  setCrop: (startTicks, endTicks) => {
+  setCrop: (startTicks, endTicks, edge) => {
     const state = get();
     const { durationTicks } = state;
     const { ticksPerFrame, frameStep, frameOffset } = state._internal;
@@ -342,13 +370,19 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
     set({
       cropStartTicks: start,
       cropEndTicks: end,
-      playheadTicks: clamp(get().playheadTicks, start, end),
+      playheadTicks: edge
+        ? edge === "start"
+          ? start
+          : end
+        : clamp(get().playheadTicks, start, end),
+      ...(edge ? { isPlaying: false } : {}),
     });
   },
 
   addRangeAtPlayhead: () => {
-    const { playheadTicks, cropStartTicks, cropEndTicks, durationTicks } =
-      get();
+    const {
+      playheadTicks, cropStartTicks, cropEndTicks, durationTicks, source, _internal,
+    } = get();
     const anchor = clamp(playheadTicks, 0, durationTicks);
     const defaultLen = Math.min(TICKS_PER_SECOND, durationTicks);
     let start = clamp(anchor, 0, Math.max(0, durationTicks - defaultLen));
@@ -362,10 +396,16 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
       );
       end = clamp(end, start + MIN_SPAN_TICKS, cropEndTicks);
     }
+    const bounds = normalizeRangeBounds(
+      start,
+      end,
+      durationTicks,
+      sourceFrameTicks(source, _internal.ticksPerFrame),
+    );
+    if (!bounds) return;
     const range: EditorRangeMask = {
       id: `range_${crypto.randomUUID()}`,
-      startSourceTicks: start,
-      endSourceTicks: end,
+      ...bounds,
       isActive: true,
     };
     set((state) => ({
@@ -374,20 +414,29 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
     }));
   },
 
-  updateRange: (id, startTicks, endTicks) => {
-    const { durationTicks } = get();
-    const start = clamp(
+  updateRange: (id, startTicks, endTicks, edge) => {
+    const { durationTicks, source, _internal } = get();
+    const bounds = normalizeRangeBounds(
       startTicks,
-      0,
-      Math.max(0, durationTicks - MIN_SPAN_TICKS),
+      endTicks,
+      durationTicks,
+      sourceFrameTicks(source, _internal.ticksPerFrame),
+      edge,
     );
-    const end = clamp(endTicks, start + MIN_SPAN_TICKS, durationTicks);
+    if (!bounds || !get().ranges.some((range) => range.id === id)) return;
     set((state) => ({
       ranges: state.ranges.map((range) =>
         range.id === id
-          ? { ...range, startSourceTicks: start, endSourceTicks: end }
+          ? { ...range, ...bounds }
           : range,
       ),
+      ...(edge
+        ? {
+            isPlaying: false,
+            playheadTicks:
+              edge === "end" ? bounds.endSourceTicks : bounds.startSourceTicks,
+          }
+        : {}),
     }));
   },
 
@@ -410,12 +459,15 @@ export const useMiniEditorStore = create<MiniEditorState>((set, get) => ({
   setPlayhead: (ticks) => {
     const state = get();
     const clamped = clamp(ticks, 0, state.durationTicks);
-    const ticksPerFrame = state._internal.ticksPerFrame;
-    const playheadTicks = ticksPerFrame
+    const frameTicks = sourceFrameTicks(
+      state.source,
+      state._internal.ticksPerFrame,
+    );
+    const playheadTicks = frameTicks
       ? clamp(
-          Math.round(clamped / ticksPerFrame) * ticksPerFrame,
+          snapTickToGrid(clamped, frameTicks),
           0,
-          state.durationTicks,
+          snapTickToGrid(state.durationTicks, frameTicks, "floor"),
         )
       : clamped;
     if (playheadTicks === state.playheadTicks) return;

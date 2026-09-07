@@ -87,14 +87,16 @@ describe("EditorTrack", () => {
       pointerId: 2,
     });
     fireEvent.pointerMove(track, { clientX: 300, pointerId: 2 });
-    expect(handlers.onSetCrop).toHaveBeenCalledWith(300, 900);
+    expect(handlers.onSetCrop).toHaveBeenCalledWith(300, 900, "start");
+    expect(handlers.onSeek).toHaveBeenCalledWith(100);
 
     fireEvent.pointerDown(screen.getByLabelText("Crop end"), {
       clientX: 900,
       pointerId: 3,
     });
     fireEvent.pointerMove(track, { clientX: 700, pointerId: 3 });
-    expect(handlers.onSetCrop).toHaveBeenCalledWith(100, 700);
+    expect(handlers.onSetCrop).toHaveBeenCalledWith(100, 700, "end");
+    expect(handlers.onSeek).toHaveBeenCalledWith(900);
   });
 
   it("moves and resizes ranges", () => {
@@ -108,19 +110,22 @@ describe("EditorTrack", () => {
       "range-1",
       450,
       650,
+      "move",
     );
 
     fireEvent.pointerDown(screen.getByLabelText("Range range-1 start"), {
       pointerId: 5,
     });
     fireEvent.pointerMove(track, { clientX: 150, pointerId: 5 });
-    expect(handlers.onUpdateRange).toHaveBeenCalledWith("range-1", 150, 400);
+    expect(handlers.onUpdateRange).toHaveBeenCalledWith("range-1", 150, 400, "start");
+    expect(handlers.onSeek).toHaveBeenLastCalledWith(200);
 
     fireEvent.pointerDown(screen.getByLabelText("Range range-1 end"), {
       pointerId: 6,
     });
     fireEvent.pointerMove(track, { clientX: 450, pointerId: 6 });
-    expect(handlers.onUpdateRange).toHaveBeenCalledWith("range-1", 200, 450);
+    expect(handlers.onUpdateRange).toHaveBeenCalledWith("range-1", 200, 450, "end");
+    expect(handlers.onSeek).toHaveBeenLastCalledWith(400);
   });
 
   it("clamps pointer positions to the timeline", () => {

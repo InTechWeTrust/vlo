@@ -122,14 +122,15 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
       const media = mediaRef.current;
       if (!media) return;
       const target = tickToMediaSeconds(playheadTicks);
-      if (Math.abs(media.currentTime - target) > 0.02) media.currentTime = target;
+      // A single frame at 60+ fps is shorter than the old 20ms threshold.
+      if (Math.abs(media.currentTime - target) > 1e-6) media.currentTime = target;
     }
 
     syncPausedMedia(useMiniEditorStore.getState().playheadTicks);
     return useMiniEditorStore.subscribe((state, previous) => {
       if (
         state.isPlaying ||
-        state.playheadTicks === previous.playheadTicks
+        (state.playheadTicks === previous.playheadTicks && !previous.isPlaying)
       ) {
         return;
       }
@@ -231,10 +232,11 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
 
   const handleMediaStopped = useCallback(
     (media: HTMLMediaElement) => {
+      const stoppedAt = mediaSecondsToTick(media.currentTime);
       setPlaying(false);
-      syncPlayheadFromMedia(media);
+      setPlayhead(stoppedAt);
     },
-    [setPlaying, syncPlayheadFromMedia],
+    [setPlaying, setPlayhead],
   );
 
   if (status === "preparing") {
@@ -401,6 +403,13 @@ export function MiniEditorControls() {
   const canSave = useMiniEditorStore((state) =>
     Boolean(state._internal.onSave),
   );
+  const seek = useCallback(
+    (ticks: number) => {
+      useMiniEditorStore.getState().setPlaying(false);
+      setPlayhead(ticks);
+    },
+    [setPlayhead],
+  );
 
   if (status === "preparing" || (status === "error" && !source)) return null;
   const mediaType = source?.mediaType ?? "video";
@@ -468,7 +477,7 @@ export function MiniEditorControls() {
           onSetCrop={setCrop}
           onUpdateRange={updateRange}
           onSelectRange={selectRange}
-          onSeek={setPlayhead}
+          onSeek={seek}
           extractionMode={extractionMode}
         />
       ) : null}

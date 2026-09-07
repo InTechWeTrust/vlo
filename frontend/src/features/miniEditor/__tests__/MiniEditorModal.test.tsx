@@ -175,6 +175,51 @@ describe("MiniEditorModal", () => {
     expect(video.currentTime).toBe(1.5);
   });
 
+  it("previews each snapped mask edge while dragging, including adjacent 60fps frames", async () => {
+    installAnimationFrameMock();
+    await useMiniEditorStore.getState().open({
+      prepare: async () => ({ ...preparedSource(), fps: 60 }),
+      onSave: vi.fn(),
+      initial: { ranges: [{
+        id: "mask",
+        startSourceTicks: mediaSecondsToTick(0.2),
+        endSourceTicks: mediaSecondsToTick(0.5),
+        isActive: true,
+      }] },
+    });
+    render(<MiniEditorModal />);
+    const video = document.querySelector("video") as HTMLVideoElement;
+    const track = screen.getByLabelText("Crop start").parentElement as HTMLElement;
+    Object.defineProperty(track, "setPointerCapture", { value: vi.fn() });
+    track.getBoundingClientRect = () => ({ left: 0, width: 500 }) as DOMRect;
+
+    fireEvent.play(video);
+    video.currentTime = 1;
+    fireEvent.pointerDown(screen.getByLabelText("Range mask start"), {
+      clientX: 20, pointerId: 1,
+    });
+    expect(useMiniEditorStore.getState().isPlaying).toBe(false);
+    expect(video.currentTime).toBeCloseTo(0.2);
+
+    fireEvent.pointerMove(track, { clientX: 21.7, pointerId: 1 });
+    expect(video.currentTime).toBeCloseTo(13 / 60);
+    expect(useMiniEditorStore.getState().playheadTicks).toBe(20_800);
+    expect(useMiniEditorStore.getState().ranges[0].startSourceTicks).toBe(20_800);
+
+    fireEvent.pointerDown(screen.getByLabelText("Range mask end"), {
+      clientX: 50, pointerId: 1,
+    });
+    fireEvent.pointerMove(track, { clientX: 51.7, pointerId: 1 });
+    expect(video.currentTime).toBeCloseTo(31 / 60);
+    expect(useMiniEditorStore.getState().ranges[0].endSourceTicks).toBe(49_600);
+
+    // Crossing the other handle previews the clamped edge, not the pointer.
+    fireEvent.pointerMove(track, { clientX: 0, pointerId: 1 });
+    expect(video.currentTime).toBeCloseTo(14 / 60);
+    expect(useMiniEditorStore.getState().playheadTicks).toBe(22_400);
+    expect(useMiniEditorStore.getState().ranges[0].endSourceTicks).toBe(22_400);
+  });
+
   it("synchronizes video playback from presented frames and cancels the callback", async () => {
     const callbacks = new Map<number, VideoFrameRequestCallback>();
     let nextId = 1;

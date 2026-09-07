@@ -31,6 +31,8 @@ export interface ResolvedEditorSource {
   sourceFile: File;
   /** Full source duration in timeline ticks. Zero for still assets. */
   durationTicks: number;
+  /** Fixed source frame rate, independent of workflow crop-length constraints. */
+  fps?: number;
   /** Defaults to video for backwards-compatible generation callers. */
   mediaType?: MiniEditorMediaType;
 }
