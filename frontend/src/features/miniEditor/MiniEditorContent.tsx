@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AddIcon from "@mui/icons-material/Add";
 import CameraAltIcon from "@mui/icons-material/CameraAlt";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
@@ -18,6 +18,7 @@ import {
 } from "@mui/material";
 import { mediaSecondsToTick, tickToMediaSeconds } from "../../core/time";
 import { EditorTrack } from "./components/EditorTrack";
+import { useMediaFullscreen } from "./hooks/useMediaFullscreen";
 import { useMiniEditorStore } from "./useMiniEditorStore";
 
 const PLAYHEAD_PUBLISH_INTERVAL_MS = 1000 / 15;
@@ -49,6 +50,12 @@ interface MiniEditorPreviewProps {
 /** Shared preview/controller used by both the modal and workspace surface. */
 export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps) {
   const mediaRef = useRef<HTMLMediaElement | null>(null);
+  // The ref serves the frame loop's hot path; the state copy is what lets
+  // hooks below depend on the element itself rather than on a proxy for when
+  // it happens to be mounted.
+  const [mediaElement, setMediaElement] = useState<HTMLMediaElement | null>(
+    null,
+  );
   const rafRef = useRef<number | null>(null);
   const videoFrameRef = useRef<number | null>(null);
   const videoFrameOwnerRef = useRef<HTMLVideoElement | null>(null);
@@ -75,6 +82,10 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
   );
   const hasNext = useMiniEditorStore((state) => state._internal.hasNext);
   const autoPlay = useMiniEditorStore((state) => state._internal.autoPlay);
+  const controlsCollapsed = useMiniEditorStore((state) => state.controlsCollapsed);
+  const mediaFullscreen = useMediaFullscreen(mediaElement);
+  const nativePlayback = controlsCollapsed || mediaFullscreen;
+  const nativePlaybackSourceRef = useRef<string | undefined>(undefined);
 
   const isBusy =
     status === "saving" ||
@@ -84,6 +95,7 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
   const mediaType = source?.mediaType ?? "video";
   const attachMedia = useCallback((media: HTMLMediaElement | null) => {
     mediaRef.current = media;
+    setMediaElement(media);
   }, []);
 
   useEffect(() => {
@@ -118,6 +130,7 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
   }, [isPlaying, setPlaying, status]);
 
   useEffect(() => {
+    const sourceUrl = source?.sourceUrl;
     function syncPausedMedia(playheadTicks: number) {
       const media = mediaRef.current;
       if (!media) return;
@@ -126,7 +139,31 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
       if (Math.abs(media.currentTime - target) > 1e-6) media.currentTime = target;
     }
 
-    syncPausedMedia(useMiniEditorStore.getState().playheadTicks);
+    if (nativePlayback) {
+      // Handing a source over still starts it where the store opened it: an
+      // editor that opens collapsed would otherwise ignore its initial crop,
+      // and the expansion below trusts the media's position as the truth.
+      if (
+        sourceUrl &&
+        nativePlaybackSourceRef.current !== sourceUrl &&
+        !useMiniEditorStore.getState().isPlaying
+      ) {
+        syncPausedMedia(useMiniEditorStore.getState().playheadTicks);
+      }
+      nativePlaybackSourceRef.current = sourceUrl;
+      return;
+    }
+
+    // Reopening the controls must pick up native playback's current position,
+    // rather than seeking back to the last position published before collapse.
+    if (sourceUrl && nativePlaybackSourceRef.current === sourceUrl) {
+      const media = mediaRef.current;
+      if (media) setPlayhead(mediaSecondsToTick(media.currentTime));
+    }
+    nativePlaybackSourceRef.current = undefined;
+    if (!useMiniEditorStore.getState().isPlaying) {
+      syncPausedMedia(useMiniEditorStore.getState().playheadTicks);
+    }
     return useMiniEditorStore.subscribe((state, previous) => {
       if (
         state.isPlaying ||
@@ -136,11 +173,17 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
       }
       syncPausedMedia(state.playheadTicks);
     });
-  }, [source?.sourceUrl]);
+  }, [nativePlayback, setPlayhead, source?.sourceUrl]);
 
   useEffect(() => {
     const media = mediaRef.current;
     if (!media) return;
+    // Passive viewing belongs to the browser: no frame callbacks, crop-loop
+    // seeks, or continuous store publication, including native fullscreen.
+    if (nativePlayback) {
+      if (!isPlaying && !media.paused) media.pause();
+      return;
+    }
     if (!isPlaying) {
       setPlayhead(mediaSecondsToTick(media.currentTime));
       media.pause();
@@ -221,7 +264,14 @@ export function MiniEditorPreview({ fillStage = false }: MiniEditorPreviewProps)
         videoFrameOwnerRef.current = null;
       }
     };
-  }, [cropEndTicks, cropStartTicks, isPlaying, setPlayhead]);
+  }, [
+    cropEndTicks,
+    cropStartTicks,
+    isPlaying,
+    nativePlayback,
+    setPlayhead,
+    source?.sourceUrl,
+  ]);
 
   const syncPlayheadFromMedia = useCallback(
     (media: HTMLMediaElement) => {

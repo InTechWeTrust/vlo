@@ -342,6 +342,83 @@ describe("MiniEditorModal", () => {
     }
   });
 
+  it.each(["video", "audio"] as const)("leaves collapsed %s playback and native seeks to the browser", async (mediaType) => {
+    const animation = installAnimationFrameMock();
+    await useMiniEditorStore.getState().open({
+      previewMode: true,
+      prepare: async () => ({ ...preparedSource(), mediaType, fps: 30 }),
+      onExtractRange: vi.fn(),
+    });
+    render(<MiniEditorModal />);
+    const media = document.querySelector(mediaType) as HTMLMediaElement;
+    const seek = vi.spyOn(media, "currentTime", "set");
+    fireEvent.play(media);
+    media.currentTime = 2.413;
+    seek.mockClear();
+    const before = useMiniEditorStore.getState().playheadTicks;
+    act(() => animation.flush(100));
+    expect(animation.request).not.toHaveBeenCalled();
+    expect(useMiniEditorStore.getState().playheadTicks).toBe(before);
+
+    fireEvent.pause(media);
+    fireEvent.seeked(media);
+    expect(seek).not.toHaveBeenCalled();
+    expect(media.currentTime).toBe(2.413);
+  });
+
+  it("resumes editor synchronization from native playback's current position on expansion", async () => {
+    const animation = installAnimationFrameMock();
+    await useMiniEditorStore.getState().open({
+      previewMode: true,
+      prepare: async () => preparedSource(),
+      onExtractRange: vi.fn(),
+    });
+    render(<MiniEditorModal />);
+    const video = document.querySelector("video") as HTMLVideoElement;
+    fireEvent.play(video);
+    video.currentTime = 2.5;
+    const seek = vi.spyOn(video, "currentTime", "set");
+    fireEvent.click(screen.getByRole("button", { name: "Extract" }));
+    expect(useMiniEditorStore.getState().playheadTicks).toBe(mediaSecondsToTick(2.5));
+    expect(seek).not.toHaveBeenCalled();
+    expect(animation.request).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(animation.cancel).toHaveBeenCalledOnce();
+    const requests = animation.request.mock.calls.length;
+    act(() => animation.flush(100));
+    expect(animation.request).toHaveBeenCalledTimes(requests);
+    expect(seek).not.toHaveBeenCalled();
+  });
+
+  it("suspends the editor clock and crop looping during native fullscreen", async () => {
+    const animation = installAnimationFrameMock();
+    await useMiniEditorStore.getState().open({
+      prepare: async () => preparedSource(),
+      onSave: vi.fn(),
+      initial: { cropStartTicks: mediaSecondsToTick(1), cropEndTicks: mediaSecondsToTick(2) },
+    });
+    render(<MiniEditorModal />);
+    const video = document.querySelector("video") as HTMLVideoElement;
+    fireEvent.play(video);
+    expect(animation.request).toHaveBeenCalledOnce();
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, value: video });
+    try {
+      fireEvent(document, new Event("fullscreenchange"));
+      expect(animation.cancel).toHaveBeenCalledOnce();
+      video.currentTime = 3;
+      const seek = vi.spyOn(video, "currentTime", "set");
+      act(() => animation.flush(100));
+      expect(animation.request).toHaveBeenCalledOnce();
+      expect(seek).not.toHaveBeenCalled();
+      expect(video.currentTime).toBe(3);
+    } finally {
+      Reflect.deleteProperty(document, "fullscreenElement");
+      fireEvent(document, new Event("fullscreenchange"));
+    }
+    expect(animation.request).toHaveBeenCalledTimes(2);
+  });
+
   it("synchronizes native audio seeking with the editor playhead", async () => {
     const source = { ...preparedSource(), mediaType: "audio" as const };
     await act(async () => {
