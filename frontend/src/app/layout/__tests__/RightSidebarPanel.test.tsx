@@ -205,7 +205,7 @@ describe("RightSidebarPanel", () => {
     );
   });
 
-  it("hosts stateful extension workspaces in the sidebar overflow menu", () => {
+  it("hosts stateful extension workspaces as tabs, and in the overflow menu", () => {
     const scope: ExtensionApiScope = {
       extension: { id: "example.canvas", version: "1.0.0" },
       signal: new AbortController().signal,
@@ -241,9 +241,10 @@ describe("RightSidebarPanel", () => {
     try {
       renderPanel();
 
-      expect(
-        screen.queryByRole("tab", { name: "AI Canvas" }),
-      ).not.toBeInTheDocument();
+      // A contributed panel is an ordinary tab, as it already is in the left
+      // sidebar. The overflow menu stays as a contribution point and a second
+      // way in, not the only way.
+      expect(screen.getByRole("tab", { name: "AI Canvas" })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: "Generate" })).toHaveClass(
         "MuiTab-fullWidth",
       );
@@ -263,7 +264,7 @@ describe("RightSidebarPanel", () => {
       ).toHaveAttribute("id", "shell-view-panel-example.canvas/drawing");
       expect(
         screen.getByRole("tabpanel", { name: "AI Canvas" }),
-      ).not.toHaveAttribute("aria-labelledby");
+      ).toHaveAttribute("aria-labelledby", "shell-view-tab-example.canvas/drawing");
       expect(screen.getByLabelText("Workspace canvas")).toBeInstanceOf(
         globalThis.HTMLCanvasElement,
       );
@@ -284,9 +285,19 @@ describe("RightSidebarPanel", () => {
       expect(input).toHaveValue("unfinished sketch");
       expect(input).toHaveAttribute("data-active", "true");
 
+      // Selecting it from its own tab works the same way.
+      fireEvent.click(screen.getByRole("tab", { name: "Generate" }));
+      expect(input).toHaveAttribute("data-active", "false");
+      fireEvent.click(screen.getByRole("tab", { name: "AI Canvas" }));
+      expect(input).toHaveValue("unfinished sketch");
+      expect(input).toHaveAttribute("data-active", "true");
+
       act(() => registration.dispose());
       expect(
         screen.queryByRole("button", { name: "More panels" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("tab", { name: "AI Canvas" }),
       ).not.toBeInTheDocument();
       expect(screen.getByRole("tab", { name: "Generate" })).toHaveAttribute(
         "aria-selected",

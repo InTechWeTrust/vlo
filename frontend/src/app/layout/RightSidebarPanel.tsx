@@ -78,7 +78,15 @@ function RightSidebarPanelComponent() {
       >
         <Tabs
           data-testid="right-sidebar-tabs"
-          value={selectedEntry?.source === "host" ? selectedViewId : false}
+          // Any registered view may be the selected tab. Extension panels are
+          // ordinary tabs here, as they already are in the left sidebar;
+          // `false` only when nothing applicable is selected, which keeps MUI
+          // from warning about a value with no matching tab.
+          value={
+            views.some((view) => view.id === selectedViewId)
+              ? selectedViewId
+              : false
+          }
           onChange={(_, value: string) => selectView(value)}
           textColor="primary"
           indicatorColor="primary"
@@ -98,7 +106,10 @@ function RightSidebarPanelComponent() {
             },
           }}
         >
-          {coreViews.map((view) => (
+          {/* Host views first so the selection-driven tabs keep a stable
+              order, then contributed panels — which sort after them anyway,
+              by the adapter's default `order`. */}
+          {[...coreViews, ...extensionViews].map((view) => (
             <Tab
               key={view.id}
               id={`shell-view-tab-${view.id}`}
@@ -191,9 +202,9 @@ function RightSidebarPanelComponent() {
           views={views}
           activeViewId={selectedViewId}
           layout="absolute"
-          getTabId={(entry) =>
-            entry.source === "host" ? `shell-view-tab-${entry.id}` : undefined
-          }
+          // Every view has a tab now, so every panel can name the tab that
+          // labels it.
+          getTabId={(entry) => `shell-view-tab-${entry.id}`}
         />
       </Box>
     </Box>
