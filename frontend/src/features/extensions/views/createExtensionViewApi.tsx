@@ -85,6 +85,11 @@ export function createExtensionViewApi(
         title: definition.title,
         icon: TrustedIcon ? ExtensionViewIcon : undefined,
         defaultRegion: definition.defaultRegion,
+        // Portability is opt-in and validated by the registry, which rejects a
+        // non-dock region, an empty list, or one omitting the default — those
+        // throw out of `registerView` and fail activation, the same as an
+        // invalid view id does.
+        allowedRegions: definition.allowedRegions,
         // Built-in regions keep their primary tabs first unless the author
         // deliberately requests another position or the user reorders them.
         order: definition.order ?? 1_000,

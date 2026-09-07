@@ -75,6 +75,80 @@ its closed state, unlike the sidebars, which always show something. A view you
 register there is not visible until `openView` or the user opens the dock, so do
 not treat registration as "on screen".
 
+### Let the user move your view
+
+`defaultRegion` says where a view is *born*. Add `allowedRegions` and the user
+can move it afterwards, from "Manage panels":
+
+```ts
+api.ui.registerView({
+  id: "subjects",
+  apiVersion: 1,
+  kind: "trusted-view",
+  title: "Subjects",
+  defaultRegion: "right-sidebar",
+  allowedRegions: ["right-sidebar", "left-sidebar", "bottom-dock"],
+  component: SubjectsView,
+});
+```
+
+Only the four **docked** regions can take part — `left-sidebar`,
+`right-sidebar`, `player-aside`, `bottom-dock`. They are the ones the layout
+kernel arranges, persists and lists.
+
+Opting in changes how the view is mounted. A portable panel is rendered once
+from a fixed position and its DOM container is adopted by whichever region
+shows it, so a move preserves React state, effects, subscriptions and canvas
+contents rather than remounting. Two consequences for your code:
+
+- **`region` changes underneath you.** Read it from props each render; never
+  cache the region you registered with.
+- **Providers come from the host, not the region.** The panel is rendered
+  through a portal, so React context reaches it from where the portable host
+  sits — which is inside the editor's `DndContext`. Drop slots keep working
+  after a move.
+
+The placement is remembered per view id and survives disable/enable. If a later
+version of your extension narrows `allowedRegions`, a stored placement outside
+the new list is discarded and the view falls back to `defaultRegion`.
+
+## Gotchas
+
+Failure modes that produce no error, or an error a long way from its cause.
+Each is a real trap that has cost time.
+
+**A drop slot inside a modal never fires.** `ui.registerModal` mounts app-wide,
+because it has to work on the projects page before a project is open — which is
+*outside* the editor's `DndContext`. A `runtime.panelUi` drop slot in a modal
+silently never receives anything, with nothing logged. Use a view region: they
+all mount inside that context, and `editor-overlay` gives you a floating,
+non-blocking panel if that is the modal shape you wanted.
+
+**`allowedRegions` throws if it names anything but a dock region.**
+Registration is validated, and an invalid list throws out of `registerView` —
+which fails activation, so the whole extension does not load. The four
+rejections are:
+
+| What you wrote | Why it throws |
+| --- | --- |
+| a region outside the four dock regions | nothing can host a moved panel there |
+| `allowedRegions` with `defaultRegion: "editor-overlay"` or `"projects-page.main"` | the default itself is not a dock region, so the view can never be portable |
+| a list omitting `defaultRegion` | a move menu could strand the panel outside its own list |
+| `[]` | omit the field instead; an empty list is a mistake, not "no moves" |
+
+The second is the easy one to hit: `editor-overlay` reads like just another
+region, and adding `allowedRegions` to a floating panel looks harmless. It is
+not — a floating panel has no dock to be moved between. Omit `allowedRegions`
+entirely for `editor-overlay` and `projects-page.main` views.
+
+**A view registered in the bottom dock or the overlay is not on screen.** Both
+start closed. Registration is not visibility; call `openView`, and respect a
+`false` return, which means the user hid it.
+
+**`openView` takes no input.** Unlike `openModal`, it cannot carry a payload.
+If one view opens another on a particular subject, keep that selection in your
+own module state and have the opened view read it.
+
 ## Contribute a video scope
 
 `ui.scopes.register({ id, apiVersion: 1, kind: "trusted-scope", label, width,

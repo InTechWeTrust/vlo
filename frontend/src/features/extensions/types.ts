@@ -236,6 +236,7 @@ export type {
   ExtensionUiRegistration,
   ExtensionUiSlotId,
   ExtensionUiViewComponentProps,
+  ExtensionUiDockRegion,
   ExtensionUiViewRegion,
   JsonValue,
   VloExtensionApi,

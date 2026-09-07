@@ -2666,6 +2666,21 @@ export type ExtensionUiViewRegion =
    */
   | "editor-overlay";
 
+/**
+ * The regions a view may be *moved* between, which is a strictly smaller set
+ * than the regions it may be registered in.
+ *
+ * Only docked regions can host a moved panel: they are the ones the layout
+ * kernel arranges, persists and offers in "Manage panels". `editor-overlay`
+ * floats over the editor and `projects-page.main` belongs to a different
+ * screen, so neither can take part.
+ */
+export type ExtensionUiDockRegion =
+  | "left-sidebar"
+  | "right-sidebar"
+  | "player-aside"
+  | "bottom-dock";
+
 export interface ExtensionUiComponentProps {
   readonly slot: ExtensionUiSlotId;
 }
@@ -3174,6 +3189,22 @@ export interface ExtensionTrustedUiViewDefinition {
   readonly title: string;
   readonly icon?: () => unknown;
   readonly defaultRegion: ExtensionUiViewRegion;
+  /**
+   * Additional regions the *user* may move this view to, from "Manage panels".
+   * Omit it and the view stays wherever it was registered.
+   *
+   * Must include `defaultRegion`, must be non-empty, and may name only docked
+   * regions — so a view whose `defaultRegion` is `editor-overlay` or
+   * `projects-page.main` cannot declare it at all. Registration **throws** on
+   * any of those, failing activation, rather than silently ignoring the list.
+   *
+   * Opting in changes how the view is mounted: a portable panel is rendered
+   * once from a fixed position and adopted into whichever region shows it, so
+   * a move preserves React state, effects and DOM instead of remounting. In
+   * exchange the view must tolerate `region` changing underneath it — read it
+   * from props rather than assuming the one it was registered with.
+   */
+  readonly allowedRegions?: readonly ExtensionUiDockRegion[];
   readonly order?: number;
   readonly when?: ExtensionContextKeyExpression;
   readonly component: (props: ExtensionUiViewComponentProps) => unknown;

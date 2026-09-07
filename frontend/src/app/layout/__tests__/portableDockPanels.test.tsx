@@ -3,12 +3,17 @@
  * (plan §7 Phase C acceptance, §8.2, §8.4 scenarios 3 and 4).
  */
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hostContextKeys } from "../../../core/shell/contextKeys";
 import { useShellLayoutStore } from "../../../core/shell/layout/useShellLayoutStore";
 import { ShellPortableViewHost } from "../../../core/shell/ShellPortableViewHost";
 import { hostViewRegistry } from "../../../core/shell/viewRegistry";
+import { createExtensionViewApi } from "../../../features/extensions/views/createExtensionViewApi";
+import type {
+  ExtensionApiScope,
+  ExtensionResource,
+} from "../../../features/extensions/types";
 import {
   useSelectedTimelineClipIds,
   useSelectedTimelineTransitionId,
@@ -97,6 +102,110 @@ function movePanelThroughMenu(regionTestId: string, viewTitle: string, target: s
   );
   fireEvent.click(screen.getByRole("menuitem", { name: target }));
 }
+
+/**
+ * Providers reach a portable panel from where `ShellPortableViewHost` sits,
+ * not from the region its DOM ends up in — it is rendered through a portal.
+ * That is the same mechanism that makes an extension modal swallow drops
+ * silently, so it is worth pinning rather than assuming.
+ */
+const ProviderProbe = createContext("absent");
+
+function extensionScope(id: string): ExtensionApiScope {
+  return {
+    extension: { id, version: "1.0.0" },
+    signal: new AbortController().signal,
+    own: <TResource extends ExtensionResource>(resource: TResource) => resource,
+    report: vi.fn(),
+  };
+}
+
+describe("portable extension views", () => {
+  beforeEach(() => {
+    act(() => {
+      useShellLayoutStore.getState().resetLayout();
+    });
+  });
+
+  it("moves an extension panel between regions without remounting it", () => {
+    let mountCount = 0;
+    const api = createExtensionViewApi(
+      extensionScope("example.portable"),
+      hostViewRegistry,
+    );
+    const registration = api.registerView({
+      id: "notes",
+      apiVersion: 1,
+      kind: "trusted-view",
+      title: "Notes",
+      defaultRegion: "bottom-dock",
+      allowedRegions: ["bottom-dock", "right-sidebar"],
+      component: () => {
+        const [note, setNote] = useState("");
+        const provided = useContext(ProviderProbe);
+        useEffect(() => {
+          mountCount += 1;
+        }, []);
+        return (
+          <div data-testid="extension-notes" data-provider={provided}>
+            <input
+              aria-label="Extension note"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+            />
+          </div>
+        );
+      },
+    });
+
+    try {
+      render(
+        <ProviderProbe.Provider value="present">
+          <ShellPortableViewHost />
+          <div data-testid="dock-host">
+            <EditorBottomDock />
+          </div>
+          <div data-testid="sidebar-host">
+            <RightSidebarPanel />
+          </div>
+        </ProviderProbe.Provider>,
+      );
+      act(() => {
+        hostViewRegistry.select("bottom-dock", "example.portable/notes");
+      });
+
+      const note = screen.getByLabelText("Extension note");
+      fireEvent.change(note, { target: { value: "kept" } });
+      expect(mountCount).toBe(1);
+      // The panel is rendered from the host's position, so the provider that
+      // wraps the host reaches it even while its DOM lives in the dock.
+      expect(
+        screen.getByTestId("extension-notes").dataset.provider,
+      ).toBe("present");
+      expect(
+        within(screen.getByTestId("dock-host")).getByTestId("extension-notes"),
+      ).toBeInTheDocument();
+
+      movePanelThroughMenu("bottom-dock", "Notes", "Right sidebar");
+
+      // Reparented, not rebuilt: same mount, same typed text, same provider.
+      expect(mountCount).toBe(1);
+      expect(
+        (screen.getByLabelText("Extension note") as HTMLInputElement).value,
+      ).toBe("kept");
+      expect(
+        within(screen.getByTestId("sidebar-host")).getByTestId(
+          "extension-notes",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId("extension-notes").dataset.provider,
+      ).toBe("present");
+    } finally {
+      registration.dispose();
+    }
+  });
+});
 
 describe("portable dock panels", () => {
   beforeEach(() => {
