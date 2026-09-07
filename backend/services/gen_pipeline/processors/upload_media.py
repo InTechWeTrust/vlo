@@ -84,20 +84,6 @@ def _should_use_in_memory_loader(
     return not _coerce_bool_like(inputs.get(MEMORY_LOADER_DISABLE_PARAM))
 
 
-def _get_node_input_value(
-    node: dict[str, Any] | None,
-    param: str,
-) -> Any:
-    if not isinstance(node, dict):
-        return None
-
-    inputs = node.get("inputs")
-    if not isinstance(inputs, dict):
-        return None
-
-    return inputs.get(param)
-
-
 def _get_memory_id_at_index(value: Any, index: int = 0) -> str | None:
     if isinstance(value, str) and value.strip():
         return value if index == 0 else None
@@ -177,7 +163,7 @@ def _apply_batch_memory_loader_injections(
 class _UploadMediaProcessor:
     meta = ProcessorMeta(
         name="upload_media",
-        reads=("buffered_media", "workflow", "injections"),
+        reads=("buffered_media", "workflow", "injections", "cached_media_ids"),
         writes=("workflow", "injections", "warnings"),
         description="Uploads or registers buffered media with ComfyUI and injects the returned references into the workflow",
     )
@@ -230,12 +216,19 @@ class _UploadMediaProcessor:
                 current_class_type,
                 node if isinstance(node, dict) else None,
             ):
-                current_value = _get_node_input_value(
-                    node if isinstance(node, dict) else None,
-                    param,
+                # Deliberately read from the frontend's cache declaration and
+                # never from the node's current input. A memory loader's combo
+                # is remote-backed, and ComfyUI resets such a widget to the
+                # first fetched option on load — so every same-kind loader in a
+                # graph can arrive carrying one identical, unrelated media id.
+                # Trusting that value made the mask loader and the source
+                # loader read the same clip while the bytes prepared for both
+                # were dropped on the floor.
+                declared_cached_value = ctx.cached_media_ids.get(node_id, {}).get(
+                    param
                 )
                 current_memory_id = _get_memory_id_at_index(
-                    current_value,
+                    declared_cached_value,
                     batch_index or 0,
                 )
                 is_indexed_batch_input = (
@@ -244,7 +237,7 @@ class _UploadMediaProcessor:
                     and batch_index is not None
                 )
                 if current_memory_id is not None and not is_indexed_batch_input:
-                    # Cached reruns may submit both the prior memory id and the
+                    # Cached reruns submit both the prior memory id and the
                     # original prepared file bytes. Reuse the id when it still
                     # exists; otherwise re-register from bytes in the same
                     # request so stale registry entries don't force a retry.

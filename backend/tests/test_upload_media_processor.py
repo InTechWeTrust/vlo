@@ -14,10 +14,12 @@ def _make_context(
     *,
     class_type: str = "VLOMemoryLoadImage",
     current_value: str = "",
+    cached_media_ids: dict[str, dict[str, Any]] | None = None,
 ) -> BackendPipelineContext:
     return BackendPipelineContext(
         client=httpx.AsyncClient(),
         client_id="client-id",
+        cached_media_ids=cached_media_ids,
         workflow={
             "92": {
                 "class_type": class_type,
@@ -178,7 +180,11 @@ async def test_upload_media_processor_reuses_valid_cached_memory_id():
             ]
         },
     )
-    ctx = _make_context(False, current_value="cached-media-id")
+    ctx = _make_context(
+        False,
+        current_value="cached-media-id",
+        cached_media_ids={"92": {"image": "cached-media-id"}},
+    )
 
     try:
         await processor.execute(ctx)
@@ -187,6 +193,128 @@ async def test_upload_media_processor_reuses_valid_cached_memory_id():
 
     assert calls == ["inspect"]
     assert ctx.workflow["92"]["inputs"]["image"] == "cached-media-id"
+
+
+@pytest.mark.anyio
+async def test_upload_media_processor_ignores_undeclared_memory_id_on_the_node():
+    """A media id the frontend never declared as cached must not suppress bytes.
+
+    A memory loader's combo is remote-backed, and ComfyUI resets such a widget
+    to the first fetched option when the graph loads. The value that reaches us
+    on the node is therefore not evidence that anyone meant to reuse it.
+    """
+
+    calls: list[str] = []
+
+    async def upload_media_bytes_fn(*args, **kwargs):
+        calls.append("upload")
+        return "frame.png", None
+
+    async def register_media_bytes_fn(*args, **kwargs):
+        calls.append("register")
+        return "media-id-123", None
+
+    async def inspect_registered_media_fn(*args, **kwargs):
+        calls.append("inspect")
+        return True
+
+    processor = create_upload_media_processor(
+        upload_media_bytes_fn=upload_media_bytes_fn,
+        register_media_bytes_fn=register_media_bytes_fn,
+        inspect_registered_media_fn=inspect_registered_media_fn,
+        input_node_map={
+            "VLOMemoryLoadImage": [
+                {"input_type": "image", "param": "image"},
+            ]
+        },
+    )
+    ctx = _make_context(False, current_value="widget-reset-media-id")
+
+    try:
+        await processor.execute(ctx)
+    finally:
+        await ctx.client.aclose()
+
+    assert calls == ["register"]
+    assert ctx.workflow["92"]["inputs"]["image"] == "media-id-123"
+
+
+@pytest.mark.anyio
+async def test_upload_media_processor_registers_each_same_kind_loader_separately():
+    """Two video loaders arriving with one aliased id still get their own media.
+
+    This is the inpaint-and-stitch shape: a source loader and a mask loader,
+    both `vloMemoryLoadVideo`, both reset by ComfyUI to the same first remote
+    option. Reusing that id fed both nodes the same clip and dropped the bytes
+    prepared for each.
+    """
+
+    registered: list[bytes] = []
+
+    async def upload_media_bytes_fn(*args, **kwargs):
+        return None, {"code": "unexpected_upload"}
+
+    async def register_media_bytes_fn(_client, media_bytes, *_args, **_kwargs):
+        registered.append(media_bytes)
+        return f"media-{media_bytes.decode()}", None
+
+    async def inspect_registered_media_fn(*args, **kwargs):
+        return True
+
+    aliased_id = "cbe147c8-7779-4463-af43-888a915ebf35"
+    ctx = BackendPipelineContext(
+        client=httpx.AsyncClient(),
+        client_id="client-id",
+        workflow={
+            "53": {
+                "class_type": "vloMemoryLoadVideo",
+                "inputs": {"file": aliased_id, "disable_in_memory": False},
+            },
+            "1": {
+                "class_type": "vloMemoryLoadVideo",
+                "inputs": {"file": aliased_id, "disable_in_memory": False},
+            },
+        },
+        buffered_media={
+            "53:file": {
+                "node_id": "53",
+                "param": "file",
+                "input_type": "video",
+                "class_type": "vloMemoryLoadVideo",
+                "bytes": b"source",
+                "content_type": "video/mp4",
+                "filename": "generation-selection.mp4",
+            },
+            "1:file": {
+                "node_id": "1",
+                "param": "file",
+                "input_type": "video",
+                "class_type": "vloMemoryLoadVideo",
+                "bytes": b"mask",
+                "content_type": "video/mp4",
+                "filename": "generation-selection-mask.mp4",
+            },
+        },
+    )
+    processor = create_upload_media_processor(
+        upload_media_bytes_fn=upload_media_bytes_fn,
+        register_media_bytes_fn=register_media_bytes_fn,
+        inspect_registered_media_fn=inspect_registered_media_fn,
+        input_node_map={
+            "vloMemoryLoadVideo": [
+                {"input_type": "video", "param": "file"},
+            ]
+        },
+    )
+
+    try:
+        await processor.execute(ctx)
+    finally:
+        await ctx.client.aclose()
+
+    assert sorted(registered) == [b"mask", b"source"]
+    assert ctx.workflow["53"]["inputs"]["file"] == "media-source"
+    assert ctx.workflow["1"]["inputs"]["file"] == "media-mask"
 
 
 @pytest.mark.anyio
@@ -215,7 +343,11 @@ async def test_upload_media_processor_reregisters_missing_cached_memory_id():
             ]
         },
     )
-    ctx = _make_context(False, current_value="stale-media-id")
+    ctx = _make_context(
+        False,
+        current_value="stale-media-id",
+        cached_media_ids={"92": {"image": "stale-media-id"}},
+    )
 
     try:
         await processor.execute(ctx)

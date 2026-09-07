@@ -56,6 +56,7 @@ class GenerationInput:
     pipeline_inputs: dict[str, dict[str, Any]] = field(default_factory=dict)
     input_metadata: dict[str, Any] = field(default_factory=dict)
     injections: dict[str, dict[str, Any]] = field(default_factory=dict)
+    cached_media_ids: dict[str, dict[str, Any]] = field(default_factory=dict)
     widget_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     derived_widget_values: dict[str, Any] = field(default_factory=dict)
     widget_modes: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -277,6 +278,7 @@ def build_backend_context(
         pipeline_inputs=gen_input.pipeline_inputs,
         input_metadata=gen_input.input_metadata,
         injections=gen_input.injections,
+        cached_media_ids=gen_input.cached_media_ids,
         widget_overrides=gen_input.widget_overrides,
         derived_widget_values=gen_input.derived_widget_values,
         widget_modes=gen_input.widget_modes,

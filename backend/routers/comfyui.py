@@ -1519,6 +1519,12 @@ async def generate(request: Request):
     if graph_data_warning is not None:
         workflow_warnings.append(graph_data_warning)
 
+    # Declared-cached loader values are injected like any other value *and*
+    # recorded separately. The injection is what makes a reference-only rerun
+    # (bytes held backend-side) resolve at all; the record is what lets
+    # `upload_media` tell a deliberate replay apart from a stale id the graph
+    # was carrying, so only the former may suppress a fresh registration.
+    cached_media_ids: dict[str, dict[str, Any]] = {}
     cached_media_inputs_json = form.get("cached_media_inputs")
     if isinstance(cached_media_inputs_json, str) and cached_media_inputs_json.strip():
         try:
@@ -1547,6 +1553,7 @@ async def generate(request: Request):
                 if not isinstance(param, str) or cached_value is None:
                     continue
                 injections.setdefault(node_id, {})[param] = cached_value
+                cached_media_ids.setdefault(node_id, {})[param] = cached_value
 
     # --- Collect widget overrides from form fields ---
     widget_overrides: dict[str, dict[str, Any]] = {}
@@ -1810,6 +1817,7 @@ async def generate(request: Request):
         pipeline_inputs=pipeline_inputs,
         input_metadata=input_metadata,
         injections=injections,
+        cached_media_ids=cached_media_ids,
         widget_overrides=widget_overrides,
         derived_widget_values=derived_widget_values,
         widget_modes=widget_modes,

@@ -25,6 +25,7 @@ class BackendPipelineContext:
         pipeline_inputs: dict[str, dict[str, Any]] | None = None,
         input_metadata: dict[str, Any] | None = None,
         injections: dict[str, dict[str, Any]] | None = None,
+        cached_media_ids: dict[str, dict[str, Any]] | None = None,
         widget_overrides: dict[str, dict[str, Any]] | None = None,
         derived_widget_values: dict[str, Any] | None = None,
         widget_modes: dict[str, dict[str, str]] | None = None,
@@ -57,6 +58,16 @@ class BackendPipelineContext:
             if isinstance(input_id, str) and isinstance(value, dict)
         }
         self.injections = dict(injections or {})
+        # Loader values the *frontend* declared as already-registered media,
+        # keyed node_id -> param. Provenance matters: `injections` also lands
+        # these in `workflow`, where they become indistinguishable from a
+        # stale id the graph happened to be carrying. Only an id declared
+        # here may stand in for freshly prepared bytes.
+        self.cached_media_ids = {
+            node_id: dict(values)
+            for node_id, values in (cached_media_ids or {}).items()
+            if isinstance(node_id, str) and isinstance(values, dict)
+        }
         self.widget_overrides = dict(widget_overrides or {})
         self.derived_widget_values = dict(derived_widget_values or {})
         self.widget_modes = dict(widget_modes or {})
