@@ -1,8 +1,8 @@
 {
   "id": "82bc7455-03a2-4033-a2c6-6d3ff45458a5",
   "revision": 0,
-  "last_node_id": 775,
-  "last_link_id": 1450,
+  "last_node_id": 779,
+  "last_link_id": 1461,
   "nodes": [
     {
       "id": 460,
@@ -393,7 +393,7 @@
         {
           "name": "VAE",
           "type": "VAE",
-          "links": [931, 932]
+          "links": [931, 932, 1459]
         }
       ],
       "title": "Get_vae",
@@ -1880,7 +1880,7 @@
         {
           "name": "MODEL",
           "type": "MODEL",
-          "links": [1416]
+          "links": [1451]
         }
       ],
       "properties": {
@@ -2518,7 +2518,7 @@
         {
           "name": "IMAGE",
           "type": "IMAGE",
-          "links": [1283, 1408, 1409]
+          "links": [1283, 1408, 1409, 1454]
         }
       ],
       "title": "Get_ref_video",
@@ -3016,17 +3016,17 @@
         {
           "name": "positive",
           "type": "CONDITIONING",
-          "links": [1218]
+          "links": [1457]
         },
         {
           "name": "negative",
           "type": "CONDITIONING",
-          "links": [1219]
+          "links": [1458]
         },
         {
           "name": "latent",
           "type": "LATENT",
-          "links": [1029]
+          "links": [1460]
         }
       ],
       "title": "LTXV Add Latent Guide",
@@ -3161,7 +3161,7 @@
         {
           "name": "INT",
           "type": "INT",
-          "links": [1418]
+          "links": [1418, 1453]
         }
       ],
       "title": "Get_height",
@@ -3189,7 +3189,7 @@
         {
           "name": "INT",
           "type": "INT",
-          "links": [1417]
+          "links": [1417, 1452]
         }
       ],
       "title": "Get_width",
@@ -3624,7 +3624,7 @@
         {
           "name": "*",
           "type": "*",
-          "links": [1312]
+          "links": [1312, 1456]
         }
       ],
       "title": "Bypass Video Retake",
@@ -4494,6 +4494,255 @@
         "Node name for S&R": "vloMemoryLoadVideo"
       },
       "widgets_values": ["Loading...", false, "refresh", false, "image"]
+    },
+    {
+      "id": 776,
+      "type": "LTXICLoRALoaderModelOnly",
+      "pos": [
+        -1260,
+        3730
+      ],
+      "size": [
+        330,
+        110
+      ],
+      "flags": {},
+      "order": 125,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1451
+        }
+      ],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "links": [
+            1416
+          ]
+        },
+        {
+          "name": "latent_downscale_factor",
+          "type": "FLOAT",
+          "links": []
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI-LTXVideo",
+        "ver": "2acf7af8991f33b5cc06ec26753cb6e88e057d04",
+        "Node name for S&R": "LTXICLoRALoaderModelOnly",
+        "models": [
+          {
+            "name": "ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors",
+            "url": "https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-In-Outpainting/resolve/main/ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors",
+            "directory": "loras"
+          }
+        ],
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        "ltx-2.3-22b-ic-lora-in-outpainting-0.9.safetensors",
+        1
+      ],
+      "title": "In/Outpainting IC-LoRA"
+    },
+    {
+      "id": 777,
+      "type": "EmptyImage",
+      "pos": [
+        -650,
+        2780
+      ],
+      "size": [
+        300,
+        160
+      ],
+      "flags": {},
+      "order": 126,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": 1452
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": 1453
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1455
+          ]
+        }
+      ],
+      "title": "IC-LoRA mask colour (#66FF00)",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.1",
+        "Node name for S&R": "EmptyImage"
+      },
+      "widgets_values": [
+        1280,
+        736,
+        1,
+        6749952
+      ]
+    },
+    {
+      "id": 778,
+      "type": "ImageCompositeMasked",
+      "pos": [
+        -650,
+        3020
+      ],
+      "size": [
+        300,
+        140
+      ],
+      "flags": {},
+      "order": 127,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "destination",
+          "type": "IMAGE",
+          "link": 1454
+        },
+        {
+          "name": "source",
+          "type": "IMAGE",
+          "link": 1455
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 1456,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1461
+          ]
+        }
+      ],
+      "title": "Green mask for IC-LoRA conditioning",
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.16.1",
+        "Node name for S&R": "ImageCompositeMasked"
+      },
+      "widgets_values": [
+        0,
+        0,
+        false
+      ]
+    },
+    {
+      "id": 779,
+      "type": "LTXAddVideoICLoRAGuideAdvanced",
+      "pos": [
+        1020,
+        2980
+      ],
+      "size": [
+        330,
+        330
+      ],
+      "flags": {},
+      "order": 128,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 1457
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 1458
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 1459
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "link": 1460
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 1461
+        },
+        {
+          "name": "attention_mask",
+          "shape": 7,
+          "type": "MASK",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            1218
+          ]
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "links": [
+            1219
+          ]
+        },
+        {
+          "name": "latent",
+          "type": "LATENT",
+          "links": [
+            1029
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI-LTXVideo",
+        "ver": "2acf7af8991f33b5cc06ec26753cb6e88e057d04",
+        "Node name for S&R": "LTXAddVideoICLoRAGuideAdvanced",
+        "widget_ue_connectable": {}
+      },
+      "widgets_values": [
+        0,
+        1,
+        1,
+        "disabled",
+        false,
+        256,
+        64,
+        1
+      ],
+      "title": "Green-masked video IC-LoRA guide"
     }
   ],
   "links": [
@@ -4539,7 +4788,7 @@
     [957, 217, 0, 565, 1, "VAE"],
     [969, 164, 0, 113, 3, "SIGMAS"],
     [983, 125, 0, 569, 2, "LATENT"],
-    [1029, 545, 2, 109, 0, "LATENT"],
+    [1029, 779, 2, 109, 0, "LATENT"],
     [1071, 215, 0, 592, 0, "CLIP"],
     [1082, 508, 0, 599, 1, "IMAGE"],
     [1083, 487, 0, 599, 2, "STRING"],
@@ -4552,8 +4801,8 @@
     [1211, 592, 0, 545, 1, "CONDITIONING"],
     [1216, 107, 0, 129, 1, "CONDITIONING"],
     [1217, 107, 1, 129, 2, "CONDITIONING"],
-    [1218, 545, 0, 107, 0, "CONDITIONING"],
-    [1219, 545, 1, 107, 1, "CONDITIONING"],
+    [1218, 779, 0, 107, 0, "CONDITIONING"],
+    [1219, 779, 1, 107, 1, "CONDITIONING"],
     [1224, 576, 0, 569, 0, "CONDITIONING"],
     [1225, 577, 0, 569, 1, "CONDITIONING"],
     [1227, 569, 2, 527, 0, "LATENT"],
@@ -4606,7 +4855,7 @@
     [1410, 775, 0, 745, 0, "IMAGE"],
     [1411, 425, 0, 745, 1, "AUDIO"],
     [1412, 701, 0, 717, 0, "LATENT"],
-    [1416, 474, 0, 520, 0, "MODEL"],
+    [1416, 776, 0, 520, 0, "MODEL"],
     [1417, 750, 0, 693, 1, "INT"],
     [1418, 751, 0, 693, 2, "INT"],
     [1419, 755, 0, 753, 0, "VAE"],
@@ -4623,7 +4872,18 @@
     [1447, 773, 1, 443, 0, "AUDIO"],
     [1448, 773, 2, 214, 0, "FLOAT"],
     [1449, 774, 0, 773, 0, "VIDEO"],
-    [1450, 527, 0, 775, 0, "IMAGE"]
+    [1450, 527, 0, 775, 0, "IMAGE"],
+    [1451, 474, 0, 776, 0, "MODEL"],
+    [1452, 750, 0, 777, 0, "INT"],
+    [1453, 751, 0, 777, 1, "INT"],
+    [1454, 638, 0, 778, 0, "IMAGE"],
+    [1455, 777, 0, 778, 1, "IMAGE"],
+    [1456, 705, 0, 778, 2, "MASK"],
+    [1457, 545, 0, 779, 0, "CONDITIONING"],
+    [1458, 545, 1, 779, 1, "CONDITIONING"],
+    [1459, 555, 0, 779, 2, "VAE"],
+    [1460, 545, 2, 779, 3, "LATENT"],
+    [1461, 778, 0, 779, 4, "IMAGE"]
   ],
   "groups": [
     {
