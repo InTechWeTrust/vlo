@@ -17,6 +17,7 @@ export function createMuiStubs(): Record<string, unknown> {
       return ((props: {
         value?: string;
         label?: string;
+        disabled?: boolean;
         onChange?: (event: unknown) => void;
         onKeyDown?: (event: unknown) => void;
         placeholder?: string;
@@ -27,6 +28,9 @@ export function createMuiStubs(): Record<string, unknown> {
           // The real TextField renders `label` as the field's accessible name,
           // which is how the composer's section fields are addressed.
           "aria-label": props.label,
+          // A disabled MUI field is greyed and refuses input; the stub has to
+          // carry that or a read-only assertion would be vacuous.
+          disabled: props.disabled,
           onChange: props.onChange,
           onKeyDown: props.onKeyDown,
         })) as React.FunctionComponent<never>;

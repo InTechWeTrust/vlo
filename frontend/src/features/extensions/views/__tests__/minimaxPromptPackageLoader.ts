@@ -50,6 +50,8 @@ import * as promptSectionsModule from "../../../../../../extensions/installed/vl
 import * as composerSessionModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/composerSession";
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
 import * as composerViewModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/ComposerView";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+import * as keyframeModesModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/keyframeModes";
 import type { ExtensionModule, JsonValue } from "../../types";
 
 /** A reference in emission order. Mirrors the package's `DerivedTag`. */
@@ -174,6 +176,36 @@ export interface MinimaxPromptPackage {
   composerDraftKey(workflowFingerprint: string, inputId: string): string;
   promptInput(session: unknown): { readonly id: string } | null;
 
+  alignFrameCount(length: number): number;
+  effectiveDurationSeconds(length: number): number;
+  formatDuration(seconds: number): string;
+  finalShotIndex(description: string): number;
+  readLengthFrames(nodes: readonly unknown[]): number | null;
+  readKeyframeSlots(inputs: readonly unknown[]): {
+    readonly first: boolean;
+    readonly last: boolean;
+    readonly unresolved: readonly string[];
+  };
+  keyframeMode(slots: {
+    readonly first: boolean;
+    readonly last: boolean;
+  }): "t2va" | "i2va" | "fl2va" | "l2va";
+  instructionLine(inputs: {
+    readonly mode: "t2va" | "i2va" | "fl2va" | "l2va";
+    readonly seconds: number | null;
+    readonly finalShot: number;
+  }): string | null;
+  deriveInstruction(options: {
+    readonly inputs: readonly unknown[];
+    readonly nodes: readonly unknown[];
+    readonly description: string;
+  }): {
+    readonly mode: "t2va" | "i2va" | "fl2va" | "l2va";
+    readonly line: string | null;
+    readonly seconds: number | null;
+    readonly unresolved: readonly string[];
+  };
+
   parseSubject(id: string, value: JsonValue): LoadedSubject | null;
   serializeSubject(subject: LoadedSubject): JsonValue;
   parseSubjectIndex(
@@ -231,6 +263,7 @@ export const minimaxPromptPackage = {
   ...promptSectionsModule,
   ...composerSessionModule,
   ...composerViewModule,
+  ...keyframeModesModule,
   ...subjectModelModule,
   ...subjectStoreModule,
   ...tagsModule,

@@ -22,8 +22,9 @@ import type {
 const EXTENSION_ID = "vlo.minimax-prompt";
 
 /**
- * Phase 3A of docs/minimax-prompt-composer-extension-plan.md: the composer's
- * shell and its section model.
+ * Phases 3A and 3B of docs/minimax-prompt-composer-extension-plan.md: the
+ * composer's shell and section model, and the keyframe-derived instruction
+ * line.
  *
  * Same optionality as the Subjects suite — the package lives in the git-ignored
  * runtime extension root, so this skips wholesale when it is absent — and the
@@ -76,6 +77,10 @@ function createGenerationHarness(options: {
   prompt: string;
   classTypes: readonly string[];
   fingerprint?: string;
+  /** Single-slot image inputs, as the keyframe workflows publish them. */
+  keyframes?: readonly { label: string; filled: boolean }[];
+  /** The base node's `length` widget: a frame count, or null for linked. */
+  length?: number | null;
 }) {
   const commits: { label: string; value: string }[] = [];
   const listeners = new Set<() => void>();
@@ -99,7 +104,25 @@ function createGenerationHarness(options: {
             classType,
             title: classType,
             mode: 0,
-            widgets: [],
+            widgets:
+              classType === "MiniMaxH3ImageToVideo" &&
+              options.length !== undefined
+                ? [
+                    {
+                      nodeId: `${100 + index}`,
+                      param: "length",
+                      valueType: "int",
+                      value: options.length,
+                      defaultValue: 124,
+                      options: null,
+                      min: 22,
+                      max: 719,
+                      step: 17,
+                      linked: options.length === null,
+                      editable: true,
+                    },
+                  ]
+                : [],
           })),
         },
         status: "ready",
@@ -112,6 +135,28 @@ function createGenerationHarness(options: {
             inputType: "text",
             value: text,
           },
+          ...(options.keyframes ?? []).map((keyframe, index) => ({
+            id: `${141 + index}:image`,
+            nodeId: `${141 + index}`,
+            param: "image",
+            label: keyframe.label,
+            inputType: "image",
+            media: keyframe.filled
+              ? [
+                  {
+                    slotId: `slot-${index}`,
+                    ordinal: 1,
+                    source: "asset",
+                    assetId: `asset-${index}`,
+                    displayName: keyframe.label,
+                    mediaType: "image",
+                    hasAudio: false,
+                    options: {},
+                    preparing: false,
+                  },
+                ]
+              : [],
+          })),
         ],
         canSubmit: true,
         busy: false,
@@ -512,11 +557,13 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     type("Overall soundscape", "Wind, then a roar.");
     click("Commit to prompt");
 
+    // `non_diegetic_music` carries its authoring default: most generations
+    // have no score, and the guide wants the field answered rather than absent.
     expect(harness.commits).toEqual([
       {
         label: COMPOSE_TRANSACTION_LABEL,
         value:
-          "subject_definitions:\n<Subject 1> is the person in <Picture 1>.\n\noverall_soundscape:\nWind, then a roar.",
+          "subject_definitions:\n<Subject 1> is the person in <Picture 1>.\n\noverall_soundscape:\nWind, then a roar.\n\nnon_diegetic_music:\nN/A",
       },
     ]);
     // Committing drops the draft, so what is on screen afterwards is the
@@ -629,6 +676,340 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     );
     expect(screen.queryByLabelText("Summary")).toBeNull();
     view.unmount();
+  });
+
+  // 3B — keyframe modes. The instruction strings come from MiniMax's
+  // VIDEO_PROMPT_WRITING_GUIDE_base_en.md §2.1 and must match it character for
+  // character, em dash included — with one deliberate deviation: the guide's
+  // FL2VA line writes its tags bare, and we bracket them. See the reasoning on
+  // `instructionLine`; a tag binds by literal string equality with the emitted
+  // label (deep dive §2.1), so the bare form has nothing to bind to.
+  it("writes the guide's instruction line for each keyframe combination", async () => {
+    const { instructionLine } = await loadPackage();
+
+    expect(
+      instructionLine({ mode: "t2va", seconds: 5.17, finalShot: 1 }),
+    ).toBeNull();
+
+    expect(instructionLine({ mode: "i2va", seconds: 5.17, finalShot: 3 })).toBe(
+      "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.",
+    );
+
+    // Bracketed, unlike the guide. Everything else in the sentence is the
+    // guide's, so a change to the wording still fails here.
+    expect(instructionLine({ mode: "fl2va", seconds: 8, finalShot: 4 })).toBe(
+      "How the reference pictures align with the target video — <Picture 1> (from [Shot 1]) aligns with the 0.00-second mark of the target video; <Picture 2> (from [Shot 4]) aligns with the 8.00-second mark of the target video.",
+    );
+    // The deviation is those brackets and nothing else: dropping them gives
+    // the guide's line back, exactly.
+    expect(
+      instructionLine({ mode: "fl2va", seconds: 8, finalShot: 4 })!
+        .replace(/<(Picture \d)>/g, "$1")
+        .replace(/\[(Shot \d)\]/g, "$1"),
+    ).toBe(
+      "How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 4) aligns with the 8.00-second mark of the target video.",
+    );
+
+    // A last-frame-only run says <Picture 1>: `images` is built as
+    // [first?, last?], so the only picture present takes ordinal 1.
+    expect(
+      instructionLine({ mode: "l2va", seconds: 5.166666666666667, finalShot: 1 }),
+    ).toBe(
+      "How the reference pictures align with the target video — <Picture 1> (from [Shot 1]) aligns with the 5.17-second mark of the target video.",
+    );
+  });
+
+  it("snaps the duration the way the node snaps it", async () => {
+    const { alignFrameCount, effectiveDurationSeconds, formatDuration } =
+      await loadPackage();
+
+    // align_frame_count: the first n >= length with n % 17 == 5.
+    expect(alignFrameCount(124)).toBe(124);
+    expect(alignFrameCount(130)).toBe(141);
+    expect(alignFrameCount(141)).toBe(141);
+    expect(alignFrameCount(192)).toBe(192);
+    // temporal_shape applies max(5, length) before snapping.
+    expect(alignFrameCount(1)).toBe(5);
+
+    // S.SS is the *effective* duration, so an off-grid length reports the
+    // longer video the model will actually make.
+    expect(formatDuration(effectiveDurationSeconds(124))).toBe("5.17");
+    expect(formatDuration(effectiveDurationSeconds(130))).toBe("5.88");
+    expect(formatDuration(effectiveDurationSeconds(192))).toBe("8.00");
+    // Exactly two decimals, never one.
+    expect(formatDuration(6)).toBe("6.00");
+  });
+
+  it("reads the final shot index from the description being written", async () => {
+    const { finalShotIndex } = await loadPackage();
+    // The guide's N is "the index of the actual final shot", which lives in
+    // the authored description rather than anywhere the panel knows.
+    expect(finalShotIndex("")).toBe(1);
+    expect(finalShotIndex("A single unmarked shot.")).toBe(1);
+    expect(
+      finalShotIndex("[Shot 1] The boy looks up.\n[Shot 2] At 00:03.500, a roar."),
+    ).toBe(2);
+    // Out of order, and case-insensitive, because this is prose.
+    expect(finalShotIndex("[Shot 3] Later.\n[shot 2] Before.")).toBe(3);
+  });
+
+  it("reads the keyframe slots from the panel, not from the graph", async () => {
+    const { readKeyframeSlots, keyframeMode } = await loadPackage();
+    const image = (
+      label: string,
+      filled: boolean,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      id: label,
+      nodeId: "1",
+      param: "image",
+      label,
+      inputType: "image",
+      media: filled ? [{ slotId: "s", ordinal: 1 }] : [],
+      ...extra,
+    });
+
+    // Both shipped vocabularies: i2v says Start/End, inpaint_flf2va says
+    // First/Last.
+    expect(
+      readKeyframeSlots([image("Start frame", true), image("End frame", true)]),
+    ).toEqual({ first: true, last: true, unresolved: [] });
+    expect(
+      readKeyframeSlots([image("First frame", true), image("Last frame", false)]),
+    ).toEqual({ first: true, last: false, unresolved: [] });
+
+    // A repeatable image input is a reference batch, not a keyframe.
+    expect(
+      readKeyframeSlots([
+        image("Image inputs", true, { repeatable: { max: 9, optionIds: [] } }),
+      ]),
+    ).toEqual({ first: false, last: false, unresolved: [] });
+
+    // A slot whose role the label does not settle is reported, not guessed.
+    expect(readKeyframeSlots([image("Anchor", true)]).unresolved).toEqual([
+      "Anchor",
+    ]);
+
+    expect(keyframeMode({ first: false, last: false })).toBe("t2va");
+    expect(keyframeMode({ first: true, last: false })).toBe("i2va");
+    expect(keyframeMode({ first: true, last: true })).toBe("fl2va");
+    expect(keyframeMode({ first: false, last: true })).toBe("l2va");
+  });
+
+  it("declines to guess a duration it cannot read", async () => {
+    const { readLengthFrames, deriveInstruction } = await loadPackage();
+    const node = (widgets: unknown[]) => ({
+      id: "136",
+      classType: "MiniMaxH3ImageToVideo",
+      title: "MiniMax",
+      mode: 0,
+      widgets,
+    });
+    const lengthWidget = (extra: Record<string, unknown>) => ({
+      nodeId: "136",
+      param: "length",
+      valueType: "int",
+      value: 124,
+      defaultValue: 124,
+      options: null,
+      min: 22,
+      max: 719,
+      step: 17,
+      linked: false,
+      editable: true,
+      ...extra,
+    });
+
+    expect(readLengthFrames([node([lengthWidget({})])])).toBe(124);
+    // Fed by a connection, so it carries no readable value.
+    expect(
+      readLengthFrames([node([lengthWidget({ linked: true, value: null })])]),
+    ).toBeNull();
+    expect(readLengthFrames([])).toBeNull();
+
+    const keyframe = {
+      id: "142:image",
+      nodeId: "142",
+      param: "image",
+      label: "End frame",
+      inputType: "image",
+      media: [{ slotId: "s", ordinal: 1 }],
+    };
+    // L2VA needs S.SS. With no duration it says nothing rather than inventing
+    // a number and putting it in the prompt.
+    const noDuration = deriveInstruction({
+      inputs: [keyframe],
+      nodes: [node([lengthWidget({ linked: true, value: null })])],
+      description: "",
+    });
+    expect(noDuration.mode).toBe("l2va");
+    expect(noDuration.line).toBeNull();
+
+    // I2VA's line has no placeholders, so it survives the same gap.
+    const firstFrameOnly = deriveInstruction({
+      inputs: [{ ...keyframe, label: "Start frame" }],
+      nodes: [node([lengthWidget({ linked: true, value: null })])],
+      description: "",
+    });
+    expect(firstFrameOnly.line).toContain("is fully referenced.");
+
+    // An unresolved slot suppresses the suggestion entirely: the mode decides
+    // the whole line.
+    const unresolved = deriveInstruction({
+      inputs: [{ ...keyframe, label: "Anchor" }],
+      nodes: [node([lengthWidget({})])],
+      description: "",
+    });
+    expect(unresolved.unresolved).toEqual(["Anchor"]);
+    expect(unresolved.line).toBeNull();
+  });
+
+  it("derives the instruction line and keeps it read-only until asked", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+      keyframes: [
+        { label: "Start frame", filled: true },
+        { label: "End frame", filled: true },
+      ],
+      length: 124,
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+
+    // Derived from the panel with no gesture at all, and greyed: the value is
+    // a pure function of which slots are filled and how long the video is.
+    const instruction = () => textAreaFor("Instruction line");
+    expect(instruction().disabled).toBe(true);
+    expect(instruction().value).toBe(
+      "How the reference pictures align with the target video — <Picture 1> (from [Shot 1]) aligns with the 0.00-second mark of the target video; <Picture 2> (from [Shot 1]) aligns with the 5.17-second mark of the target video.",
+    );
+    expect(screen.getByText("FL2VA (start and end frames): matches the guide.")).toBeTruthy();
+
+    // It tracks its inputs: the final shot index comes from the description
+    // being written, so the line follows it without being re-applied.
+    type("Integrated multimodal description", "[Shot 1] A push in.\n[Shot 2] A roar.");
+    expect(instruction().value).toContain("(from [Shot 2]) aligns with the 5.17-second mark");
+
+    // First line, then one blank line, then the core fields.
+    click("Commit to prompt");
+    expect(harness.commits[0].value).toBe(
+      "How the reference pictures align with the target video — <Picture 1> (from [Shot 1]) aligns with the 0.00-second mark of the target video; <Picture 2> (from [Shot 2]) aligns with the 5.17-second mark of the target video.\n\nintegrated_multimodal_description:\n[Shot 1] A push in.\n[Shot 2] A roar.\n\nnon_diegetic_music:\nN/A",
+    );
+    view.unmount();
+  });
+
+  it("hands the instruction line over on Edit, and takes it back on Use derived", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+      keyframes: [{ label: "Start frame", filled: true }],
+      length: 124,
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+    const instruction = () => textAreaFor("Instruction line");
+
+    click("Edit");
+    // Handed over with the derived text in it, not emptied.
+    expect(instruction().disabled).toBe(false);
+    expect(instruction().value).toBe(
+      "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.",
+    );
+
+    type("Instruction line", "My own wording.");
+    expect(instruction().value).toBe("My own wording.");
+    click("Commit to prompt");
+    expect(harness.commits[0].value).toContain("My own wording.\n\n");
+
+    // And back: the hand-written wording goes, the derivation resumes.
+    click("Use derived");
+    expect(instruction().disabled).toBe(true);
+    expect(instruction().value).toBe(
+      "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.",
+    );
+    view.unmount();
+  });
+
+  it("does not silently replace an instruction the prompt already carries", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt:
+        "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\noverall_soundscape:\nRain.",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+      keyframes: [{ label: "Start frame", filled: false }],
+      length: 124,
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+    const instruction = () => textAreaFor("Instruction line");
+
+    // The keyframe was cleared in the panel, so the derivation says T2VA takes
+    // no line — but that text is in the prompt, and authored text is never
+    // dropped without being asked. It starts unlocked, showing what is there.
+    expect(instruction().disabled).toBe(false);
+    expect(instruction().value).toContain("is fully referenced.");
+    expect(
+      screen.getByText(
+        "Edited by hand. T2VA (no keyframes): the guide asks for no instruction line.",
+      ),
+    ).toBeTruthy();
+
+    click("Use derived");
+    expect(instruction().value).toBe("");
+    click("Commit to prompt");
+    expect(harness.commits[0].value).toBe(
+      "overall_soundscape:\nRain.\n\nnon_diegetic_music:\nN/A",
+    );
+    view.unmount();
+  });
+
+  it("fills non-diegetic music with N/A without touching what is written", async () => {
+    const { createComposerView, createComposerSession, parsePrompt, REFERENCE_GUIDE } =
+      await loadPackage();
+    // The codec still reports the section as empty, because that is what the
+    // prompt says; the default is an authoring convenience the view applies.
+    expect(
+      parsePrompt("", REFERENCE_GUIDE).sections.find(
+        (section) => section.id === "non_diegetic_music",
+      )?.text,
+    ).toBe("");
+
+    const harness = createGenerationHarness({
+      prompt: "non_diegetic_music:\nSlow piano throughout.",
+      classTypes: ["vloMiniMaxH3ReferenceToVideoBatch"],
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+    // A section that says something keeps saying it.
+    expect(textAreaFor("Non-diegetic music").value).toBe("Slow piano throughout.");
+    view.unmount();
+
+    const empty = createGenerationHarness({
+      prompt: "",
+      classTypes: ["vloMiniMaxH3ReferenceToVideoBatch"],
+    });
+    const second = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      empty,
+    );
+    expect(textAreaFor("Non-diegetic music").value).toBe("N/A");
+    second.unmount();
   });
 
   it("picks the prompt input rather than the first text input", async () => {
