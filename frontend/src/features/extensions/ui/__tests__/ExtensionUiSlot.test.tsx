@@ -11,6 +11,7 @@ import {
   ExtensionUiSlotRegistry,
   extensionUiSlotRegistry,
 } from "../ExtensionUiSlotRegistry";
+import { hostContextKeys } from "../../../../core/shell/contextKeys";
 
 function createScope(
   extensionId: string,
@@ -233,4 +234,135 @@ describe("ExtensionUiSlot", () => {
     await expect(result).resolves.toBeUndefined();
   });
 
+});
+
+describe("slot anchors", () => {
+  it("accepts a family anchor and still refuses everything undeclared", () => {
+    const registry = new ExtensionUiSlotRegistry();
+    const api = registry.bind(createScope("example.anchors"));
+
+    // A workflow's section ids are not known when an extension activates, so
+    // the host declares the shape rather than every literal target.
+    expect(() =>
+      api.registerComponent({
+        id: "under-prompts",
+        apiVersion: 1,
+        slot: "generation.section.prompts.after",
+        kind: "trusted-react",
+        component: () => null,
+      }),
+    ).not.toThrow();
+    // Snake_case section ids are the convention in the shipped rules files.
+    expect(() =>
+      api.registerComponent({
+        id: "under-video",
+        apiVersion: 1,
+        slot: "generation.section.video_generation.before",
+        kind: "trusted-react",
+        component: () => null,
+      }),
+    ).not.toThrow();
+
+    // A family is not a wildcard over the whole namespace: it matches one
+    // segment, at the position the host put it.
+    for (const slot of [
+      "generation.section.prompts.middle",
+      "generation.section.a.b.after",
+      "generation.anything.prompts.after",
+      "generation.section..after",
+    ]) {
+      expect(() =>
+        api.registerComponent({
+          id: `bad-${slot}`,
+          apiVersion: 1,
+          slot,
+          kind: "trusted-react",
+          component: () => null,
+        }),
+      ).toThrow(/undeclared host slot/);
+    }
+  });
+
+  it("rejects a malformed when clause and detaches the one it keeps", () => {
+    const registry = new ExtensionUiSlotRegistry();
+    const api = registry.bind(createScope("example.anchors"));
+
+    // TypeScript does not constrain what a package actually passes, and a
+    // clause stored unvalidated would evaluate true forever.
+    for (const when of [
+      { not: null },
+      { key: 42 },
+      {},
+      { key: "a", or: [] },
+      { and: "nope" },
+      null,
+    ]) {
+      expect(() =>
+        api.registerComponent({
+          id: `bad-when-${JSON.stringify(when)}`,
+          apiVersion: 1,
+          slot: "generation.toolbar",
+          kind: "trusted-react",
+          when: when as never,
+          component: () => null,
+        }),
+      ).toThrow(/'when'/);
+    }
+
+    // The clause is the package's data; a registration that kept the caller's
+    // object could be rewritten after the host validated it.
+    const mutable = { key: "project.open" };
+    api.registerComponent({
+      id: "detached",
+      apiVersion: 1,
+      slot: "generation.toolbar",
+      kind: "trusted-react",
+      when: mutable,
+      component: () => null,
+    });
+    mutable.key = "something.else";
+    const stored = registry
+      .list("generation.toolbar")
+      .find((entry) => entry.id === "example.anchors/detached");
+    expect((stored?.definition as { when?: unknown }).when).toEqual({
+      key: "project.open",
+    });
+    expect(() => {
+      (stored?.definition as { when: { key: string } }).when.key = "mutated";
+    }).toThrow();
+  });
+
+  it("mounts a contribution only while its when clause holds", () => {
+    // The slot renders from the global registry, so this drives that one and
+    // the real context-key service rather than a local double.
+    hostContextKeys.set("test.anchor.visible", false);
+    let registration:
+      | ReturnType<
+          ReturnType<typeof extensionUiSlotRegistry.bind>["registerComponent"]
+        >
+      | undefined;
+    act(() => {
+      registration = extensionUiSlotRegistry
+        .bind(createScope("example.anchors"))
+        .registerComponent({
+          id: "gated",
+          apiVersion: 1,
+          slot: "generation.toolbar",
+          kind: "trusted-react",
+          when: { key: "test.anchor.visible" },
+          component: () => <span>anchored</span>,
+        });
+    });
+
+    const view = render(<ExtensionUiSlot slot="generation.toolbar" />);
+    expect(screen.queryByText("anchored")).not.toBeInTheDocument();
+    act(() => void hostContextKeys.set("test.anchor.visible", true));
+    expect(screen.getByText("anchored")).toBeInTheDocument();
+    act(() => void hostContextKeys.set("test.anchor.visible", false));
+    expect(screen.queryByText("anchored")).not.toBeInTheDocument();
+
+    view.unmount();
+    act(() => void registration?.dispose());
+    hostContextKeys.set("test.anchor.visible", undefined);
+  });
 });

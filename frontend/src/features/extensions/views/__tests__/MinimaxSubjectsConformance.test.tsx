@@ -364,8 +364,9 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     expect(manifest.manifestVersion).toBe(1);
     expect(manifest.id).toBe(EXTENSION_ID);
     expect(manifest.capabilities).toContain("ui.custom");
-    // The seams this package is built on landed in SDK 1.21.0.
-    expect(manifest.sdk).toBe(">=1.21.0 <2.0.0");
+    // The composer's anchored entry point needs the slot families and the
+    // contribution-level `when` that landed in SDK 1.23.0.
+    expect(manifest.sdk).toBe(">=1.23.0 <2.0.0");
 
     const entry = (manifest.frontend as { entry: string }).entry;
     expect(

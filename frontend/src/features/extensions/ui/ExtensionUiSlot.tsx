@@ -9,6 +9,10 @@ import type {
   ExtensionUiSlotId,
 } from "../types";
 import {
+  evaluateContextKeyExpression,
+  hostContextKeys,
+} from "../../../core/shell/contextKeys";
+import {
   extensionUiSlotRegistry,
   type RegisteredExtensionUiContribution,
 } from "./ExtensionUiSlotRegistry";
@@ -86,7 +90,25 @@ export function ExtensionUiSlot({
     () => extensionUiSlotRegistry.getRevision(),
     () => extensionUiSlotRegistry.getRevision(),
   );
-  const contributions = extensionUiSlotRegistry.list(slot);
+  // A `when` clause is state of the editor, so the slot has to re-render when
+  // the keys move, not only when the registry does.
+  useSyncExternalStore(
+    (listener) => hostContextKeys.subscribe(listener),
+    () => hostContextKeys.getRevision(),
+    () => hostContextKeys.getRevision(),
+  );
+  const contributions = extensionUiSlotRegistry
+    .list(slot)
+    .filter((contribution) => {
+      const when = (contribution.definition as { when?: unknown }).when;
+      return (
+        when == null ||
+        evaluateContextKeyExpression(
+          when as Parameters<typeof evaluateContextKeyExpression>[0],
+          (key) => hostContextKeys.get(key),
+        )
+      );
+    });
   if (contributions.length === 0) return null;
 
   return (

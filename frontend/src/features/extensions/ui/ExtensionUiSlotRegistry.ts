@@ -1,5 +1,6 @@
 import type {
   ExtensionApiScope,
+  ExtensionContextKeyExpression,
   ExtensionTrustedUiComponentDefinition,
   ExtensionTrustedUiModalDefinition,
   ExtensionUiApi,
@@ -8,7 +9,9 @@ import type {
   ExtensionUiSlotId,
   JsonValue,
 } from "../types";
+import { assertContextKeyExpression } from "../../../core/shell/contextKeys";
 import { jsonValueSchema } from "../persistence/extensionPayload";
+import { cloneAndFreezeJsonValue } from "../registry/frozenJson";
 import {
   ExtensionContributionRegistry,
   type ExtensionContributionDefinition,
@@ -28,13 +31,76 @@ type ExtensionUiSlotApi = Omit<
   | "openView"
 >;
 
-const SLOT_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9.-]*[a-z0-9])?$/;
+// Underscores are allowed because anchor families embed host-authored ids —
+// workflow section ids are conventionally snake_case — and a lossy mapping to
+// hyphens would let two sections collide on one anchor.
+const SLOT_ID_PATTERN = /^[a-z0-9]+(?:[a-z0-9._-]*[a-z0-9])?$/;
+
+/** Fixed slots, mounted at one hand-placed point each. */
 const HOST_UI_SLOTS = [
   "transformation-panel.before",
   "generation.toolbar",
   "generation.inputs.after",
   "timeline.toolbar",
 ] as const;
+
+/**
+ * Anchor families: one slot per structural element of a panel, named after
+ * that element.
+ *
+ * A fixed catalogue cannot express "after the Prompts section" — the sections
+ * belong to the mounted workflow, so their ids are not known when an extension
+ * activates and could not be declared ahead of time. A family declares the
+ * *shape* instead: the host still owns where anchors are emitted and what they
+ * are called, and an extension still cannot invent a target, but placement is
+ * no longer limited to the handful of points someone thought of in advance.
+ *
+ * `*` matches one id segment and nothing else — no dots, so a family cannot be
+ * widened accidentally by an id that contains one.
+ */
+const HOST_UI_SLOT_FAMILIES = [
+  "generation.section.*.before",
+  "generation.section.*.after",
+] as const;
+
+/** The id characters an anchor segment may carry; see `anchorSegment`. */
+const ANCHOR_SEGMENT_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+
+/**
+ * The anchor segment for a host-authored id, or null when it has none.
+ *
+ * Deliberately not a sanitiser. Section ids come from workflow rules and are
+ * only checked for being non-empty, so mapping arbitrary text into the slot
+ * alphabet would be lossy — and two sections mapping onto one anchor would
+ * quietly render a contribution twice. An id that is not already a safe
+ * segment simply gets no anchor; the rules-placed `extension_section` still
+ * reaches it.
+ */
+export function anchorSegment(id: string): string | null {
+  const trimmed = id.trim();
+  return ANCHOR_SEGMENT_PATTERN.test(trimmed) ? trimmed : null;
+}
+
+function compileWhen(
+  when: ExtensionContextKeyExpression | undefined,
+  label: string,
+): ExtensionContextKeyExpression | null {
+  if (when === undefined) return null;
+  assertContextKeyExpression(when, label);
+  return cloneAndFreezeJsonValue(
+    when as unknown as JsonValue,
+  ) as unknown as ExtensionContextKeyExpression;
+}
+
+function familyMatches(family: string, slot: string): boolean {
+  const familyParts = family.split(".");
+  const slotParts = slot.split(".");
+  if (familyParts.length !== slotParts.length) return false;
+  return familyParts.every(
+    (part, index) =>
+      part === "*" ? ANCHOR_SEGMENT_PATTERN.test(slotParts[index]) : part === slotParts[index],
+  );
+}
 
 interface RuntimeUiNoticeDefinition extends ExtensionContributionDefinition {
   readonly slot: ExtensionUiSlotId;
@@ -52,6 +118,8 @@ interface RuntimeTrustedUiComponentDefinition
   readonly kind: "trusted-react";
   readonly order: number;
   readonly component: ExtensionTrustedUiComponentDefinition["component"];
+  /** Declarative visibility over host context keys; absent means always. */
+  readonly when: ExtensionContextKeyExpression | null;
   readonly report: ExtensionApiScope["report"];
 }
 
@@ -120,6 +188,7 @@ export class ExtensionUiContributionRegistry {
       "ui-contribution",
     );
   private readonly declaredSlots = new Set<string>(HOST_UI_SLOTS);
+  private readonly declaredFamilies = new Set<string>(HOST_UI_SLOT_FAMILIES);
   private readonly listeners = new Set<() => void>();
   private activeModal: ActiveModalRequest | null = null;
   private modalRevision = 0;
@@ -143,6 +212,23 @@ export class ExtensionUiContributionRegistry {
       throw new Error(`Invalid host UI slot '${slot}'.`);
     }
     this.declaredSlots.add(slot);
+  }
+
+  /** Host-only: declares a family such as `generation.section.*.after`. */
+  declareSlotFamily(family: string): void {
+    if (!/^[a-z0-9*]+(?:[a-z0-9.*_-]*[a-z0-9*])?$/.test(family)) {
+      throw new Error(`Invalid host UI slot family '${family}'.`);
+    }
+    this.declaredFamilies.add(family);
+  }
+
+  /** Whether a slot id is a target an extension may register against. */
+  isDeclaredSlot(slot: string): boolean {
+    if (this.declaredSlots.has(slot)) return true;
+    for (const family of this.declaredFamilies) {
+      if (familyMatches(family, slot)) return true;
+    }
+    return false;
   }
 
   bind(scope: ExtensionApiScope): ExtensionUiSlotApi {
@@ -266,6 +352,20 @@ export class ExtensionUiContributionRegistry {
       kind: "trusted-react",
       component: definition.component,
       order: assertOrder(definition.order, definition.id),
+      /**
+       * Declarative, so a contribution that should not be on screen never
+       * renders rather than mounting and returning null — the same rule
+       * commands, menus and views already follow, validated by the same
+       * assertion they use. A malformed clause has to fail activation loudly:
+       * TypeScript does not constrain what a package actually passes, and
+       * `{ not: null }` would otherwise be stored and evaluate true forever.
+       *
+       * Detached as well as validated. The clause is data the package owns,
+       * and a registration that kept the caller's object would let it be
+       * rewritten afterwards — turning a visibility rule into something the
+       * host validated once and no longer holds.
+       */
+      when: compileWhen(definition.when, `UI component '${definition.id}'`),
       execution: "trusted",
       report,
     });
@@ -306,7 +406,7 @@ export class ExtensionUiContributionRegistry {
     if (definition.apiVersion !== 1 || definition.kind !== kind) {
       throw new Error(`UI contribution '${definition.id}' must use ${kind} API 1.`);
     }
-    if (!this.declaredSlots.has(definition.slot)) {
+    if (!this.isDeclaredSlot(definition.slot)) {
       throw new Error(
         `UI contribution '${definition.id}' targets undeclared host slot '${definition.slot}'.`,
       );

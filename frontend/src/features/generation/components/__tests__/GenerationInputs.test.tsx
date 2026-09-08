@@ -12,6 +12,7 @@ import {
 import { reconcileNodeBypassWidgetTargets } from "../../utils/nodeBypassWidgets";
 import { useMediaInputPreparationStore } from "../../store/useMediaInputPreparationStore";
 import { generationPanelSectionRegistry } from "../../services/GenerationPanelSectionRegistry";
+import { extensionUiSlotRegistry } from "../../../extensions/ui/publicApi";
 import { FrontendExtensionActivationContext } from "../../../extensions/components/frontendExtensionActivationContext";
 
 const activeSectionRegistrations: Array<{ dispose(): void }> = [];
@@ -1732,6 +1733,77 @@ describe("GenerationInputs", () => {
       useMediaInputPreparationStore
         .getState()
         .endMediaInputPreparation("141:images::repeat::1");
+    }
+  });
+});
+
+describe("extension section anchors", () => {
+  /**
+   * The shipped H3 workflows declare no `prompts` section, so the prompt input
+   * lands in the built-in one, which has no widget groups and no rules entry —
+   * `renderAsPanel` is false and the section is flattened to its bare blocks.
+   * The anchor has to survive that: it names a section, not the chrome the
+   * section happens to be drawn with.
+   */
+  it("mounts a section's anchors even when the section is flattened", () => {
+    const registration = extensionUiSlotRegistry
+      .bind({
+        extension: { id: "example.anchors", version: "1.0.0" },
+        signal: new AbortController().signal,
+        own: <TResource,>(resource: TResource) => resource,
+        report: vi.fn(),
+      })
+      .registerComponent({
+        id: "under-prompt",
+        apiVersion: 1,
+        slot: "generation.section.prompts.after",
+        kind: "trusted-react",
+        component: () => <button type="button">Compose</button>,
+      });
+
+    try {
+      render(
+        <GenerationInputs
+          inputs={[
+            {
+              id: "136:prompt",
+              nodeId: "136",
+              classType: "MiniMaxH3ImageToVideo",
+              inputType: "text",
+              param: "prompt",
+              label: "Prompt",
+              currentValue: "",
+              origin: "rule",
+              // No `presentation.section`: exactly what the shipped rules
+              // produce, which is what makes the section flatten.
+              presentation: {},
+            },
+          ]}
+          sections={[]}
+          textValues={{}}
+          onTextValueCommit={vi.fn()}
+          mediaInputs={{}}
+          onInputDrop={vi.fn()}
+          onExternalInputDrop={vi.fn()}
+          onInputClear={vi.fn()}
+          onSwapMediaInputs={vi.fn()}
+          onMoveMediaInput={vi.fn()}
+          onClickSelect={vi.fn()}
+          widgetInputs={[]}
+          widgetValues={{}}
+          bypassedWidgetTargets={new Set()}
+          randomizeToggles={{}}
+          onWidgetChange={vi.fn()}
+          onToggleRandomize={vi.fn()}
+        />,
+      );
+
+      // The prompt box is on screen unwrapped by any PanelSection...
+      expect(screen.getByRole("textbox")).toBeInTheDocument();
+      // ...and the anchor below it is still mounted.
+      expect(screen.getByText("Compose")).toBeInTheDocument();
+    } finally {
+      registration.dispose();
     }
   });
 });

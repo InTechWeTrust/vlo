@@ -13,6 +13,7 @@ import { hostCommandTable } from "../../../../core/shell/commandTable";
 import { declareHostMenus } from "../../../../core/shell/hostMenus";
 import { extensionMenuPlacementRegistry } from "../../menus/ExtensionMenuPlacementRegistry";
 import { generationPanelSectionRegistry } from "../../../generation/services/GenerationPanelSectionRegistry";
+import { extensionUiSlotRegistry } from "../../ui/publicApi";
 import { createMuiStubs } from "./minimaxHostStubs";
 import type {
   LoadedPromptGuide,
@@ -324,6 +325,40 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     expect(
       generationPanelSectionRegistry.get(EXTENSION_ID, COMPOSER_SECTION_ID),
     ).toBeNull();
+  });
+
+  it("puts its button at the Prompts anchor, only for a MiniMax workflow", async () => {
+    declareHostMenus();
+    const { activate, COMPOSER_ANCHOR_SLOT, WORKFLOW_SUPPORTED_CONTEXT_KEY } =
+      await loadPackage();
+    const host = new ExtensionHost<VloExtensionApi>({
+      sdkVersion: "1.21.0",
+      createApi: createVloExtensionApi,
+    });
+    activeHost = host;
+    await host.activate(
+      { id: EXTENSION_ID, version: "0.2.0" },
+      { activate: activate as ExtensionModule["activate"] },
+    );
+
+    // The anchor is a family target: no rules file names it, and it reaches
+    // every workflow whose Prompts section the panel renders.
+    expect(COMPOSER_ANCHOR_SLOT).toBe("generation.section.prompts.after");
+    const contributions = extensionUiSlotRegistry.list(COMPOSER_ANCHOR_SLOT);
+    const button = contributions.find(
+      (entry) => entry.id === `${EXTENSION_ID}/open-composer-button`,
+    );
+    expect(button).toBeDefined();
+    // Gated declaratively, so an unsupported workflow mounts nothing at all —
+    // a component that merely returned null would still cost the slot's
+    // padded wrapper under every non-MiniMax prompt.
+    expect((button?.definition as { when?: unknown }).when).toEqual({
+      key: `extension.${EXTENSION_ID}.${WORKFLOW_SUPPORTED_CONTEXT_KEY}`,
+    });
+
+    await host.deactivate(EXTENSION_ID);
+    activeHost = undefined;
+    expect(extensionUiSlotRegistry.list(COMPOSER_ANCHOR_SLOT)).toHaveLength(0);
   });
 
   it("declares the capability the prompt write needs", async () => {

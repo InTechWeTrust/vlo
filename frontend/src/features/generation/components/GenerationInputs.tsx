@@ -47,6 +47,7 @@ import { useGenerationTextInputClaim } from "../hooks/useGenerationTextInputClai
 import { isAspectRatioWidget } from "../utils/aspectRatioWidgets";
 import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
 import { GenerationPanelSectionHost } from "./GenerationPanelSectionHost";
+import { ExtensionUiSlot, anchorSegment } from "../../extensions/ui/publicApi";
 
 interface GenerationInputsProps {
   inputs: WorkflowInput[];
@@ -104,6 +105,25 @@ const DEFAULT_SECTION_METADATA = {
 } as const;
 
 type DefaultSectionId = keyof typeof DEFAULT_SECTION_METADATA;
+
+/**
+ * The extension anchor for one section edge, or nothing.
+ *
+ * Section ids come from workflow rules, which only require them to be
+ * non-empty, so an id that is not already a safe slot segment gets no anchor
+ * rather than a lossy mapping into one — two sections colliding on a single
+ * anchor would render a contribution twice with nothing to explain it.
+ */
+function sectionAnchor(sectionId: string, edge: "before" | "after") {
+  const segment = anchorSegment(sectionId);
+  if (!segment) return null;
+  return (
+    <ExtensionUiSlot
+      key={`anchor:${edge}:${sectionId}`}
+      slot={`generation.section.${segment}.${edge}`}
+    />
+  );
+}
 
 function normalizeSectionId(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -1943,6 +1963,7 @@ export const GenerationInputs = memo(function GenerationInputs({
     Array<
       | { kind: "block"; block: RenderableInputBlock }
       | { kind: "section"; section: RenderableSection }
+      | { kind: "anchor"; sectionId: string; edge: "before" | "after" }
     >
   >(
     () =>
@@ -1952,10 +1973,23 @@ export const GenerationInputs = memo(function GenerationInputs({
         ): Array<
           | { kind: "block"; block: RenderableInputBlock }
           | { kind: "section"; section: RenderableSection }
+          | { kind: "anchor"; sectionId: string; edge: "before" | "after" }
         > =>
           section.renderAsPanel
             ? [{ kind: "section", section }]
-            : section.blocks.map((block) => ({ kind: "block", block })),
+            : // A built-in section with no widget groups and no rules entry is
+              // flattened to its bare blocks — which is how `prompts` renders
+              // in every shipped workflow. Its anchors have to survive that:
+              // an anchor names a section, not the chrome the section happens
+              // to be drawn with, and dropping it here would make the whole
+              // family unreachable exactly where it is most useful.
+              [
+                { kind: "anchor" as const, sectionId: section.id, edge: "before" as const },
+                ...section.blocks.map(
+                  (block) => ({ kind: "block" as const, block }),
+                ),
+                { kind: "anchor" as const, sectionId: section.id, edge: "after" as const },
+              ],
       ),
     [renderableSections],
   );
@@ -2079,6 +2113,10 @@ export const GenerationInputs = memo(function GenerationInputs({
           );
         }
 
+        if (item.kind === "anchor") {
+          return sectionAnchor(item.sectionId, item.edge);
+        }
+
         return (
           <PanelSection
             key={`section:${item.section.id}`}
@@ -2088,6 +2126,12 @@ export const GenerationInputs = memo(function GenerationInputs({
             keepMounted={Boolean(item.section.extension)}
           >
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              {/* Anchors, one per section, so an extension can place a control
+                  where the workflow's own structure says it belongs rather than
+                  at whichever fixed points were thought of in advance. Emitted
+                  only for ids that are already safe slot segments; see
+                  `anchorSegment`. */}
+              {sectionAnchor(item.section.id, "before")}
               {item.section.blocks.map((block, blockIndex) =>
                 renderInputBlock(
                   block,
@@ -2122,6 +2166,7 @@ export const GenerationInputs = memo(function GenerationInputs({
                   extension={item.section.extension}
                 />
               ) : null}
+              {sectionAnchor(item.section.id, "after")}
             </Box>
           </PanelSection>
         );

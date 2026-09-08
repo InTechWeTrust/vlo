@@ -149,6 +149,8 @@ export interface MinimaxPromptPackage {
   readonly COMPOSER_COMMAND_ID: string;
   readonly COMPOSER_SECTION_ID: string;
   readonly COMPOSER_MENU_ID: string;
+  readonly COMPOSER_ANCHOR_SLOT: string;
+  readonly WORKFLOW_SUPPORTED_CONTEXT_KEY: string;
   readonly COMPOSE_TRANSACTION_LABEL: string;
   readonly EDITING_CONTEXT_KEY: string;
   readonly SUBJECT_INDEX_KEY: string;

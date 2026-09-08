@@ -3161,13 +3161,31 @@ export interface ExtensionUiApi {
   openView(id: string): boolean;
 }
 
-/** Arbitrary React component rendered inside a host-owned, isolated slot. */
+/**
+ * Arbitrary React component rendered inside a host-owned, isolated slot.
+ *
+ * `slot` is either one of the host's fixed slot ids or an *anchor*: a slot the
+ * host emits for one structural element of a panel, named after it — e.g.
+ * `generation.section.prompts.after` for the point below the Prompts section
+ * of the generation panel. The host owns where anchors are emitted and what
+ * they are called; registering against anything it has not declared throws.
+ */
 export interface ExtensionTrustedUiComponentDefinition {
   readonly id: string;
   readonly apiVersion: 1;
   readonly slot: ExtensionUiSlotId;
   readonly kind: "trusted-react";
   readonly order?: number;
+  /**
+   * Declarative visibility over host context keys. A contribution whose
+   * clause is false is never mounted — prefer it to mounting and returning
+   * null, so the slot stays empty rather than rendering an empty wrapper.
+   *
+   * Conditions the key vocabulary cannot express — "is the mounted workflow a
+   * MiniMax one" — still belong inside the component, which can read the live
+   * session and render nothing.
+   */
+  readonly when?: ExtensionContextKeyExpression;
   readonly component: (props: ExtensionUiComponentProps) => unknown;
 }
 

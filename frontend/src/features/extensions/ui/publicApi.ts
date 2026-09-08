@@ -5,5 +5,6 @@ export { ExtensionTrustedReactMount } from "./ExtensionTrustedReactMount";
 export {
   ExtensionUiContributionRegistry,
   ExtensionUiSlotRegistry,
+  anchorSegment,
   extensionUiSlotRegistry,
 } from "./ExtensionUiSlotRegistry";
