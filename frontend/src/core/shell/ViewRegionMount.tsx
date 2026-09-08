@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Box, type SxProps, type Theme } from "@mui/material";
+import { PanelBody } from "./PanelBody";
 import { acquirePortableViewContainer } from "./portableViewContainers";
 import type { HostViewRegion, ShellViewEntry } from "./viewRegistry";
 
@@ -62,7 +63,9 @@ function ViewMount({ entry, region, active, layout, tabId }: ViewMountProps) {
       aria-hidden={!active}
       sx={panelSx(layout, active)}
     >
-      <Component viewId={entry.id} region={region} active={active} />
+      <PanelBody entry={entry}>
+        <Component viewId={entry.id} region={region} active={active} />
+      </PanelBody>
     </Box>
   );
 }

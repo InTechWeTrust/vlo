@@ -3155,6 +3155,37 @@ export interface ExtensionUiApi {
   registerView(
     definition: ExtensionTrustedUiViewDefinition,
   ): ExtensionUiRegistration;
+  /**
+   * Registers a body that replaces one host panel's own, inside its frame.
+   *
+   * For the shape the mask panel has natively — a panel, then a detail view
+   * that takes its place with a back control — where a second view would be a
+   * second *tab* and a floating panel would not be in the panel at all.
+   *
+   * The target does not have to exist yet — panels are declared by the modules
+   * that render them, and the editor loads lazily, so register whenever you
+   * activate and let `openPanelTakeover` tell you whether the panel is there.
+   * It returns `target_unavailable` when the host does not offer that panel,
+   * which is the signal to fall back to a surface that always exists.
+   *
+   * Only one takeover shows in a panel at a time, and the frame renders the
+   * back control, so the user can always have the panel back.
+   */
+  registerPanelTakeover(
+    definition: ExtensionPanelTakeoverDefinition,
+  ): ExtensionUiRegistration;
+  /** Shows one of this extension's takeovers in its target panel. */
+  openPanelTakeover(id: string): ExtensionPanelTakeoverResult;
+  /** Hands the panel back. Does not fire `onDismissed`, which is the user's. */
+  closePanelTakeover(id: string): void;
+  /**
+   * View ids of the panels the host currently allows a takeover of.
+   *
+   * Discovery, not a gate: panels appear as their modules load, so an empty
+   * list at activation says nothing about what will exist by the time the user
+   * asks. Register regardless and branch on `openPanelTakeover`'s result.
+   */
+  listPanelTakeoverTargets(): readonly string[];
   /** Opens one modal registered by the calling extension. */
   openModal(id: string, input?: JsonValue): Promise<JsonValue | undefined>;
   /** Selects one visible view registered by the calling extension. */
@@ -3198,6 +3229,50 @@ export interface ExtensionTrustedUiModalDefinition {
   readonly size?: ExtensionUiModalSize;
   readonly component: (props: ExtensionUiModalComponentProps) => unknown;
 }
+
+export interface ExtensionPanelTakeoverComponentProps {
+  /** Owner-qualified id of this takeover. */
+  readonly takeoverId: string;
+  /** The panel being replaced. */
+  readonly viewId: string;
+  /** Hands the panel back from inside the body. */
+  close(): void;
+}
+
+export interface ExtensionPanelTakeoverDefinition {
+  /** Package-local; the host qualifies it as `<extensionId>/<id>`. */
+  readonly id: string;
+  readonly apiVersion: 1;
+  readonly kind: "trusted-react";
+  /**
+   * The host panel to replace, by its view id — `host.generate`, say.
+   * Discover them with `listPanelTakeoverTargets`; a panel that has not opted
+   * in is not a target and registration throws.
+   */
+  readonly targetViewId: string;
+  /** Shown in the frame's back bar, so the user knows what took the panel. */
+  readonly title: string;
+  readonly component: (props: ExtensionPanelTakeoverComponentProps) => unknown;
+  /**
+   * Called when the *user* hands the panel back, never on your own
+   * `closePanelTakeover` or `dispose`. Stop tracking the panel here.
+   */
+  readonly onDismissed?: () => void;
+}
+
+export type ExtensionPanelTakeoverResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly code:
+        | "unavailable"
+        | "not_registered"
+        /** The panel is gone, or no longer allows being taken over. */
+        | "target_unavailable"
+        /** Another package is showing there; it is not displaced. */
+        | "target_busy";
+      readonly message: string;
+    };
 
 /** Arbitrary trusted React rendered in a host-owned shell region. */
 export interface ExtensionTrustedUiViewDefinition {

@@ -6,6 +6,10 @@ import {
   type HostContextKeyService,
 } from "./contextKeys";
 import {
+  panelTakeovers,
+  type PanelTakeoverRegistry,
+} from "./panelTakeovers";
+import {
   DOCK_REGIONS,
   isDockRegion,
   type DockRegion,
@@ -68,6 +72,13 @@ export interface HostViewDefinition {
    */
   readonly defaultVisible?: boolean;
   readonly when?: ExtensionContextKeyExpression;
+  /**
+   * Whether a contribution may replace this panel's body with its own
+   * (`panelTakeovers`). Opt-in per panel: a panel that owns a stateful,
+   * safety-relevant surface should not be replaceable just because it is
+   * registered.
+   */
+  readonly takeoverable?: boolean;
   readonly keepMounted?: boolean;
   /** Mount even before the first activation (for stateful built-in defaults). */
   readonly eager?: boolean;
@@ -227,14 +238,17 @@ export class HostViewRegistry {
   private layout: PersistedViewLayout;
   private revision = 0;
   private dockSelection: DockRegionSelectionAuthority | null = null;
+  private readonly takeovers: PanelTakeoverRegistry;
 
   constructor(
     contextKeys: HostContextKeyService = hostContextKeys,
     storage: ViewLayoutStorage | null = getDefaultStorage(),
+    takeovers: PanelTakeoverRegistry = panelTakeovers,
   ) {
     this.contextKeys = contextKeys;
     this.storage = storage;
     this.layout = readLayout(storage);
+    this.takeovers = takeovers;
   }
 
   registerHostView(definition: HostViewDefinition): ShellDisposable {
@@ -291,6 +305,9 @@ export class HostViewRegistry {
       allowedRegions: normalizeAllowedRegions(definition, id),
     });
     this.entries.set(id, entry);
+    // A panel that says it may be taken over is what makes it a legal target;
+    // the takeover registry refuses anything it has not been told about.
+    if (entry.takeoverable) this.takeovers.declareTarget(id);
     this.emitChange();
     let disposed = false;
     return Object.freeze({
@@ -299,6 +316,8 @@ export class HostViewRegistry {
         disposed = true;
         if (this.entries.get(id) !== entry) return;
         this.entries.delete(id);
+        // The panel is gone, so nothing may still be rendering in its place.
+        if (entry.takeoverable) this.takeovers.undeclareTarget(id);
         if (this.selected.get(entry.defaultRegion) === id) {
           this.selected.delete(entry.defaultRegion);
         }

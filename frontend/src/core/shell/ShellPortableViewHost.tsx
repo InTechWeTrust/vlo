@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { PanelBody } from "./PanelBody";
 import { hostContextKeys } from "./contextKeys";
 import { DOCK_REGIONS } from "./layout/layoutTypes";
 import { useShellLayoutStore } from "./layout/useShellLayoutStore";
@@ -52,8 +53,13 @@ function PortableViewMount({
     return null;
   }
   const Component = entry.component;
+  // The same swap the in-region mount does. A portable panel renders through a
+  // portal from a fixed position rather than through `ViewMount`, so without
+  // this a takeover of one would be accepted and then simply not appear.
   const content = (
-    <Component viewId={entry.id} region={region} active={active} />
+    <PanelBody entry={entry}>
+      <Component viewId={entry.id} region={region} active={active} />
+    </PanelBody>
   );
   // The container outlives this mount on purpose: it is reused if the same view
   // ID registers again, and discarding it here would hand a stale element to a

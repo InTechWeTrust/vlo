@@ -398,6 +398,13 @@ function createConformanceApi() {
       }),
       openModal: async () => undefined,
       openView: () => false,
+      registerPanelTakeover: (definition) => ({
+        id: definition.id,
+        dispose: () => undefined,
+      }),
+      openPanelTakeover: () => ({ ok: true as const }),
+      closePanelTakeover: () => undefined,
+      listPanelTakeoverTargets: () => [],
       menus: {
         addItem: (definition) => ({
           id: definition.id,

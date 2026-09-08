@@ -48,6 +48,11 @@ export function declareRightSidebarHostViews(): void {
     order: 10,
     keepMounted: true,
     eager: true,
+    // A prompt author needs the whole panel, not a strip of it, and this is
+    // the panel whose own content it would be composing. `keepMounted` is what
+    // makes that safe: the panel is hidden behind the takeover rather than
+    // rebuilt when the user comes back.
+    takeoverable: true,
     component: renderGenerationPanel,
   });
   hostViewRegistry.registerHostView({

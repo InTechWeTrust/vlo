@@ -9,6 +9,7 @@ import { hostContextKeys } from "../../../core/shell/contextKeys";
 import { useShellLayoutStore } from "../../../core/shell/layout/useShellLayoutStore";
 import { ShellPortableViewHost } from "../../../core/shell/ShellPortableViewHost";
 import { hostViewRegistry } from "../../../core/shell/viewRegistry";
+import { panelTakeovers } from "../../../core/shell/panelTakeovers";
 import { createExtensionViewApi } from "../../../features/extensions/views/createExtensionViewApi";
 import type {
   ExtensionApiScope,
@@ -125,6 +126,46 @@ describe("portable extension views", () => {
     act(() => {
       useShellLayoutStore.getState().resetLayout();
     });
+  });
+
+  it("shows a takeover of a portable panel, which renders through a portal", () => {
+    // A portable panel does not go through `ViewMount` at all — it renders
+    // from a fixed position through a portal — so a takeover of one is
+    // accepted and then simply never appears unless both mounts do the swap.
+    const panel = hostViewRegistry.registerHostView({
+      id: "host.portable-takeover",
+      title: "Portable",
+      defaultRegion: "bottom-dock",
+      allowedRegions: ["bottom-dock", "right-sidebar"],
+      takeoverable: true,
+      component: () => <div data-testid="portable-panel-body" />,
+    });
+    const takeover = panelTakeovers.register({
+      id: "example.portable/body",
+      targetViewId: "host.portable-takeover",
+      title: "Contributed",
+      component: () => <div data-testid="portable-takeover-body" />,
+    });
+
+    try {
+      renderShell();
+      act(() => {
+        hostViewRegistry.select("bottom-dock", "host.portable-takeover");
+      });
+      expect(screen.getByTestId("portable-panel-body")).toBeInTheDocument();
+
+      act(() => void panelTakeovers.open("example.portable/body"));
+      expect(screen.getByTestId("portable-takeover-body")).toBeInTheDocument();
+      // The frame's own control, so the panel can always be given back.
+      fireEvent.click(screen.getByLabelText("Back to Portable"));
+      expect(
+        screen.queryByTestId("portable-takeover-body"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("portable-panel-body")).toBeInTheDocument();
+    } finally {
+      takeover.dispose();
+      panel.dispose();
+    }
   });
 
   it("moves an extension panel between regions without remounting it", () => {

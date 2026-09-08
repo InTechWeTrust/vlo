@@ -14,6 +14,8 @@ import { declareHostMenus } from "../../../../core/shell/hostMenus";
 import { extensionMenuPlacementRegistry } from "../../menus/ExtensionMenuPlacementRegistry";
 import { generationPanelSectionRegistry } from "../../../generation/services/GenerationPanelSectionRegistry";
 import { extensionUiSlotRegistry } from "../../ui/publicApi";
+import { panelTakeovers } from "../../../../core/shell/panelTakeovers";
+import { declareRightSidebarHostViews } from "../../../../app/layout/rightSidebarHostViews";
 import { createMuiStubs } from "./minimaxHostStubs";
 import type {
   LoadedPromptGuide,
@@ -359,6 +361,52 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     await host.deactivate(EXTENSION_ID);
     activeHost = undefined;
     expect(extensionUiSlotRegistry.list(COMPOSER_ANCHOR_SLOT)).toHaveLength(0);
+  });
+
+  it("takes over the generation panel, and hands it back", async () => {
+    declareHostMenus();
+    const {
+      activate,
+      COMPOSER_TAKEOVER_ID,
+      COMPOSER_TAKEOVER_TARGET,
+      COMPOSER_COMMAND_ID,
+    } = await loadPackage();
+    const host = new ExtensionHost<VloExtensionApi>({
+      sdkVersion: "1.24.0",
+      createApi: createVloExtensionApi,
+    });
+    activeHost = host;
+    await host.activate(
+      { id: EXTENSION_ID, version: "0.3.0" },
+      { activate: activate as ExtensionModule["activate"] },
+    );
+
+    const takeoverId = `${EXTENSION_ID}/${COMPOSER_TAKEOVER_ID}`;
+    expect(panelTakeovers.getActive(COMPOSER_TAKEOVER_TARGET)).toBeNull();
+
+    // The panel is declared by the module that renders it, and the editor
+    // loads lazily — so a package always activates *before* its target
+    // exists. Declaring it only now is the real order, and a package that
+    // read the target list at activation would never register at all.
+    declareRightSidebarHostViews();
+
+    // The command prefers the panel over the floating window.
+    hostCommandTable.executeCommand(`${EXTENSION_ID}/${COMPOSER_COMMAND_ID}`, {
+      source: "menu",
+    });
+    expect(panelTakeovers.getActive(COMPOSER_TAKEOVER_TARGET)?.id).toBe(
+      takeoverId,
+    );
+
+    // The user's dismissal is the host's to perform, and it always works.
+    panelTakeovers.close(takeoverId, true);
+    expect(panelTakeovers.getActive(COMPOSER_TAKEOVER_TARGET)).toBeNull();
+
+    // Deactivation cannot leave a body rendering in a panel it no longer owns.
+    panelTakeovers.open(takeoverId);
+    await host.deactivate(EXTENSION_ID);
+    activeHost = undefined;
+    expect(panelTakeovers.getActive(COMPOSER_TAKEOVER_TARGET)).toBeNull();
   });
 
   it("declares the capability the prompt write needs", async () => {

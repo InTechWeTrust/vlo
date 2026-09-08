@@ -29,6 +29,10 @@ type ExtensionUiSlotApi = Omit<
   | "scopes"
   | "registerView"
   | "openView"
+  | "registerPanelTakeover"
+  | "openPanelTakeover"
+  | "closePanelTakeover"
+  | "listPanelTakeoverTargets"
 >;
 
 // Underscores are allowed because anchor families embed host-authored ids —
