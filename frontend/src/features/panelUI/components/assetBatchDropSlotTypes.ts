@@ -1,3 +1,4 @@
+import type { AssetDropSlotDisabledActions } from "./assetDropSlotTypes";
 import type { Asset, AssetType } from "../../../types/Asset";
 import type { AssetDropSlotValue } from "./assetDropSlotTypes";
 
@@ -73,6 +74,12 @@ export interface AssetBatchDropSlotProps {
    * come to rest; the remaining items close up around it.
    */
   onReorder?: (slotId: string, toIndex: number) => void;
+  /**
+   * Actions to render as refused rather than absent, with the reason shown to
+   * the user. An action named here is inert even if its callback is supplied —
+   * see `AssetDropSlotDisabledActions`.
+   */
+  disabledActions?: AssetDropSlotDisabledActions;
   onToggleOption?: (
     slotId: string,
     optionId: string,

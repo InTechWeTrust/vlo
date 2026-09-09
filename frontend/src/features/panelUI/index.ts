@@ -19,6 +19,8 @@ export {
 // Components
 export { AssetDropSlot } from "./components/AssetDropSlot";
 export type {
+  AssetDropSlotAction,
+  AssetDropSlotDisabledActions,
   AssetDropSlotProps,
   AssetDropSlotReorderData,
   AssetDropSlotValue,

@@ -17,7 +17,10 @@ import type {
   AssetBatchSlotItem,
   AssetBatchSlotOption,
 } from "./assetBatchDropSlotTypes";
-import type { AssetDropSlotReorderData } from "./assetDropSlotTypes";
+import type {
+  AssetDropSlotDisabledActions,
+  AssetDropSlotReorderData,
+} from "./assetDropSlotTypes";
 import {
   getExternalFileDragHighlight,
   getFirstAcceptedFile,
@@ -157,6 +160,9 @@ interface BatchTileProps {
   onClear?: (slotId: string) => void;
   onEdit?: (slotId: string) => void;
   onReorder?: (slotId: string, toIndex: number) => void;
+  disabledActions?: AssetDropSlotDisabledActions;
+  /** Every slot id this strip owns, so a drag from another one is detectable. */
+  ownSlotIds: readonly string[];
   onToggleOption?: (
     slotId: string,
     optionId: string,
@@ -182,9 +188,23 @@ function BatchTile({
   onClear,
   onEdit,
   onReorder,
+  disabledActions,
+  ownSlotIds,
   onToggleOption,
   slotKey,
 }: BatchTileProps) {
+  // Refusals ride down to the tile's own slot, which renders them, and are
+  // applied here too so a refused action cannot fire through dnd-kit.
+  const reorderRefused = disabledActions?.reorder;
+  const crossInputRefused = disabledActions?.crossInputReorder;
+  const acceptReorderFrom = React.useCallback(
+    (data: AssetDropSlotReorderData) =>
+      !crossInputRefused || ownSlotIds.includes(data.inputId),
+    [crossInputRefused, ownSlotIds],
+  );
+  const externalRefused = disabledActions?.externalDrop;
+  const canSelect = !disabledActions?.select && typeof onSelect === "function";
+  const editRefused = disabledActions?.edit;
   const [externalHighlight, setExternalHighlight] =
     React.useState<DragHighlight>(null);
   const externalDragDepthRef = React.useRef(0);
@@ -205,7 +225,9 @@ function BatchTile({
       accept,
       acceptAsset,
       onDrop: onDrop ? handleAssetDrop : undefined,
-      onReorderDrop: onReorder ? handleReorderDrop : undefined,
+      onReorderDrop:
+        onReorder && !reorderRefused ? handleReorderDrop : undefined,
+      acceptReorderFrom,
     },
   });
   const {
@@ -218,7 +240,7 @@ function BatchTile({
     data: item
       ? ({ type: "media-input", inputId: item.slotId } satisfies AssetDropSlotReorderData)
       : undefined,
-    disabled: !item || !onReorder,
+    disabled: !item || !onReorder || Boolean(reorderRefused),
   });
   const setNodeRef = React.useCallback(
     (node: HTMLElement | null) => {
@@ -251,7 +273,8 @@ function BatchTile({
 
   const status = item?.value.status ?? null;
   const thumbnail = item?.value.thumbnail ?? null;
-  const isReorderable = item != null && onReorder != null;
+  const isReorderable =
+    item != null && onReorder != null && !reorderRefused;
   const title = item
     ? (item.value.statusMessage ?? `${label} — ${item.value.name}`)
     : label;
@@ -274,23 +297,24 @@ function BatchTile({
           ? isDragging
             ? "grabbing"
             : "grab"
-          : onSelect
+          : canSelect
             ? "pointer"
             : "default",
       }}
-      role={onSelect ? "button" : undefined}
+      role={canSelect ? "button" : undefined}
       aria-label={item ? title : `${label} (add)`}
-      tabIndex={onSelect ? 0 : -1}
-      onClick={onSelect ? () => onSelect(index) : undefined}
+      tabIndex={canSelect ? 0 : -1}
+      onClick={canSelect ? () => onSelect?.(index) : undefined}
       onKeyDown={(event: React.KeyboardEvent) => {
-        if (!onSelect) return;
+        if (!canSelect) return;
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          onSelect(index);
+          onSelect?.(index);
         }
       }}
       onDragEnter={(event: React.DragEvent) => {
-        if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) return;
+        if (!onExternalDrop || externalRefused || !hasDraggedFiles(event.dataTransfer))
+          return;
         event.preventDefault();
         externalDragDepthRef.current += 1;
         setExternalHighlight(
@@ -298,7 +322,8 @@ function BatchTile({
         );
       }}
       onDragOver={(event: React.DragEvent) => {
-        if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) return;
+        if (!onExternalDrop || externalRefused || !hasDraggedFiles(event.dataTransfer))
+          return;
         event.preventDefault();
         // Stop the strip's own handler from claiming a drop the tile owns.
         event.stopPropagation();
@@ -311,7 +336,8 @@ function BatchTile({
         setExternalHighlight(nextHighlight);
       }}
       onDragLeave={(event: React.DragEvent) => {
-        if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) return;
+        if (!onExternalDrop || externalRefused || !hasDraggedFiles(event.dataTransfer))
+          return;
         event.preventDefault();
         externalDragDepthRef.current = Math.max(
           0,
@@ -322,7 +348,16 @@ function BatchTile({
         }
       }}
       onDrop={(event: React.DragEvent) => {
-        if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) return;
+        if (!hasDraggedFiles(event.dataTransfer)) return;
+        // A refused tile still swallows the drop: letting it bubble would hand
+        // the file to the strip, which would append it at the add position —
+        // the very action the refusal names.
+        if (externalRefused) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        if (!onExternalDrop) return;
         event.preventDefault();
         event.stopPropagation();
         externalDragDepthRef.current = 0;
@@ -355,7 +390,7 @@ function BatchTile({
             </Typography>
           )}
           <OrdinalBadge variant="caption">{index + 1}</OrdinalBadge>
-          {item.editable && onEdit && (
+          {item.editable && onEdit && !editRefused && (
             <EditButton
               className="batch-slot-edit"
               size="small"
@@ -437,7 +472,14 @@ function AssetBatchDropSlotComponent({
   onEdit,
   onReorder,
   onToggleOption,
+  disabledActions,
 }: AssetBatchDropSlotProps) {
+  // The strip's own slot ids, so a tile can tell a drag from inside it apart
+  // from one carried over from another media input.
+  const ownSlotIds = React.useMemo(
+    () => items.map((item) => item.slotId),
+    [items],
+  );
   const externalAccept = acceptExternal ?? accept;
   const capacity = Math.max(1, Math.floor(max));
   const visibleItems = items.slice(0, capacity);
@@ -460,6 +502,7 @@ function AssetBatchDropSlotComponent({
       <StripContainer
         data-batch-slot-id={id}
         onDragOver={(event: React.DragEvent) => {
+          if (disabledActions?.externalDrop) return;
           // Only fires for the gaps between tiles: a tile that can take the
           // drop stops the event before it reaches here.
           if (!onExternalDrop || !hasAddTile) return;
@@ -472,6 +515,7 @@ function AssetBatchDropSlotComponent({
               : "copy";
         }}
         onDrop={(event: React.DragEvent) => {
+          if (disabledActions?.externalDrop) return;
           if (!onExternalDrop || !hasAddTile) return;
           if (!hasDraggedFiles(event.dataTransfer)) return;
           event.preventDefault();
@@ -499,6 +543,8 @@ function AssetBatchDropSlotComponent({
             onClear={onClear}
             onEdit={onEdit}
             onReorder={onReorder}
+            disabledActions={disabledActions}
+            ownSlotIds={ownSlotIds}
             onToggleOption={onToggleOption}
           />
         ))}
@@ -516,6 +562,8 @@ function AssetBatchDropSlotComponent({
             onExternalDrop={onExternalDrop}
             onSelect={onSelect}
             onReorder={onReorder}
+            disabledActions={disabledActions}
+            ownSlotIds={ownSlotIds}
           />
         )}
       </StripContainer>

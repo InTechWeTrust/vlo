@@ -18,6 +18,29 @@ export interface AssetDropSlotReorderData {
   inputId: string;
 }
 
+/**
+ * An action a slot can offer beyond dropping a library asset.
+ *
+ * Availability is otherwise modelled by callback presence, which has only two
+ * states: offered, or absent entirely. A surface that *has* the action but
+ * cannot perform it here — a staged editor, where a timeline capture or a file
+ * upload starts real work it could not hold — needs a third: visible, refused,
+ * and saying why. Handing such a surface a no-op callback would look enabled
+ * and do nothing.
+ */
+export type AssetDropSlotAction =
+  | "select"
+  | "externalDrop"
+  | "edit"
+  | "reorder"
+  /** Dragging an item in from a *different* media input, which swaps them. */
+  | "crossInputReorder";
+
+/** Actions this context refuses, each mapped to the reason shown to the user. */
+export type AssetDropSlotDisabledActions = Partial<
+  Record<AssetDropSlotAction, string>
+>;
+
 export interface AssetDropSlotProps {
   /** Unique identifier for this slot */
   id: string;
@@ -55,4 +78,15 @@ export interface AssetDropSlotProps {
   reorderData?: AssetDropSlotReorderData | null;
   /** Called when a media-input slot is dropped onto this slot */
   onReorderDrop?: (data: AssetDropSlotReorderData) => void;
+  /**
+   * Whether a dragged media-input slot may land here. Consulted for the
+   * highlight as well as the drop, so a refused source reads as incompatible
+   * while it is being dragged rather than accepting and doing nothing.
+   */
+  acceptReorderFrom?: (data: AssetDropSlotReorderData) => boolean;
+  /**
+   * Actions to render as refused rather than absent, with the reason. An
+   * action named here is inert even if its callback is supplied.
+   */
+  disabledActions?: AssetDropSlotDisabledActions;
 }

@@ -102,9 +102,24 @@ function AssetDropSlotComponent({
   label,
   reorderData,
   onReorderDrop,
+  acceptReorderFrom,
+  disabledActions,
 }: AssetDropSlotProps) {
   const filled = value != null;
-  const isReorderable = filled && reorderData != null;
+  // A refused action is inert here, not merely undecorated: the callback may
+  // still be supplied by a caller that offers it in other contexts.
+  const selectRefused = disabledActions?.select;
+  const editRefused = disabledActions?.edit;
+  const externalRefused = disabledActions?.externalDrop;
+  const canSelect = !selectRefused && typeof onSelect === "function";
+  const canEdit = !editRefused && typeof onEdit === "function";
+  const canExternalDrop = !externalRefused && typeof onExternalDrop === "function";
+
+  // Refusing reorder makes the slot undraggable as well as an invalid drop
+  // target: leaving it draggable lets the user carry it to another accepting
+  // slot, which is the same action by a different route.
+  const isReorderable =
+    filled && reorderData != null && !disabledActions?.reorder;
   const [externalHighlight, setExternalHighlight] = React.useState<
     "compatible" | "incompatible" | "external" | null
   >(null);
@@ -112,7 +127,14 @@ function AssetDropSlotComponent({
 
   const { setNodeRef: setDroppableNodeRef, isOver } = useDroppable({
     id: `asset-slot-${id}`,
-    data: { type: "asset-slot", accept, acceptAsset, onDrop, onReorderDrop },
+    data: {
+      type: "asset-slot",
+      accept,
+      acceptAsset,
+      onDrop,
+      onReorderDrop: disabledActions?.reorder ? undefined : onReorderDrop,
+      acceptReorderFrom,
+    },
   });
   const {
     listeners,
@@ -147,7 +169,12 @@ function AssetDropSlotComponent({
   if (
     isOver &&
     active?.data.current?.type === "media-input" &&
+    !disabledActions?.reorder &&
     typeof onReorderDrop === "function" &&
+    acceptReorderFrom?.({
+      type: "media-input",
+      inputId: String(active.data.current.inputId),
+    }) !== false &&
     active.data.current.inputId !== id
   ) {
     highlight = "compatible";
@@ -193,15 +220,15 @@ function AssetDropSlotComponent({
             ? isDragging
               ? "grabbing"
               : "grab"
-            : onSelect
+            : canSelect
               ? "pointer"
               : "default",
         }}
-        role={onSelect ? "button" : undefined}
-        tabIndex={onSelect ? 0 : -1}
-        onClick={onSelect}
+        role={canSelect ? "button" : undefined}
+        tabIndex={canSelect ? 0 : -1}
+        onClick={canSelect ? onSelect : undefined}
         onDragEnter={(event) => {
-          if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
+          if (!canExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
             return;
           }
 
@@ -212,7 +239,7 @@ function AssetDropSlotComponent({
           );
         }}
         onDragOver={(event) => {
-          if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
+          if (!canExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
             return;
           }
 
@@ -226,7 +253,7 @@ function AssetDropSlotComponent({
           setExternalHighlight(nextHighlight);
         }}
         onDragLeave={(event) => {
-          if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
+          if (!canExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
             return;
           }
 
@@ -240,7 +267,7 @@ function AssetDropSlotComponent({
           }
         }}
         onDrop={(event) => {
-          if (!onExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
+          if (!canExternalDrop || !hasDraggedFiles(event.dataTransfer)) {
             return;
           }
 
@@ -254,10 +281,10 @@ function AssetDropSlotComponent({
           if (!acceptedFile) {
             return;
           }
-          void onExternalDrop(acceptedFile);
+          void onExternalDrop?.(acceptedFile);
         }}
         onKeyDown={(event) => {
-          if (!onSelect) return;
+          if (!canSelect) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             onSelect();
@@ -290,14 +317,17 @@ function AssetDropSlotComponent({
                 No Preview
               </Typography>
             )}
-            {onEdit && (
+            {(canEdit || editRefused) && (
               <EditButton
                 className="drop-slot-edit"
                 size="small"
                 aria-label="Edit"
+                disabled={Boolean(editRefused)}
+                title={editRefused}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onEdit();
+                  if (!canEdit) return;
+                  onEdit?.();
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 onKeyDown={(e) => e.stopPropagation()}
@@ -332,14 +362,22 @@ function AssetDropSlotComponent({
             <Typography variant="caption" sx={{ color: "#555", fontSize: "0.6rem" }}>
               {formatAcceptLabel(accept)}
             </Typography>
-            {onSelect && (
+            {canSelect ? (
               <Typography
                 variant="caption"
                 sx={{ color: "#777", fontSize: "0.55rem", display: "block" }}
               >
                 Drop or click
               </Typography>
-            )}
+            ) : selectRefused ? (
+              <Typography
+                variant="caption"
+                title={selectRefused}
+                sx={{ color: "#555", fontSize: "0.55rem", display: "block" }}
+              >
+                Drop only
+              </Typography>
+            ) : null}
           </Box>
         )}
       </SlotBox>
