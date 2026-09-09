@@ -49,8 +49,8 @@ reference in the same change. Do not promote an aspirational plan item into a V1
 | Pixi filters, transformations, rendered entities, live/export parity | [rendering-entities-transformations.md](references/rendering-entities-transformations.md) |
 | Custom GLSL/WGSL filter extensions, shader controls, alpha, coordinates, time/history, black output, or inert sliders | [shader-filter-extensions.md](references/shader-filter-extensions.md) |
 | Procedural scalars, keyframe interpolation, paths, overlays | [animation-and-paths.md](references/animation-and-paths.md) |
-| React slots, modals, shell regions and docks, video scopes, toasts and task progress, canvases, commands, keybindings, context keys, menus, option catalogues | [ui-and-generation.md](references/ui-and-generation.md) |
-| Generation panels: reading the mounted workflow's nodes and widgets reactively, writing an input or widget through the labelled transaction, contributing bypass/widget effects to a submission, and choosing between a rule sidecar, an extension, and a gated provider | [ui-and-generation.md](references/ui-and-generation.md) |
+| React slots and section anchors, panel takeovers, modals, shell regions and docks, video scopes, toasts and task progress, canvases, commands, keybindings, context keys, menus, option catalogues | [ui-and-generation.md](references/ui-and-generation.md) |
+| Generation panels: reading the mounted workflow's nodes and widgets reactively, writing an input or widget through the labelled transaction, editing panel inputs in a staged draft before committing, contributing bypass/widget effects to a submission, and choosing between a rule sidecar, an extension, and a gated provider | [ui-and-generation.md](references/ui-and-generation.md) |
 | Python routers, jobs, readiness, progress, cancellation, artifacts; registering a model runtime as a capability and reading its readiness from the frontend | [backend-and-jobs.md](references/backend-and-jobs.md) |
 | Manifest/build work, approval-path fixtures, and verification | [packaging-and-testing.md](references/packaging-and-testing.md) |
 

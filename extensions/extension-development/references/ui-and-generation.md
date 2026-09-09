@@ -14,9 +14,16 @@ All trusted UI runs with main-page authority. Host error boundaries contain ordi
 render failures and report diagnostics; they are not a security boundary.
 
 `runtime.panelUi` is the complete host barrel, including its raw custom-control
-registry. Trusted code may also use the DOM and browser APIs directly. When no slot,
-zone, or workspace fits without losing important functionality, use raw panel/DOM
-integration with explicit `onDispose()` cleanup and document the VLO coupling.
+registry. It is typed as an open map of `unknown` and is explicitly
+version-coupled: you assert every component and prop shape locally, and a host
+change can break you without a compiler error. Treat it as the escape hatch.
+
+Narrower runtimes are typed and are the better path where one exists —
+`runtime.generationUi` carries the generation panel's own surfaces with a
+declared contract. Trusted code may also use the DOM and browser APIs directly.
+When no slot, zone, or workspace fits without losing important functionality,
+use raw panel/DOM integration with explicit `onDispose()` cleanup and document
+the VLO coupling.
 
 ## Select a UI contribution
 
@@ -25,18 +32,61 @@ Register through `context.api.ui`:
 - `registerNotice` for host-rendered declarative information;
 - `registerComponent` for arbitrary trusted React in a declared slot;
 - `registerModal` for a host-owned MUI dialog with extension-owned contents;
-- `registerView` for a persistent extension tab in a host-owned shell region.
+- `registerView` for a persistent extension tab in a host-owned shell region;
+- `registerPanelTakeover` for a body that replaces one panel's own, in its
+  frame.
 
-Current curated component slots are:
+Fixed slots, each mounted at one hand-placed point:
 
 - `transformation-panel.before`;
 - `generation.toolbar`;
 - `generation.inputs.after`;
 - `timeline.toolbar`.
 
-Slot IDs are an open SDK string but a closed host catalogue at runtime. Prefer adding
-a reusable host mount when the location is generally useful; use trusted raw DOM or
-host access for one-off, exploratory, or build-coupled integrations.
+**Anchors** are slots named after a structural element rather than enumerated,
+because the element belongs to the mounted workflow and its id is not knowable
+when you activate:
+
+- `generation.section.<sectionId>.before`;
+- `generation.section.<sectionId>.after`.
+
+So `generation.section.prompts.after` puts a control directly under the prompt
+box, in every workflow that has one. Section ids come from workflow rules; text
+inputs land in `prompts` and media inputs in `inputs` unless the rules say
+otherwise, and a section whose id is not a safe slot segment gets no anchor.
+
+The host still owns which anchors exist and what they are called — a family
+declares the *shape*, not an open namespace — so registering against anything
+it has not declared throws. Prefer asking for a new anchor when a location is
+generally useful; use trusted raw DOM or host access for one-off, exploratory,
+or build-coupled integrations.
+
+### Show a contribution only sometimes
+
+`registerComponent` takes a `when` clause over host context keys, evaluated by
+the host: a contribution whose clause is false is never mounted.
+
+Prefer it to mounting and returning `null`. The slot renders a wrapper around
+whatever it holds, so a component that renders nothing still leaves a padded,
+empty box where it sits.
+
+Conditions the key vocabulary cannot express — "is the mounted workflow one I
+serve?" — are not context keys. Derive the answer yourself and publish it as
+one with `commands.setContextKey`, then read it in `when`; that is what keeps
+the wrapper from mounting at all.
+
+```ts
+// Republished only when the answer changes; the session fires constantly.
+api.ui.commands.setContextKey("supported", isMine(api.generation.getSession()));
+api.ui.registerComponent({
+  id: "compose-button",
+  apiVersion: 1,
+  slot: "generation.section.prompts.after",
+  kind: "trusted-react",
+  when: { key: `extension.${context.extension.id}.supported` },
+  component: ComposeButton,
+});
+```
 
 Use `openModal(localId, input?)` to open only the caller's modal. Keep input and
 result finite JSON. Handle an `undefined` result as cancellation or disposal.
@@ -387,19 +437,27 @@ function LoaderPicker({ api }: { api: ExtensionGenerationApi }) {
 
 ### Where that component goes
 
-There are two placements, and the difference is *who decides where it appears*:
+Three placements, and the difference is *who decides where it appears*:
 
 - **`api.generation.ui.registerSection()`** — the body of a panel section the
   *workflow* selects. The workflow's rules sidecar carries the placement half
   (`extension_section` with your `extension_id`, a `contribution_id` matching
   the section's `id`, and an optional `config` object your component receives).
   Use this when a particular workflow should decide whether and where your UI
-  shows up, which is what you want for anything workflow-specific.
-- **`api.ui.registerComponent()`** in a host slot such as
-  `generation.inputs.after` — a component that appears for *every* workflow.
-  Use this when the extension, not the workflow, owns the decision.
+  shows up. It costs a rules edit per workflow, and a workflow naming a
+  provider that is not active renders a warning in the panel — so it is the
+  wrong choice for an optional package.
+- **`api.ui.registerComponent()` at an anchor** such as
+  `generation.section.prompts.after` — the extension decides, and can decide
+  *conditionally*: no rules edit, every workflow that has that section, and a
+  `when` clause or a derived context key to narrow it. This is usually what
+  you want for something that applies to a family of workflows rather than to
+  one named file.
+- **`api.ui.registerComponent()` at a fixed slot** such as
+  `generation.inputs.after` — the same, at one of the hand-placed points. Use
+  it when the location is the panel as a whole rather than a section of it.
 
-Both close over `context.api.generation` for reads and writes.
+All close over `context.api.generation` for reads and writes.
 
 ```ts
 context.api.generation.ui.registerSection({
@@ -424,6 +482,84 @@ own — but it does need to be mounted inside the editor's drag context:
 
 If you want a non-blocking workspace that stays open over the editor and takes
 drags, register a view in `editor-overlay` and open it with `openView`.
+
+Both slots take `disabledActions`: a map from an action the slot offers —
+`select`, `externalDrop`, `edit`, `reorder`, `crossInputReorder` — to the
+reason it is refused here. A named action is **inert by every route it has**
+and renders as refused rather than disappearing. Reach for it when your surface
+has the action but cannot perform it in this context; handing the slot a no-op
+callback instead looks enabled and does nothing, and omitting the callback
+makes the slot look broken.
+
+## Take over a panel
+
+`registerPanelTakeover` replaces one panel's body with your own, inside its
+frame — the shape the mask panel uses natively for editing one mask, where a
+second registered view would be a second *tab* and a floating panel would not
+be in the panel at all.
+
+```ts
+const takeover = api.ui.registerPanelTakeover({
+  id: "composer-panel",
+  apiVersion: 1,
+  kind: "trusted-react",
+  targetViewId: "host.generate",
+  title: "MiniMax prompt",
+  onDismissed: () => stopTracking(),
+});
+if (!api.ui.openPanelTakeover("composer-panel").ok) openFallbackWindow();
+```
+
+Four rules worth knowing before you build on it:
+
+- **The host declares the targets.** A panel is one only if its registration
+  opted in; `listPanelTakeoverTargets()` enumerates them.
+- **Register regardless of what that list says.** Panels are declared by the
+  modules that render them and the editor loads lazily, so you activate before
+  your target exists and the list is empty at that moment. Branch on
+  `openPanelTakeover`, which answers for the editor as it is *now* and returns
+  `target_unavailable` when the panel is not there.
+- **One at a time.** A second takeover of the same panel is refused with
+  `target_busy` rather than displacing the first.
+- **Dismissal is the host's.** The frame renders the back control; `onDismissed`
+  fires when the *user* takes the panel back, never on your own close or
+  dispose.
+
+## Edit panel inputs without committing them
+
+`runtime.generationUi.InputsDraft` renders the panel's own input fields over a
+*staged* draft: edits are held until you commit, and the panel is untouched
+until then.
+
+```ts
+h(api.runtime.generationUi.InputsDraft, {
+  inputIds: [promptInputId, startFrameInputId],
+  children: (draft) =>
+    h(Button, {
+      disabled: !draft.canCommit,
+      onClick: () =>
+        // Staged input edits and your own writes, in one transaction.
+        draft.commit("Compose prompt", (tx) =>
+          tx.setTextInput(promptInputId, composedText),
+        ),
+    }, "Commit"),
+});
+```
+
+- `inputs` is the staged projection, described exactly as the session describes
+  a live input.
+- `hasDraftChanges` is "I hold edits"; `hasConflict` is "the panel moved under
+  an input I hold"; `canCommit` is "a transaction may be attempted" — true with
+  nothing staged, because your `additionalWrites` may still have something to
+  say.
+- The draft clears only after a successful transaction, so a failed commit
+  leaves your edits in place rather than showing a panel that never took them.
+
+**Only what the transaction can express can be staged.** Timeline capture,
+external file drops and media editing each start real work — a render, an
+ingest — and produce values no id can name until they finish, so the editor
+shows them refused with a reason. Expect the same of anything you add: if there
+is no transaction command for it, it cannot be held.
 
 ## Read what is attached to a media input
 
