@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   findDraftConflicts,
-  isStagedSlotId,
   projectDraftInputs,
-  replayDraftOps,
+  compileDraftCommands,
   type GenerationInputDraftOp,
 } from "../generationInputsDraft";
 import type {
   GenerationInputSnapshot,
+  GenerationMediaItemSnapshot,
   GenerationSessionSnapshot,
   GenerationSessionTransaction,
 } from "../../services/generationSessionTypes";
@@ -70,14 +70,24 @@ const BATCH: GenerationInputSnapshot = {
   label: "Image inputs",
   inputType: "image",
   repeatable: { max: 9, optionIds: [] },
-  media: [mediaItem("slot-a", "asset-a", 1), mediaItem("slot-b", "asset-b", 2)],
+  media: [mediaItem("slot-a", "asset-a", 0), mediaItem("slot-b", "asset-b", 1)],
 } as unknown as GenerationInputSnapshot;
 
-const resolveAsset = (assetId: string) => ({
-  displayName: `${assetId}.png`,
-  mediaType: "image" as const,
-  hasAudio: false,
-});
+const resolveAsset = (
+  _input: GenerationInputSnapshot,
+  assetId: string,
+): GenerationMediaItemSnapshot =>
+  ({
+    slotId: "",
+    ordinal: 0,
+    source: "asset",
+    assetId,
+    displayName: `${assetId}.png`,
+    mediaType: "image",
+    hasAudio: false,
+    options: {},
+    preparing: false,
+  }) as unknown as GenerationMediaItemSnapshot;
 
 function recordTransaction() {
   const calls: string[] = [];
@@ -109,7 +119,7 @@ describe("generation inputs draft", () => {
     const ops: GenerationInputDraftOp[] = [
       { kind: "setText", inputId: "136:prompt", value: "after" },
       { kind: "attachAsset", inputId: "141:image", assetId: "asset-k" },
-      { kind: "moveMedia", inputId: "142:images", fromOrdinal: 2, toOrdinal: 1 },
+      { kind: "moveMedia", inputId: "142:images", fromOrdinal: 1, toOrdinal: 0 },
     ];
     const projected = projectDraftInputs(base, ops, resolveAsset);
 
@@ -120,8 +130,9 @@ describe("generation inputs draft", () => {
       "asset-b",
       "asset-a",
     ]);
-    // Ordinals are delivery positions, so they renumber with the list.
-    expect(projected[2].media?.map((item) => item.ordinal)).toEqual([1, 2]);
+    // Delivery positions, zero-based: what the panel publishes and what the
+    // transaction accepts.
+    expect(projected[2].media?.map((item) => item.ordinal)).toEqual([0, 1]);
     // The session itself is untouched: the panel has not been written.
     expect(base.inputs[0].value).toBe("before");
     expect(base.inputs[2].media?.map((item) => item.assetId)).toEqual([
@@ -130,36 +141,61 @@ describe("generation inputs draft", () => {
     ]);
   });
 
-  it("replays staged ops as transaction commands, in order", () => {
-    const { calls, transaction } = recordTransaction();
-    replayDraftOps(
+  it("commits what the editor shows, not the gestures that produced it", () => {
+    // The regression this compiler exists for: attach B over A, then clear B.
+    // A gesture replay skips both commands and leaves A in the panel while the
+    // editor shows an empty slot.
+    const withA: GenerationInputSnapshot = {
+      ...SINGLE_IMAGE,
+      media: [mediaItem("slot-a", "asset-a", 0)],
+    } as unknown as GenerationInputSnapshot;
+    const base = session([withA]);
+    const target = projectDraftInputs(
+      base,
       [
-        { kind: "setText", inputId: "136:prompt", value: "after" },
-        { kind: "removeMedia", inputId: "142:images", slotId: "slot-a" },
-        {
-          kind: "attachAsset",
-          inputId: "142:images",
-          assetId: "asset-k",
-          at: 0,
-        },
-        { kind: "setMediaOption", inputId: "142:images", slotId: "slot-b", optionId: "audio", value: true },
+        { kind: "attachAsset", inputId: "141:image", assetId: "asset-b" },
+        { kind: "removeMedia", inputId: "141:image", slotId: "staged:1" },
       ],
-      transaction,
+      resolveAsset,
     );
+    expect(target[0].media).toEqual([]);
 
+    const { calls, transaction } = recordTransaction();
+    compileDraftCommands(base.inputs, target, transaction);
+    expect(calls).toEqual(["remove 141:image slot-a"]);
+  });
+
+  it("appends then reorders rather than attaching at a stale position", () => {
+    const base = session([BATCH]);
+    const target = projectDraftInputs(
+      base,
+      [
+        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k", at: 0 },
+        { kind: "removeMedia", inputId: "142:images", slotId: "slot-a" },
+      ],
+      resolveAsset,
+    );
+    expect(target[0].media?.map((item) => item.assetId)).toEqual([
+      "asset-k",
+      "asset-b",
+    ]);
+
+    const { calls, transaction } = recordTransaction();
+    compileDraftCommands(base.inputs, target, transaction);
+    // Remove what is leaving, append what is new, then one reorder pass — a
+    // positioned attach is an append plus a reorder anyway, and this keeps the
+    // attach off the repack path.
     expect(calls).toEqual([
-      "setText 136:prompt after",
       "remove 142:images slot-a",
-      "attach 142:images asset-k at=0 opts={}",
-      "option slot-b audio=true",
+      "attach 142:images asset-k at=end opts={}",
+      "move 142:images 1->0",
     ]);
   });
 
-  it("folds edits to staged media into the attach that created it", () => {
-    const { calls, transaction } = recordTransaction();
-    // A slot staged in this draft has no id the host has ever seen, so an
-    // option set on it cannot be written by id — it rides the attach.
-    replayDraftOps(
+  it("carries an option set on staged media into its own attach", () => {
+    const base = session([BATCH]);
+    const target = projectDraftInputs(
+      base,
       [
         { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
         {
@@ -170,25 +206,22 @@ describe("generation inputs draft", () => {
           value: true,
         },
       ],
-      transaction,
+      resolveAsset,
     );
+    const { calls, transaction } = recordTransaction();
+    compileDraftCommands(base.inputs, target, transaction);
+    // A staged slot has no id the host has seen, so the option rides the
+    // attach that creates it.
     expect(calls).toEqual([
       'attach 142:images asset-k at=end opts={"audio":true}',
     ]);
   });
 
-  it("writes nothing for media staged and then removed before commit", () => {
+  it("writes nothing when the projection matches the panel", () => {
+    const base = session([TEXT_INPUT, BATCH]);
     const { calls, transaction } = recordTransaction();
-    replayDraftOps(
-      [
-        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
-        { kind: "removeMedia", inputId: "142:images", slotId: "staged:1" },
-      ],
-      transaction,
-    );
+    compileDraftCommands(base.inputs, base.inputs, transaction);
     expect(calls).toEqual([]);
-    expect(isStagedSlotId("staged:1")).toBe(true);
-    expect(isStagedSlotId("slot-a")).toBe(false);
   });
 
   it("reports a conflict only on an input the draft is holding", () => {
@@ -201,7 +234,7 @@ describe("generation inputs draft", () => {
     // touching is not a disagreement.
     const elsewhere = [
       TEXT_INPUT,
-      { ...BATCH, media: [mediaItem("slot-a", "asset-a", 1)] },
+      { ...BATCH, media: [mediaItem("slot-a", "asset-a", 0)] },
     ];
     expect(findDraftConflicts(base, elsewhere, ops)).toEqual([]);
 
@@ -219,4 +252,78 @@ describe("generation inputs draft", () => {
     );
     expect(projected[0].media).toEqual([]);
   });
+
+  /**
+   * The invariant the compiler exists to hold: whatever the editor shows is
+   * what the panel holds afterwards. Applies the compiled commands to a naive
+   * model of the panel and compares, ignoring the staged-versus-real slot ids
+   * that necessarily differ.
+   */
+  it.each([
+    [
+      "clearing a staged replacement",
+      [
+        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
+        { kind: "removeMedia", inputId: "142:images", slotId: "staged:1" },
+      ],
+    ],
+    [
+      "inserting at the front and removing an original",
+      [
+        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k", at: 0 },
+        { kind: "removeMedia", inputId: "142:images", slotId: "slot-a" },
+      ],
+    ],
+    [
+      "reordering around a staged item",
+      [
+        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
+        { kind: "moveMedia", inputId: "142:images", fromOrdinal: 2, toOrdinal: 0 },
+        { kind: "moveMedia", inputId: "142:images", fromOrdinal: 2, toOrdinal: 1 },
+      ],
+    ],
+    [
+      "removing everything",
+      [
+        { kind: "removeMedia", inputId: "142:images", slotId: "slot-a" },
+        { kind: "removeMedia", inputId: "142:images", slotId: "slot-b" },
+      ],
+    ],
+  ] as [string, GenerationInputDraftOp[]][])(
+    "commits a projection the panel then matches: %s",
+    (_name, ops) => {
+      const base = session([BATCH]);
+      const target = projectDraftInputs(base, ops, resolveAsset);
+
+      // A panel that applies the commands the way the real one does.
+      let panel = (base.inputs[0].media ?? []).map((item) => ({ ...item }));
+      let staged = 0;
+      compileDraftCommands(base.inputs, target, {
+        setTextInput: () => undefined,
+        setWidget: () => undefined,
+        attachAsset: (_inputId: string, assetId: string) => {
+          staged += 1;
+          panel.push({ ...mediaItem(`real-${staged}`, assetId, 0) });
+        },
+        removeMedia: (_inputId: string, slotId: string) => {
+          panel = panel.filter((item) => item.slotId !== slotId);
+        },
+        moveMedia: (_inputId: string, from: number, to: number) => {
+          const [moved] = panel.splice(from, 1);
+          panel.splice(to, 0, moved);
+        },
+        setMediaOption: (slotId: string, optionId: string, value: boolean) => {
+          panel = panel.map((item) =>
+            item.slotId === slotId
+              ? { ...item, options: { ...item.options, [optionId]: value } }
+              : item,
+          );
+        },
+      } as unknown as GenerationSessionTransaction);
+
+      expect(panel.map((item) => item.assetId)).toEqual(
+        (target[0].media ?? []).map((item) => item.assetId),
+      );
+    },
+  );
 });

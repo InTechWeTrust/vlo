@@ -32,15 +32,17 @@ import {
   MemoizedBatchMediaInputSection,
   MemoizedMediaInputSection,
   MemoizedTextInputSection,
+  PROMPT_COMMIT_DEBOUNCE_MS,
+} from "./generationInputFields";
+import {
   acceptAssetForInputType,
   isMediaWorkflowInput,
   resolveAcceptTypes,
   resolveExternalAcceptTypes,
   toPreparingSlotValue,
   toSlotValue,
-  PROMPT_COMMIT_DEBOUNCE_MS,
   type MediaWorkflowInput,
-} from "./generationInputFields";
+} from "./generationInputFieldValues";
 import { AssetDropSlot, CommittedTextInput } from "../../panelUI";
 import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 

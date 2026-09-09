@@ -808,7 +808,16 @@ function withMedia(
  * on exactly the terms the batch strip offers it, and a fresh attach starts
  * off unless the store's carry-forward rule applies.
  */
-function simulateAttachedItem(
+/**
+ * The item an attach would create, as the panel will hold it.
+ *
+ * Shared with the staged draft editor so a projected attach and the committed
+ * one agree: media type flips to `audio` for a video on an audio slot, the
+ * audio switch is offered only where the input offers it, and `hasAudio` is
+ * the asset's own answer rather than a guess. A draft deriving these itself
+ * would show one thing and commit another.
+ */
+export function simulateAttachedItem(
   input: GenerationInputSnapshot,
   asset: GenerationSessionAssetCandidate,
   replaced: GenerationMediaItemSnapshot | null,

@@ -1,32 +1,41 @@
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import { useAssetStore } from "../../userAssets";
 import { generationSessionService } from "../services/GenerationSessionService";
+import { simulateAttachedItem } from "../services/generationSessionValidation";
 import type {
   GenerationInputSnapshot,
   GenerationSessionTransaction,
   GenerationTransactionResult,
 } from "../services/generationSessionTypes";
 import {
+  compileDraftCommands,
   findDraftConflicts,
   projectDraftInputs,
-  replayDraftOps,
   type GenerationInputDraftOp,
-  type StagedAssetResolution,
+  type StagedAttachResolver,
 } from "./generationInputsDraft";
 
 /**
  * A staged editor over some of the generation panel's inputs.
  *
  * Edits are held, not written: the panel is untouched until `commit`, which
- * replays every staged op through one transaction so the whole edit either
- * lands or does not. `additionalWrites` runs inside that same transaction, so
- * a caller composing a prompt can write its text and its keyframes together
- * rather than leaving the panel half-updated if the second write fails.
+ * writes the whole edit through one transaction so it either lands or does
+ * not. `additionalWrites` runs inside that same transaction, so a caller
+ * composing a prompt writes its text and its keyframes together rather than
+ * leaving the panel half-updated when the second write fails.
  */
 export interface GenerationInputsDraftController {
-  /** The addressed inputs as they would be after every staged op. */
+  /** The addressed inputs as they would be after every staged edit. */
   readonly inputs: readonly GenerationInputSnapshot[];
-  readonly isDirty: boolean;
+  /** The draft holds edits of its own. */
+  readonly hasDraftChanges: boolean;
+  /** The panel moved under an input this draft is holding. */
+  readonly hasConflict: boolean;
+  /**
+   * A transaction may be attempted. True with no staged edits, because a
+   * caller may still have `additionalWrites` of its own to commit — a composer
+   * writing only prompt text has nothing staged here and must not be blocked.
+   */
   readonly canCommit: boolean;
   /** Why a commit is refused, or why the last one failed. */
   readonly error: string | null;
@@ -35,16 +44,26 @@ export interface GenerationInputsDraftController {
     additionalWrites?: (transaction: GenerationSessionTransaction) => void,
   ): GenerationTransactionResult;
   revert(): void;
-  /** Stages one op. Rejected silently if it addresses an input not being edited. */
+  /** Stages one edit. Ignored if it addresses an input this draft is not editing. */
   apply(op: GenerationInputDraftOp): void;
 }
 
-const NO_SESSION: GenerationTransactionResult = {
-  ok: false,
-  code: "unavailable",
-  message: "The generation panel is not mounted.",
-  label: "",
-};
+/**
+ * The draft, as one value.
+ *
+ * `base` is the panel as it stood **when editing began**, not when the hook
+ * mounted: a composer can sit open while the user works in the panel, and a
+ * mount-time baseline would make their first staged edit collide with their
+ * own earlier panel edit. It is captured on the empty-to-dirty transition, in
+ * the same update that records the first op, so the two can never disagree.
+ */
+interface DraftState {
+  readonly fingerprint: string | null;
+  readonly base: readonly GenerationInputSnapshot[] | null;
+  readonly ops: readonly GenerationInputDraftOp[];
+}
+
+const EMPTY: DraftState = { fingerprint: null, base: null, ops: [] };
 
 export function useGenerationInputsDraft(
   inputIds: readonly string[],
@@ -55,83 +74,80 @@ export function useGenerationInputsDraft(
     () => generationSessionService.getSnapshot(),
   );
   const assets = useAssetStore((state) => state.assets);
-  const [ops, setOps] = useState<readonly GenerationInputDraftOp[]>([]);
+  const [draft, setDraft] = useState<DraftState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
 
-  /**
-   * The inputs as they were when the draft was started.
-   *
-   * Kept in a ref rather than state because it is the *baseline for
-   * comparison*, not something rendered: a change to it must not re-render,
-   * and it must not move under the ops it is being compared against.
-   */
-  const baseRef = useRef<readonly GenerationInputSnapshot[] | null>(null);
-  const fingerprintRef = useRef<string | null>(null);
-
   const fingerprint = snapshot?.workflow.fingerprint ?? null;
-  // A different workflow is a different set of inputs; staged edits addressed
-  // the old ones and cannot mean anything against the new.
-  if (fingerprintRef.current !== fingerprint) {
-    fingerprintRef.current = fingerprint;
-    if (ops.length > 0) setOps([]);
-    baseRef.current = null;
-    if (error !== null) setError(null);
-  }
-  if (baseRef.current === null && snapshot) {
-    baseRef.current = snapshot.inputs;
-  }
+  // A different workflow is a different set of inputs; edits addressed the old
+  // ones and can mean nothing against the new. Read during render rather than
+  // written: the stale draft is simply not used, and the next edit replaces it.
+  const live: DraftState =
+    draft.fingerprint === fingerprint ? draft : EMPTY;
 
-  const resolveAsset = useCallback(
-    (assetId: string): StagedAssetResolution | null => {
+  /**
+   * How a staged attach will look once committed.
+   *
+   * The host's own attach derivation, not a copy: a video landing on an audio
+   * slot delivers as `audio`, the audio switch is offered only where the input
+   * offers it, and `hasAudio` is the asset's answer. Deriving these separately
+   * is how a draft ends up showing one thing and committing another — and for
+   * a reference batch, that difference moves every tag ordinal after it.
+   */
+  const resolveAttach = useCallback<StagedAttachResolver>(
+    (input, assetId, replaced) => {
       const asset = assets.find((candidate) => candidate.id === assetId);
       if (!asset) return null;
-      const mediaType =
-        asset.type === "video" || asset.type === "audio" ? asset.type : "image";
-      return {
-        displayName: asset.name,
-        mediaType,
-        hasAudio: asset.type === "video" ? null : false,
-      };
+      return simulateAttachedItem(input, asset, replaced);
     },
     [assets],
   );
 
   const selected = useMemo(() => new Set(inputIds), [inputIds]);
 
-  const projected = useMemo(
-    () =>
-      snapshot
-        ? projectDraftInputs(snapshot, ops, resolveAsset).filter((input) =>
-            selected.has(input.id),
-          )
-        : [],
-    [snapshot, ops, resolveAsset, selected],
+  const projectedAll = useMemo(
+    () => (snapshot ? projectDraftInputs(snapshot, live.ops, resolveAttach) : []),
+    [snapshot, live.ops, resolveAttach],
+  );
+  const inputs = useMemo(
+    () => projectedAll.filter((input) => selected.has(input.id)),
+    [projectedAll, selected],
   );
 
   const conflicts = useMemo(
     () =>
-      snapshot && baseRef.current
-        ? findDraftConflicts(baseRef.current, snapshot.inputs, ops)
+      snapshot && live.base
+        ? findDraftConflicts(live.base, snapshot.inputs, live.ops)
         : [],
-    [snapshot, ops],
+    [snapshot, live.base, live.ops],
   );
 
   const apply = useCallback(
     (op: GenerationInputDraftOp) => {
       if (!selected.has(op.inputId)) return;
       setError(null);
-      setOps((current) => [...current, op]);
+      setDraft((current) => {
+        const fresh =
+          current.fingerprint === fingerprint ? current : { ...EMPTY, fingerprint };
+        return {
+          fingerprint,
+          // Captured with the first op, so the baseline is what the panel held
+          // when this edit started.
+          base:
+            fresh.ops.length === 0
+              ? (generationSessionService.getSnapshot()?.inputs ?? null)
+              : fresh.base,
+          ops: [...fresh.ops, op],
+        };
+      });
     },
-    [selected],
+    [fingerprint, selected],
   );
 
   const revert = useCallback(() => {
-    setOps([]);
+    setDraft(EMPTY);
     setError(null);
-    baseRef.current = generationSessionService.getSnapshot()?.inputs ?? null;
   }, []);
 
-  const isDirty = ops.length > 0;
   const conflictMessage =
     conflicts.length > 0
       ? `${conflicts.join(", ")} changed in the panel while you were editing. Revert to take the panel's version.`
@@ -142,14 +158,22 @@ export function useGenerationInputsDraft(
       label: string,
       additionalWrites?: (transaction: GenerationSessionTransaction) => void,
     ): GenerationTransactionResult => {
-      if (!generationSessionService.getSnapshot()) return NO_SESSION;
+      const current = generationSessionService.getSnapshot();
+      if (!current) {
+        const message = "The generation panel is not mounted.";
+        setError(message);
+        return { ok: false, code: "unavailable", message, label };
+      }
       if (conflicts.length > 0) {
         const message = conflictMessage ?? "The panel changed underneath.";
         setError(message);
         return { ok: false, code: "unavailable", message, label };
       }
+      const target = projectDraftInputs(current, live.ops, resolveAttach);
       const result = generationSessionService.transaction(label, (transaction) => {
-        replayDraftOps(ops, transaction);
+        // Diffed against the session as it is *now*, so the writes describe
+        // the panel being written rather than the one editing began against.
+        compileDraftCommands(current.inputs, target, transaction);
         additionalWrites?.(transaction);
       });
       if (!result.ok) {
@@ -157,20 +181,20 @@ export function useGenerationInputsDraft(
         return result;
       }
       // Cleared only now: a failed transaction leaves the panel untouched, so
-      // dropping the draft would lose the user's edit and show them a panel
-      // that never took it.
-      setOps([]);
+      // dropping the draft would lose the edit and show a panel that never
+      // took it.
+      setDraft(EMPTY);
       setError(null);
-      baseRef.current = generationSessionService.getSnapshot()?.inputs ?? null;
       return result;
     },
-    [conflicts.length, conflictMessage, ops],
+    [conflicts.length, conflictMessage, live.ops, resolveAttach],
   );
 
   return {
-    inputs: projected,
-    isDirty,
-    canCommit: isDirty && conflicts.length === 0 && snapshot !== null,
+    inputs,
+    hasDraftChanges: live.ops.length > 0,
+    hasConflict: conflicts.length > 0,
+    canCommit: snapshot !== null && conflicts.length === 0,
     error: error ?? conflictMessage,
     commit,
     revert,

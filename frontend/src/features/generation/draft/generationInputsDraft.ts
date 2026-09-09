@@ -6,20 +6,23 @@ import type {
 } from "../services/generationSessionTypes";
 
 /**
- * A staged edit to the generation panel's inputs.
+ * One staged edit, as the editing surface performs it.
  *
- * Stored as *commands*, not as mutated values, for one reason: every command
- * here is one the session transaction can replay verbatim on commit. A draft
- * that held edited values instead would have to reverse-engineer the commands
- * at commit time, and the media ones — attach at a position, replace the only
- * slot, move by delivery ordinal — are not recoverable from a before/after
- * pair.
+ * These describe *gestures*, and they are deliberately not what gets written.
+ * Replaying a gesture log commits the wrong thing as soon as one gesture
+ * cancels another: attach B over A, then clear B, and a replay skips both and
+ * leaves A in the panel — while the editor showed an empty slot. Positioned
+ * batch attaches are worse, because a later `at` is meaningless once an
+ * earlier staged item is gone.
  *
- * That constraint is also the whole editing vocabulary: an interaction with no
- * command here cannot be staged, and the editor refuses to offer it rather
- * than letting a user make a change that would be dropped on commit. External
- * file drops, timeline capture and frame capture are the notable absences —
- * they start real work and produce values no id can name yet.
+ * So the log drives the *projection*, and `compileDraftCommands` derives what
+ * to write by diffing that projection against the panel. What the user sees is
+ * then what gets committed, by construction.
+ *
+ * The vocabulary is still a constraint on the surface: an interaction with no
+ * op here cannot be staged, and must be refused rather than dropped at commit.
+ * External file drops, timeline capture and frame capture are the notable
+ * absences — they start real work and produce values no id can name yet.
  */
 export type GenerationInputDraftOp =
   | { readonly kind: "setText"; readonly inputId: string; readonly value: string }
@@ -65,23 +68,36 @@ export function isStagedSlotId(slotId: string): boolean {
   return slotId.startsWith(STAGED_SLOT_PREFIX);
 }
 
-/** How a staged attach is described while it has no real slot. */
-export interface StagedAssetResolution {
-  readonly displayName: string;
-  readonly mediaType: "image" | "video" | "audio";
-  readonly hasAudio: boolean | null;
-}
+/**
+ * How an attach will look once committed, for the input it lands on.
+ *
+ * Returns the host's own simulation rather than a description assembled here:
+ * media type, `hasAudio` and the offered options all depend on the destination
+ * input, and a draft that guessed them would show one thing and commit
+ * another. `replaced` is the item a single-slot attach displaces.
+ */
+export type StagedAttachResolver = (
+  input: GenerationInputSnapshot,
+  assetId: string,
+  replaced: GenerationMediaItemSnapshot | null,
+) => GenerationMediaItemSnapshot | null;
 
+/**
+ * Ordinals are delivery positions and are **zero-based**, matching what the
+ * panel publishes (`generationMediaSnapshot`) and what the transaction accepts
+ * (`0..length-1`). A one-based projection would render correctly and then have
+ * every reorder rejected or applied to the wrong item.
+ */
 function reindex(
   items: readonly GenerationMediaItemSnapshot[],
 ): GenerationMediaItemSnapshot[] {
-  return items.map((item, index) => ({ ...item, ordinal: index + 1 }));
+  return items.map((item, index) => ({ ...item, ordinal: index }));
 }
 
 function applyToInput(
   input: GenerationInputSnapshot,
   op: GenerationInputDraftOp,
-  resolveAsset: (assetId: string) => StagedAssetResolution | null,
+  resolveAsset: StagedAttachResolver,
   stagedSlotSeq: { value: number },
 ): GenerationInputSnapshot {
   if (op.kind === "setText") {
@@ -89,19 +105,14 @@ function applyToInput(
   }
   const media = input.media ?? [];
   if (op.kind === "attachAsset") {
-    const resolved = resolveAsset(op.assetId);
-    if (!resolved) return input;
+    const replaced = input.repeatable ? null : (media[0] ?? null);
+    const simulated = resolveAsset(input, op.assetId, replaced);
+    if (!simulated) return input;
     stagedSlotSeq.value += 1;
     const item: GenerationMediaItemSnapshot = {
+      ...simulated,
       slotId: `${STAGED_SLOT_PREFIX}${stagedSlotSeq.value}`,
-      ordinal: 0,
-      source: "asset",
-      assetId: op.assetId,
-      displayName: resolved.displayName,
-      mediaType: resolved.mediaType,
-      hasAudio: resolved.hasAudio,
-      options: op.itemOptions ? { ...op.itemOptions } : {},
-      preparing: false,
+      options: { ...simulated.options, ...(op.itemOptions ?? {}) },
     };
     // A single-slot input replaces what it holds, exactly as a drop on it
     // would; a batch inserts at the position or appends.
@@ -118,8 +129,8 @@ function applyToInput(
     };
   }
   if (op.kind === "moveMedia") {
-    const from = op.fromOrdinal - 1;
-    const to = op.toOrdinal - 1;
+    const from = op.fromOrdinal;
+    const to = op.toOrdinal;
     if (from < 0 || from >= media.length || to < 0 || to >= media.length) {
       return input;
     }
@@ -149,7 +160,7 @@ function applyToInput(
 export function projectDraftInputs(
   session: GenerationSessionSnapshot,
   ops: readonly GenerationInputDraftOp[],
-  resolveAsset: (assetId: string) => StagedAssetResolution | null,
+  resolveAsset: StagedAttachResolver,
 ): readonly GenerationInputSnapshot[] {
   if (ops.length === 0) return session.inputs;
   const stagedSlotSeq = { value: 0 };
@@ -187,7 +198,14 @@ export function findDraftConflicts(
   const drafted = draftedInputIds(ops);
   if (drafted.size === 0) return [];
   const baseById = new Map(base.map((input) => [input.id, input]));
+  const currentById = new Map(current.map((input) => [input.id, input]));
   const conflicts: string[] = [];
+  // An input the draft is holding that has left the panel entirely: the
+  // workflow changed shape underneath, and the staged edit has nowhere to go.
+  for (const inputId of drafted) {
+    if (currentById.has(inputId)) continue;
+    conflicts.push(baseById.get(inputId)?.label ?? inputId);
+  }
   for (const input of current) {
     if (!drafted.has(input.id)) continue;
     const before = baseById.get(input.id);
@@ -203,73 +221,90 @@ export function findDraftConflicts(
   return conflicts;
 }
 
+
 /**
- * Replays the staged ops onto a transaction.
+ * Derives the writes that turn the panel's inputs into the projected ones.
  *
- * Ops carry staged slot ids, which the host has never seen; only ops naming a
- * *real* slot are replayed by id. An op addressing a staged slot is one the
- * user performed on media that does not exist yet, so its effect is already
- * folded into the attach that created it — `attachAsset` carries the item
- * options, and a staged item removed before commit leaves nothing to write.
+ * Diffing final states rather than replaying gestures is what makes "what you
+ * see is what commits" true: a staged item the user then cleared simply is not
+ * in the target, an attach that replaced another needs no knowledge of the
+ * gesture that removed it, and positions are read off the target list instead
+ * of an `at` computed against a list that no longer exists.
+ *
+ * The write order matters and is fixed: remove what is leaving, append what is
+ * new, then reorder the result into place. Appending rather than attaching at
+ * a position keeps every attach off the repack path — a positioned attach is
+ * an append plus a reorder anyway — and leaves one reorder pass to express the
+ * final arrangement, including where new items sit among old ones.
  */
-export function replayDraftOps(
-  ops: readonly GenerationInputDraftOp[],
+export function compileDraftCommands(
+  base: readonly GenerationInputSnapshot[],
+  target: readonly GenerationInputSnapshot[],
   transaction: GenerationSessionTransaction,
 ): void {
-  const stagedRemoved = new Set<string>();
-  for (const op of ops) {
-    if (op.kind === "removeMedia" && isStagedSlotId(op.slotId)) {
-      stagedRemoved.add(op.slotId);
-    }
-  }
-  // Options set on a staged item ride its own attach, so they are collected
-  // first rather than replayed as separate writes against an id that does not
-  // exist.
-  const stagedOptions = new Map<string, Record<string, boolean>>();
-  let stagedSeq = 0;
-  const attachSlotIds: string[] = [];
-  for (const op of ops) {
-    if (op.kind !== "attachAsset") continue;
-    stagedSeq += 1;
-    attachSlotIds.push(`${STAGED_SLOT_PREFIX}${stagedSeq}`);
-  }
-  for (const op of ops) {
-    if (op.kind !== "setMediaOption" || !isStagedSlotId(op.slotId)) continue;
-    const existing = stagedOptions.get(op.slotId) ?? {};
-    stagedOptions.set(op.slotId, { ...existing, [op.optionId]: op.value });
-  }
+  const baseById = new Map(base.map((input) => [input.id, input]));
+  for (const input of target) {
+    const before = baseById.get(input.id);
+    if (!before) continue;
 
-  let attachIndex = 0;
-  for (const op of ops) {
-    switch (op.kind) {
-      case "setText":
-        transaction.setTextInput(op.inputId, op.value);
-        break;
-      case "attachAsset": {
-        const slotId = attachSlotIds[attachIndex];
-        attachIndex += 1;
-        if (stagedRemoved.has(slotId)) break;
-        const options = {
-          ...(op.itemOptions ?? {}),
-          ...(stagedOptions.get(slotId) ?? {}),
-        };
-        transaction.attachAsset(op.inputId, op.assetId, {
-          ...(op.at === undefined ? {} : { at: op.at }),
-          ...(Object.keys(options).length > 0 ? { itemOptions: options } : {}),
-        });
-        break;
+    if (input.inputType === "text") {
+      if (before.value !== input.value && typeof input.value === "string") {
+        transaction.setTextInput(input.id, input.value);
       }
-      case "removeMedia":
-        if (isStagedSlotId(op.slotId)) break;
-        transaction.removeMedia(op.inputId, op.slotId);
-        break;
-      case "moveMedia":
-        transaction.moveMedia(op.inputId, op.fromOrdinal, op.toOrdinal);
-        break;
-      case "setMediaOption":
-        if (isStagedSlotId(op.slotId)) break;
-        transaction.setMediaOption(op.slotId, op.optionId, op.value);
-        break;
+      continue;
+    }
+
+    const beforeMedia = before.media ?? [];
+    const targetMedia = input.media ?? [];
+    const targetSlots = new Set(targetMedia.map((item) => item.slotId));
+
+    for (const item of beforeMedia) {
+      if (!targetSlots.has(item.slotId)) {
+        transaction.removeMedia(input.id, item.slotId);
+      }
+    }
+
+    // Survivors keep their relative order for now; appends land after them.
+    const survivors = beforeMedia.filter((item) => targetSlots.has(item.slotId));
+    const appended = targetMedia.filter((item) => isStagedSlotId(item.slotId));
+    for (const item of appended) {
+      if (!item.assetId) continue;
+      const options = Object.fromEntries(
+        Object.entries(item.options).filter(([, value]) => value === true),
+      );
+      transaction.attachAsset(input.id, item.assetId, {
+        ...(Object.keys(options).length > 0 ? { itemOptions: options } : {}),
+      });
+    }
+
+    // Options on items that already existed; a new item carried its own.
+    for (const item of targetMedia) {
+      if (isStagedSlotId(item.slotId)) continue;
+      const previous = beforeMedia.find(
+        (candidate) => candidate.slotId === item.slotId,
+      );
+      if (!previous) continue;
+      for (const [optionId, value] of Object.entries(item.options)) {
+        if (previous.options[optionId] === value) continue;
+        transaction.setMediaOption(item.slotId, optionId, value);
+      }
+    }
+
+    // Selection sort over the post-append arrangement into the target order.
+    // Only repeatable inputs can reorder; a single slot has nowhere to move.
+    if (!input.repeatable) continue;
+    const arrangement = [
+      ...survivors.map((item) => item.slotId),
+      ...appended.map((item) => item.slotId),
+    ];
+    const desired = targetMedia.map((item) => item.slotId);
+    for (let index = 0; index < desired.length; index += 1) {
+      const wanted = desired[index];
+      const from = arrangement.indexOf(wanted);
+      if (from === -1 || from === index) continue;
+      transaction.moveMedia(input.id, from, index);
+      const [moved] = arrangement.splice(from, 1);
+      arrangement.splice(index, 0, moved);
     }
   }
 }
