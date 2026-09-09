@@ -199,9 +199,17 @@ function createGenerationHarness(options: {
     },
   };
 
+  const staged: { current: readonly unknown[] } = { current: [] };
   return {
     commits,
     generation,
+    /** Inputs as a staged editor would show them, overriding the session's. */
+    get stagedInputs() {
+      return staged.current as readonly { id: string }[];
+    },
+    stage(inputs: readonly unknown[]) {
+      staged.current = inputs;
+    },
     get text() {
       return text;
     },
@@ -224,6 +232,28 @@ function mountComposer(
       react: React,
       mui: createMuiStubs(),
       panelUi: {},
+      // Stands in for the host's staged editor: it renders nothing of its own
+      // and hands the composer a controller over the inputs it asked for, so
+      // the composer's *use* of a draft is exercised without the panel.
+      generationUi: {
+        InputsDraft: ({
+          inputIds,
+          children,
+        }: {
+          inputIds: readonly string[];
+          children?: (controller: unknown) => unknown;
+        }) =>
+          children?.({
+            inputs: (harness.stagedInputs ?? []).filter((entry) =>
+              inputIds.includes(entry.id),
+            ),
+            canCommit: true,
+            error: null,
+            commit: (label: string, writes?: (tx: unknown) => void) =>
+              harness.generation.transaction(label, writes as never),
+            revert: () => undefined,
+          }) ?? null,
+      },
     },
   };
   const View = createComposerView({
@@ -986,6 +1016,67 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     view.unmount();
   });
 
+  it("rewrites the instruction line from a keyframe staged but not committed", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+      keyframes: [{ label: "Start frame", filled: false }],
+      length: 124,
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+    const instruction = () => textAreaFor("Instruction line");
+
+    // Nothing attached: text-to-video takes no instruction.
+    expect(instruction().value).toBe("");
+    expect(
+      screen.getByText("T2VA (no keyframes): the guide asks for no instruction line."),
+    ).toBeTruthy();
+
+    // Staged in the composer, *not* committed to the panel. The line describes
+    // the keyframes, so it has to follow the ones on screen rather than the
+    // ones the panel happens to hold.
+    act(() => {
+      harness.stage([
+        {
+          id: "141:image",
+          nodeId: "141",
+          param: "image",
+          label: "Start frame",
+          inputType: "image",
+          media: [
+            {
+              slotId: "staged:1",
+              ordinal: 0,
+              source: "asset",
+              assetId: "asset-k",
+              displayName: "Start frame",
+              mediaType: "image",
+              hasAudio: false,
+              options: {},
+              preparing: false,
+            },
+          ],
+        },
+      ]);
+      harness.setText("");
+    });
+
+    expect(instruction().value).toBe(
+      "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.",
+    );
+    expect(screen.getByText("I2VA (start frame): matches the guide.")).toBeTruthy();
+
+    // And it is what commits, in the same transaction as the staged keyframe.
+    click("Commit to prompt");
+    expect(harness.commits[0].value).toContain("is fully referenced.");
+    view.unmount();
+  });
+
   it("hands the instruction line over on Edit, and takes it back on Use derived", async () => {
     const { createComposerView, createComposerSession } = await loadPackage();
     const harness = createGenerationHarness({
@@ -1093,6 +1184,40 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     );
     expect(textAreaFor("Non-diegetic music").value).toBe("N/A");
     second.unmount();
+  });
+
+  // 3B/wiring — which of the panel's inputs the composer offers to edit.
+  it("offers the guide's own inputs to edit, never the prompt box", async () => {
+    const { keyframeInputIds, referenceInputIds } = await loadPackage();
+    const inputs = [
+      { id: "136:prompt", inputType: "text", label: "Prompt" },
+      { id: "141:image", inputType: "image", label: "Start frame" },
+      { id: "142:image", inputType: "image", label: "End frame" },
+      { id: "143:mask", inputType: "image", label: "Mask" },
+      {
+        id: "144:images",
+        inputType: "image",
+        label: "Image inputs",
+        repeatable: { max: 9, optionIds: [] },
+      },
+      {
+        id: "145:videos",
+        inputType: "video",
+        label: "Video inputs",
+        repeatable: { max: 3, optionIds: ["audio"] },
+      },
+    ];
+
+    // The base guide edits the keyframes: they are what the instruction line
+    // is derived from. A single-slot image that is not a keyframe is not one.
+    expect(keyframeInputIds(inputs)).toEqual(["141:image", "142:image"]);
+    // The reference guide edits the reference lists, because the ordinals its
+    // prose cites are positions in them.
+    expect(referenceInputIds(inputs)).toEqual(["144:images", "145:videos"]);
+    // Neither offers the prompt: the composer *is* the prompt's editor, and
+    // showing the panel's box inside it would be two places to write one value.
+    expect(keyframeInputIds(inputs)).not.toContain("136:prompt");
+    expect(referenceInputIds(inputs)).not.toContain("136:prompt");
   });
 
   it("picks the prompt input rather than the first text input", async () => {

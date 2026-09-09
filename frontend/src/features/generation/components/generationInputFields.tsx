@@ -21,6 +21,7 @@ import type {
 import {
   buildRepeatableInputSlotId,
   getWorkflowInputId,
+  getWorkflowInputValue,
 } from "../utils/workflowInputs";
 import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 import { generationTextInputClaims } from "../services/GenerationTextInputClaims";
@@ -145,6 +146,13 @@ interface MediaInputSectionProps {
   onEditMedia?: (inputId: string, inputType: "video") => void;
   /** Actions to render refused, with the reason. See the staged editor. */
   disabledActions?: AssetDropSlotDisabledActions;
+  /**
+   * Narrows which assets the slot accepts, on top of its input type's own
+   * rule. The panel accepts a *video* on an image slot because dropping one
+   * opens a frame picker; a surface that cannot run that flow has to refuse
+   * the drag rather than accept it and stage something else.
+   */
+  acceptAsset?: (asset: Asset) => boolean;
 }
 
 function MediaInputSection({
@@ -157,11 +165,17 @@ function MediaInputSection({
   onClickSelect,
   onEditMedia,
   disabledActions,
+  acceptAsset: acceptAssetOverride,
 }: MediaInputSectionProps) {
   const inputId = getWorkflowInputId(input);
   const mediaInputType = input.inputType;
   const acceptTypes = resolveAcceptTypes(mediaInputType);
-  const acceptAsset = acceptAssetForInputType(mediaInputType);
+  // The caller's rule narrows the input type's own; it never widens it.
+  const defaultAcceptAsset = acceptAssetForInputType(mediaInputType);
+  const acceptAsset = acceptAssetOverride
+    ? (asset: Asset) =>
+        (defaultAcceptAsset?.(asset) ?? false) && acceptAssetOverride(asset)
+    : defaultAcceptAsset;
   const acceptExternalTypes = resolveExternalAcceptTypes(mediaInputType);
   const preparing = useMediaInputPreparationStore((state) =>
     state.preparingInputIds.has(inputId),
@@ -391,3 +405,116 @@ function BatchMediaInputSection({
 }
 
 export const MemoizedBatchMediaInputSection = memo(BatchMediaInputSection);
+
+interface MediaInputGroupSectionProps {
+  title: string;
+  inputs: MediaWorkflowInput[];
+  bgColor: string;
+  mediaInputs: Record<string, GenerationMediaInputValue | null>;
+  onInputDrop: (inputId: string, asset: Asset) => void;
+  onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
+  onInputClear: (inputId: string) => void;
+  onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
+  onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
+  onEditMedia?: (inputId: string, inputType: "video") => void;
+  disabledActions?: AssetDropSlotDisabledActions;
+  acceptAsset?: (asset: Asset) => boolean;
+}
+
+function MediaInputGroupSection({
+  title,
+  inputs,
+  bgColor,
+  mediaInputs,
+  onInputDrop,
+  onExternalInputDrop,
+  onInputClear,
+  onSwapMediaInputs,
+  onClickSelect,
+  onEditMedia,
+  disabledActions,
+  acceptAsset,
+}: MediaInputGroupSectionProps) {
+  const preparingInputIds = useMediaInputPreparationStore(
+    (state) => state.preparingInputIds,
+  );
+
+  return (
+    <PanelSection title={title} bgColor={bgColor} defaultOpen={true}>
+      <Box
+        sx={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 1.5,
+          alignItems: "flex-start",
+        }}
+      >
+        {inputs.map((input) => {
+          const inputId = getWorkflowInputId(input);
+          const mediaInputType = input.inputType;
+          const acceptTypes = resolveAcceptTypes(mediaInputType);
+          const value = getWorkflowInputValue(mediaInputs, input);
+          const preparing = preparingInputIds.has(inputId);
+          const baseSlotValue = toSlotValue(value, mediaInputType);
+          const slotValue = preparing
+            ? toPreparingSlotValue(baseSlotValue, mediaInputType)
+            : baseSlotValue;
+
+          return (
+            <Box key={inputId} sx={{ display: "flex", flexDirection: "column" }}>
+              <AssetDropSlot
+                disabledActions={disabledActions}
+                id={inputId}
+                label={input.label}
+                accept={acceptTypes}
+                acceptAsset={(asset) =>
+                  (acceptAssetForInputType(mediaInputType)?.(asset) ?? false) &&
+                  (acceptAsset?.(asset) ?? true)
+                }
+                acceptExternal={resolveExternalAcceptTypes(mediaInputType)}
+                value={slotValue}
+                reorderData={
+                  slotValue && !preparing
+                    ? { type: "media-input", inputId }
+                    : null
+                }
+                onReorderDrop={(data) =>
+                  onSwapMediaInputs(data.inputId, inputId)
+                }
+                onClear={() => onInputClear(inputId)}
+                onEdit={
+                  mediaInputType === "video" &&
+                  slotValue &&
+                  !preparing &&
+                  onEditMedia
+                    ? () => onEditMedia(inputId, "video")
+                    : undefined
+                }
+                onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
+                onExternalDrop={(file: File) =>
+                  onExternalInputDrop(inputId, file)
+                }
+                onSelect={() => onClickSelect(inputId, mediaInputType)}
+              />
+              {input.description ? (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: "text.secondary",
+                    fontSize: "0.7rem",
+                    mt: 0.75,
+                    maxWidth: 120,
+                  }}
+                >
+                  {input.description}
+                </Typography>
+              ) : null}
+            </Box>
+          );
+        })}
+      </Box>
+    </PanelSection>
+  );
+}
+
+export const MemoizedMediaInputGroupSection = memo(MediaInputGroupSection);

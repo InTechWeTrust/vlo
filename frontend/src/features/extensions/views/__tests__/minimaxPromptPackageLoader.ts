@@ -179,6 +179,8 @@ export interface MinimaxPromptPackage {
   setPreamble(parsed: LoadedParsedPrompt, preamble: string): LoadedParsedPrompt;
   composerDraftKey(workflowFingerprint: string, inputId: string): string;
   promptInput(session: unknown): { readonly id: string } | null;
+  keyframeInputIds(inputs: readonly unknown[]): readonly string[];
+  referenceInputIds(inputs: readonly unknown[]): readonly string[];
 
   alignFrameCount(length: number): number;
   effectiveDurationSeconds(length: number): number;

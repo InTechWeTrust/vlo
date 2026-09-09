@@ -30,21 +30,16 @@ import { GenerationPanelSectionHost } from "./GenerationPanelSectionHost";
 import { ExtensionUiSlot, anchorSegment } from "../../extensions/ui/publicApi";
 import {
   MemoizedBatchMediaInputSection,
+  MemoizedMediaInputGroupSection,
   MemoizedMediaInputSection,
   MemoizedTextInputSection,
   PROMPT_COMMIT_DEBOUNCE_MS,
 } from "./generationInputFields";
 import {
-  acceptAssetForInputType,
   isMediaWorkflowInput,
-  resolveAcceptTypes,
-  resolveExternalAcceptTypes,
-  toPreparingSlotValue,
-  toSlotValue,
   type MediaWorkflowInput,
 } from "./generationInputFieldValues";
-import { AssetDropSlot, CommittedTextInput } from "../../panelUI";
-import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
+import { CommittedTextInput } from "../../panelUI";
 
 interface GenerationInputsProps {
   inputs: WorkflowInput[];
@@ -765,110 +760,6 @@ function buildRenderableSections(
 }
 
 
-interface MediaInputGroupSectionProps {
-  title: string;
-  inputs: MediaWorkflowInput[];
-  bgColor: string;
-  mediaInputs: Record<string, GenerationMediaInputValue | null>;
-  onInputDrop: (inputId: string, asset: Asset) => void;
-  onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
-  onInputClear: (inputId: string) => void;
-  onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
-  onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
-  onEditMedia?: (inputId: string, inputType: "video") => void;
-}
-
-function MediaInputGroupSection({
-  title,
-  inputs,
-  bgColor,
-  mediaInputs,
-  onInputDrop,
-  onExternalInputDrop,
-  onInputClear,
-  onSwapMediaInputs,
-  onClickSelect,
-  onEditMedia,
-}: MediaInputGroupSectionProps) {
-  const preparingInputIds = useMediaInputPreparationStore(
-    (state) => state.preparingInputIds,
-  );
-
-  return (
-    <PanelSection title={title} bgColor={bgColor} defaultOpen={true}>
-      <Box
-        sx={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 1.5,
-          alignItems: "flex-start",
-        }}
-      >
-        {inputs.map((input) => {
-          const inputId = getWorkflowInputId(input);
-          const mediaInputType = input.inputType;
-          const acceptTypes = resolveAcceptTypes(mediaInputType);
-          const value = getWorkflowInputValue(mediaInputs, input);
-          const preparing = preparingInputIds.has(inputId);
-          const baseSlotValue = toSlotValue(value, mediaInputType);
-          const slotValue = preparing
-            ? toPreparingSlotValue(baseSlotValue, mediaInputType)
-            : baseSlotValue;
-
-          return (
-            <Box key={inputId} sx={{ display: "flex", flexDirection: "column" }}>
-              <AssetDropSlot
-                id={inputId}
-                label={input.label}
-                accept={acceptTypes}
-                acceptAsset={acceptAssetForInputType(mediaInputType)}
-                acceptExternal={resolveExternalAcceptTypes(mediaInputType)}
-                value={slotValue}
-                reorderData={
-                  slotValue && !preparing
-                    ? { type: "media-input", inputId }
-                    : null
-                }
-                onReorderDrop={(data) =>
-                  onSwapMediaInputs(data.inputId, inputId)
-                }
-                onClear={() => onInputClear(inputId)}
-                onEdit={
-                  mediaInputType === "video" &&
-                  slotValue &&
-                  !preparing &&
-                  onEditMedia
-                    ? () => onEditMedia(inputId, "video")
-                    : undefined
-                }
-                onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
-                onExternalDrop={(file: File) =>
-                  onExternalInputDrop(inputId, file)
-                }
-                onSelect={() => onClickSelect(inputId, mediaInputType)}
-              />
-              {input.description ? (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: "text.secondary",
-                    fontSize: "0.7rem",
-                    mt: 0.75,
-                    maxWidth: 120,
-                  }}
-                >
-                  {input.description}
-                </Typography>
-              ) : null}
-            </Box>
-          );
-        })}
-      </Box>
-    </PanelSection>
-  );
-}
-
-const MemoizedMediaInputGroupSection = memo(MediaInputGroupSection);
 
 function isResolutionLadderWidget(widget: WorkflowWidgetInput): boolean {
   return (widget.config.resolutionLadder?.length ?? 0) > 0;

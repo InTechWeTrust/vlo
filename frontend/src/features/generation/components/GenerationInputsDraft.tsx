@@ -1,6 +1,10 @@
 import { useCallback, useMemo, type ReactNode } from "react";
 import { Alert, Box } from "@mui/material";
 import type { Asset } from "../../../types/Asset";
+import { resolveAssetType } from "../../../shared/utils/assetTypeDetection";
+import { useAssetStore } from "../../userAssets";
+import { useGenerationStore } from "../useGenerationStore";
+import { buildWorkflowInputLookup, getWorkflowInputId } from "../utils/workflowInputs";
 import { useGenerationInputsDraft } from "../draft/useGenerationInputsDraft";
 import type { GenerationInputsDraftController } from "../draft/useGenerationInputsDraft";
 import type {
@@ -15,10 +19,14 @@ import type { AssetDropSlotDisabledActions } from "../../panelUI";
 import { buildRepeatableInputSlotId } from "../utils/workflowInputs";
 import {
   MemoizedBatchMediaInputSection,
+  MemoizedMediaInputGroupSection,
   MemoizedMediaInputSection,
   MemoizedTextInputSection,
 } from "./generationInputFields";
-import { isMediaWorkflowInput } from "./generationInputFieldValues";
+import {
+  isMediaWorkflowInput,
+  type MediaWorkflowInput,
+} from "./generationInputFieldValues";
 
 /**
  * A staged editor over some of the generation panel's inputs.
@@ -57,11 +65,17 @@ const STAGED_REFUSALS: AssetDropSlotDisabledActions = {
  */
 function toPanelValue(
   item: GenerationMediaItemSnapshot | undefined,
+  resolveAsset: (assetId: string) => Asset | undefined,
 ): GenerationMediaInputValue | null {
   if (!item) return null;
+  // The *library* asset, not a stub built from the snapshot: the slot reads
+  // its preview off `asset.thumbnail`/`asset.src`, and its type through
+  // `resolveAssetType`, neither of which a detached snapshot carries. Without
+  // it every staged item renders "No Preview".
+  const asset = item.assetId ? resolveAsset(item.assetId) : undefined;
   return {
     kind: "asset",
-    asset: {
+    asset: asset ?? {
       id: item.assetId ?? item.slotId,
       name: item.displayName,
       type: item.mediaType,
@@ -77,25 +91,21 @@ function toPanelValue(
   } as unknown as GenerationMediaInputValue;
 }
 
-function toPanelInput(input: GenerationInputSnapshot): WorkflowInput {
-  return {
-    id: input.id,
-    nodeId: input.nodeId,
-    param: input.param,
-    label: input.label,
-    inputType: input.inputType,
-    ...(input.description ? { description: input.description } : {}),
-    presentation: input.repeatable
-      ? {
-          repeatable: {
-            max: input.repeatable.max,
-            // Without the offered option ids the strip never renders the
-            // audio switch, however capable the item is.
-            itemOptions: input.repeatable.optionIds,
-          },
-        }
-      : {},
-  } as unknown as WorkflowInput;
+/**
+ * What a staged drop may carry.
+ *
+ * The panel accepts a video on an *image* slot and opens a frame picker, whose
+ * result is a captured frame — work that starts immediately and produces a
+ * value no id can name until it finishes, so it cannot be held in a draft.
+ * Accepting the drag and staging a plain attach instead would skip the picker
+ * the user expects and stage a write the transaction refuses anyway.
+ */
+function stageableAsset(
+  inputType: GenerationInputSnapshot["inputType"],
+  asset: Asset,
+): boolean {
+  if (inputType !== "image") return true;
+  return resolveAssetType(asset) !== "video";
 }
 
 export function GenerationInputsDraft({
@@ -104,6 +114,26 @@ export function GenerationInputsDraft({
 }: GenerationInputsDraftProps) {
   const controller = useGenerationInputsDraft(inputIds);
   const { inputs, apply } = controller;
+  const assets = useAssetStore((state) => state.assets);
+  /**
+   * The panel's *own* input definitions, not ones rebuilt from the snapshot.
+   *
+   * The snapshot is the detached, extension-facing projection: it carries no
+   * grouping, no per-item option ids, and no asset beyond an id. Synthesising
+   * a `WorkflowInput` from it means silently dropping whatever the fields read
+   * that the projection does not publish — which is how the staged editor lost
+   * previews, the audio switch, and the shared "Frames" heading at once. The
+   * definitions come from the store; only the *values* come from the draft.
+   */
+  const workflowInputs = useGenerationStore((state) => state.workflowInputs);
+  const definitions = useMemo(
+    () => buildWorkflowInputLookup(workflowInputs),
+    [workflowInputs],
+  );
+  const resolveAsset = useCallback(
+    (assetId: string) => assets.find((candidate) => candidate.id === assetId),
+    [assets],
+  );
 
   const textValues = useMemo(() => {
     const values: Record<string, string> = {};
@@ -149,6 +179,64 @@ export function GenerationInputsDraft({
     [apply],
   );
 
+  /**
+   * Grouped exactly as the panel groups them: a workflow that puts its start
+   * and end frames in one "Frames" block should not have them fall into two
+   * headings here, which is what rendering each input on its own produced.
+   */
+  const blocks = useMemo(() => {
+    const built: Array<
+      | { kind: "single"; input: WorkflowInput; snapshot: GenerationInputSnapshot }
+      | { kind: "group"; id: string; title: string; entries: Array<{
+          input: MediaWorkflowInput;
+          snapshot: GenerationInputSnapshot;
+        }> }
+    > = [];
+    const groups = new Map<string, Extract<(typeof built)[number], { kind: "group" }>>();
+    for (const snapshot of inputs) {
+      const input = definitions.get(snapshot.id);
+      if (!input) continue;
+      const group = input.presentation?.group;
+      if (!group?.id || !isMediaWorkflowInput(input)) {
+        built.push({ kind: "single", input, snapshot });
+        continue;
+      }
+      const existing = groups.get(group.id);
+      if (existing) {
+        existing.entries.push({ input, snapshot });
+        continue;
+      }
+      const block = {
+        kind: "group" as const,
+        id: group.id,
+        title: group.title ?? input.label,
+        entries: [{ input, snapshot }],
+      };
+      groups.set(group.id, block);
+      built.push(block);
+    }
+    return built;
+  }, [inputs, definitions]);
+
+  const mediaValuesFor = useCallback(
+    (snapshot: GenerationInputSnapshot, input: WorkflowInput) => {
+      const staged = snapshot.media ?? [];
+      const values: Record<string, GenerationMediaInputValue | null> = {};
+      if (snapshot.repeatable) {
+        staged.forEach((item, slotIndex) => {
+          values[buildRepeatableInputSlotId(input, slotIndex)] = toPanelValue(
+            item,
+            resolveAsset,
+          );
+        });
+      } else {
+        values[getWorkflowInputId(input)] = toPanelValue(staged[0], resolveAsset);
+      }
+      return values;
+    },
+    [resolveAsset],
+  );
+
   return (
     <Box
       data-testid="generation-inputs-draft"
@@ -159,65 +247,90 @@ export function GenerationInputsDraft({
           {controller.error}
         </Alert>
       ) : null}
-      {inputs.map((input, index) => {
+      {blocks.map((block, index) => {
         const bgColor = index % 2 === 0 ? "#202024" : "#18181b";
-        const panelInput = toPanelInput(input);
 
-        if (input.inputType === "text") {
+        if (block.kind === "group") {
+          const mediaInputs: Record<string, GenerationMediaInputValue | null> = {};
+          for (const entry of block.entries) {
+            Object.assign(mediaInputs, mediaValuesFor(entry.snapshot, entry.input));
+          }
+          return (
+            <MemoizedMediaInputGroupSection
+              key={`group:${block.id}`}
+              title={block.title}
+              inputs={block.entries.map((entry) => entry.input)}
+              bgColor={bgColor}
+              mediaInputs={mediaInputs}
+              disabledActions={STAGED_REFUSALS}
+              acceptAsset={(asset) =>
+                block.entries.every((entry) =>
+                  stageableAsset(entry.input.inputType, asset),
+                )
+              }
+              onInputDrop={(inputId, asset) => onDrop(inputId, asset)}
+              onExternalInputDrop={() => undefined}
+              onInputClear={(inputId) => {
+                const entry = block.entries.find(
+                  (candidate) => getWorkflowInputId(candidate.input) === inputId,
+                );
+                const item = entry?.snapshot.media?.[0];
+                if (entry && item) onClearSlot(entry.snapshot.id, item.slotId);
+              }}
+              onSwapMediaInputs={() => undefined}
+              onClickSelect={() => undefined}
+            />
+          );
+        }
+
+        const { input, snapshot } = block;
+        if (snapshot.inputType === "text") {
           return (
             <MemoizedTextInputSection
-              key={input.id}
-              input={panelInput}
+              key={snapshot.id}
+              input={input}
               bgColor={bgColor}
-              value={textValues[input.id] ?? ""}
-              commitInputId={input.id}
+              value={textValues[snapshot.id] ?? ""}
+              commitInputId={snapshot.id}
               onCommit={onTextCommit}
             />
           );
         }
-        if (!isMediaWorkflowInput(panelInput)) return null;
+        if (!isMediaWorkflowInput(input)) return null;
+        const staged = snapshot.media ?? [];
 
-        if (input.repeatable) {
-          const staged = input.media ?? [];
-          // The strip reads its items out of a record keyed by the panel's own
-          // repeatable slot ids, so the projection is re-keyed into that shape
-          // rather than the strip being taught a second one.
-          const mediaInputs: Record<string, GenerationMediaInputValue | null> = {};
-          staged.forEach((item, slotIndex) => {
-            mediaInputs[buildRepeatableInputSlotId(panelInput, slotIndex)] =
-              toPanelValue(item);
-          });
+        if (snapshot.repeatable) {
           const indexOfSlotKey = (slotKey: string): number | null => {
-            for (let slotIndex = 0; slotIndex < input.repeatable!.max; slotIndex += 1) {
-              if (buildRepeatableInputSlotId(panelInput, slotIndex) === slotKey) {
+            for (
+              let slotIndex = 0;
+              slotIndex < snapshot.repeatable!.max;
+              slotIndex += 1
+            ) {
+              if (buildRepeatableInputSlotId(input, slotIndex) === slotKey) {
                 return slotIndex;
               }
             }
             return null;
           };
           const slotIdAt = (slotKey: string): string | null => {
-            const at = staged.findIndex(
-              (_item, slotIndex) =>
-                buildRepeatableInputSlotId(panelInput, slotIndex) === slotKey,
-            );
-            return at === -1 ? null : staged[at].slotId;
+            const at = indexOfSlotKey(slotKey);
+            return at === null ? null : (staged[at]?.slotId ?? null);
           };
           return (
             <MemoizedBatchMediaInputSection
-              key={input.id}
-              input={panelInput}
+              key={snapshot.id}
+              input={input}
               bgColor={bgColor}
-              mediaInputs={mediaInputs}
-              firstValue={toPanelValue(staged[0])}
+              mediaInputs={mediaValuesFor(snapshot, input)}
+              firstValue={toPanelValue(staged[0], resolveAsset)}
               disabledActions={STAGED_REFUSALS}
               onInputDrop={(slotKey, asset) => {
-                // The strip names the tile that was dropped on, and that is a
-                // position, not an append: dropping onto an occupied tile
-                // replaces it, exactly as the live panel does.
+                // The strip names the tile dropped on, and that is a position:
+                // a drop on an occupied tile replaces it, as the panel does.
                 const at = indexOfSlotKey(slotKey);
                 apply({
                   kind: "attachAsset",
-                  inputId: input.id,
+                  inputId: snapshot.id,
                   assetId: asset.id,
                   ...(at === null || at >= staged.length ? {} : { at }),
                 });
@@ -225,23 +338,18 @@ export function GenerationInputsDraft({
               onExternalInputDrop={() => undefined}
               onInputClear={(slotKey) => {
                 const slotId = slotIdAt(slotKey);
-                if (slotId) onClearSlot(input.id, slotId);
+                if (slotId) onClearSlot(snapshot.id, slotId);
               }}
               onMoveMediaInput={(slotKey, targetIndex) => {
-                const from = staged.findIndex(
-                  (_item, slotIndex) =>
-                    buildRepeatableInputSlotId(panelInput, slotIndex) === slotKey,
-                );
-                if (from === -1) return;
-                onReorder(input.id, from, targetIndex);
+                const from = indexOfSlotKey(slotKey);
+                if (from === null) return;
+                onReorder(snapshot.id, from, targetIndex);
               }}
-              // Cross-input drags are refused at the slot, so this is never
-              // reached; it stays required by the field's contract.
               onSwapMediaInputs={() => undefined}
               onClickSelect={() => undefined}
               onToggleItemOption={(slotKey, option, active) => {
                 const slotId = slotIdAt(slotKey);
-                if (slotId) onToggleOption(input.id, slotId, option, active);
+                if (slotId) onToggleOption(snapshot.id, slotId, option, active);
               }}
             />
           );
@@ -249,16 +357,17 @@ export function GenerationInputsDraft({
 
         return (
           <MemoizedMediaInputSection
-            key={input.id}
-            input={panelInput}
+            key={snapshot.id}
+            input={input}
             bgColor={bgColor}
-            value={toPanelValue((input.media ?? [])[0])}
+            value={toPanelValue(staged[0], resolveAsset)}
             disabledActions={STAGED_REFUSALS}
-            onInputDrop={(_inputId, asset) => onDrop(input.id, asset)}
+            acceptAsset={(asset) => stageableAsset(snapshot.inputType, asset)}
+            onInputDrop={(_inputId, asset) => onDrop(snapshot.id, asset)}
             onExternalInputDrop={() => undefined}
             onInputClear={() => {
-              const item = (input.media ?? [])[0];
-              if (item) onClearSlot(input.id, item.slotId);
+              const item = staged[0];
+              if (item) onClearSlot(snapshot.id, item.slotId);
             }}
             onClickSelect={() => undefined}
           />
