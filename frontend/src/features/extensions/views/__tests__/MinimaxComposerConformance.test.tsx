@@ -200,6 +200,7 @@ function createGenerationHarness(options: {
   };
 
   const staged: { current: readonly unknown[] } = { current: [] };
+  const stagedWidgets = new Map<string, unknown>();
   return {
     commits,
     generation,
@@ -209,6 +210,12 @@ function createGenerationHarness(options: {
     },
     stage(inputs: readonly unknown[]) {
       staged.current = inputs;
+    },
+    get stagedWidgets() {
+      return stagedWidgets as ReadonlyMap<string, unknown>;
+    },
+    stageWidget(key: string, value: unknown) {
+      stagedWidgets.set(key, value);
     },
     get text() {
       return text;
@@ -247,6 +254,7 @@ function mountComposer(
             inputs: (harness.stagedInputs ?? []).filter((entry) =>
               inputIds.includes(entry.id),
             ),
+            widgetValues: harness.stagedWidgets,
             canCommit: true,
             error: null,
             commit: (label: string, writes?: (tx: unknown) => void) =>
@@ -1074,6 +1082,37 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     // And it is what commits, in the same transaction as the staged keyframe.
     click("Commit to prompt");
     expect(harness.commits[0].value).toContain("is fully referenced.");
+    view.unmount();
+  });
+
+  it("rewrites the duration in the instruction line from a staged length", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+      keyframes: [{ label: "End frame", filled: true }],
+      length: 124,
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+
+    // 124 frames at 24fps, already on the 17k+5 grid.
+    expect(textAreaFor("Instruction line").value).toContain(
+      "the 5.17-second mark",
+    );
+
+    // Dragged in the composer, not committed: the line describes the video the
+    // user is choosing, so `S.SS` follows it before anything is written.
+    act(() => {
+      harness.stageWidget("100:length", 192);
+      harness.setText("");
+    });
+    expect(textAreaFor("Instruction line").value).toContain(
+      "the 8.00-second mark",
+    );
     view.unmount();
   });
 

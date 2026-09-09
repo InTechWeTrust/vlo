@@ -11,6 +11,8 @@ import {
   compileDraftCommands,
   findDraftConflicts,
   projectDraftInputs,
+  projectDraftWidgets,
+  widgetKey,
   type GenerationInputDraftOp,
   type StagedAttachResolver,
 } from "./generationInputsDraft";
@@ -27,6 +29,12 @@ import {
 export interface GenerationInputsDraftController {
   /** The addressed inputs as they would be after every staged edit. */
   readonly inputs: readonly GenerationInputSnapshot[];
+  /**
+   * The addressed widgets, keyed `nodeId:param`, as they would be after every
+   * staged edit — the panel's committed value where the draft has not touched
+   * one.
+   */
+  readonly widgetValues: ReadonlyMap<string, unknown>;
   /** The draft holds edits of its own. */
   readonly hasDraftChanges: boolean;
   /** The panel moved under an input this draft is holding. */
@@ -65,8 +73,15 @@ interface DraftState {
 
 const EMPTY: DraftState = { fingerprint: null, base: null, ops: [] };
 
+/** One widget a draft may edit, addressed as the transaction addresses it. */
+export interface GenerationDraftWidgetTarget {
+  readonly nodeId: string;
+  readonly param: string;
+}
+
 export function useGenerationInputsDraft(
   inputIds: readonly string[],
+  widgetTargets: readonly GenerationDraftWidgetTarget[] = [],
 ): GenerationInputsDraftController {
   const snapshot = useSyncExternalStore(
     (listener) => generationSessionService.subscribe(listener),
@@ -103,6 +118,31 @@ export function useGenerationInputsDraft(
   );
 
   const selected = useMemo(() => new Set(inputIds), [inputIds]);
+  const widgetTargetKeys = useMemo(
+    () => new Set(widgetTargets.map((t) => widgetKey(t.nodeId, t.param))),
+    [widgetTargets],
+  );
+
+  /**
+   * Committed widget values for the requested targets, overlaid with staged
+   * ones. Read from the workflow snapshot rather than the panel's own widget
+   * state so the two halves of a draft — inputs and widgets — come from one
+   * source.
+   */
+  const widgetValues = useMemo(() => {
+    const values = new Map<string, unknown>();
+    for (const node of snapshot?.workflow.nodes ?? []) {
+      for (const widget of node.widgets) {
+        const key = widgetKey(node.id, widget.param);
+        if (!widgetTargetKeys.has(key)) continue;
+        values.set(key, widget.value);
+      }
+    }
+    for (const [key, value] of projectDraftWidgets(live.ops)) {
+      if (widgetTargetKeys.has(key)) values.set(key, value);
+    }
+    return values;
+  }, [snapshot, live.ops, widgetTargetKeys]);
 
   const projectedAll = useMemo(
     () => (snapshot ? projectDraftInputs(snapshot, live.ops, resolveAttach) : []),
@@ -123,7 +163,13 @@ export function useGenerationInputsDraft(
 
   const apply = useCallback(
     (op: GenerationInputDraftOp) => {
-      if (!selected.has(op.inputId)) return;
+      // A widget op names a node parameter rather than an input, so it is
+      // gated on the requested widget targets instead.
+      if (op.kind === "setWidget") {
+        if (!widgetTargetKeys.has(widgetKey(op.nodeId, op.param))) return;
+      } else if (!selected.has(op.inputId)) {
+        return;
+      }
       setError(null);
       setDraft((current) => {
         const fresh =
@@ -140,7 +186,7 @@ export function useGenerationInputsDraft(
         };
       });
     },
-    [fingerprint, selected],
+    [fingerprint, selected, widgetTargetKeys],
   );
 
   const revert = useCallback(() => {
@@ -173,7 +219,12 @@ export function useGenerationInputsDraft(
       const result = generationSessionService.transaction(label, (transaction) => {
         // Diffed against the session as it is *now*, so the writes describe
         // the panel being written rather than the one editing began against.
-        compileDraftCommands(current.inputs, target, transaction);
+        compileDraftCommands(
+          current.inputs,
+          target,
+          transaction,
+          projectDraftWidgets(live.ops),
+        );
         additionalWrites?.(transaction);
       });
       if (!result.ok) {
@@ -192,6 +243,7 @@ export function useGenerationInputsDraft(
 
   return {
     inputs,
+    widgetValues,
     hasDraftChanges: live.ops.length > 0,
     hasConflict: conflicts.length > 0,
     canCommit: snapshot !== null && conflicts.length === 0,

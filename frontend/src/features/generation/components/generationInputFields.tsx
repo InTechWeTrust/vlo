@@ -1,5 +1,6 @@
 import { memo, useCallback, useMemo } from "react";
-import { Box, Button, Typography } from "@mui/material";
+import { Box, Button, Checkbox, IconButton, MenuItem, Slider, TextField, Tooltip, Typography } from "@mui/material";
+import { Casino, InfoOutlined } from "@mui/icons-material";
 import type { Asset } from "../../../types/Asset";
 import {
   AssetBatchDropSlot,
@@ -17,12 +18,14 @@ import type {
   GenerationMediaInputValue,
   WorkflowInput,
   WorkflowInputItemOption,
+  WorkflowWidgetInput,
 } from "../types";
 import {
   buildRepeatableInputSlotId,
   getWorkflowInputId,
   getWorkflowInputValue,
 } from "../utils/workflowInputs";
+import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
 import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 import { generationTextInputClaims } from "../services/GenerationTextInputClaims";
 import { useGenerationTextInputClaim } from "../hooks/useGenerationTextInputClaim";
@@ -34,6 +37,326 @@ import {
   toSlotValue,
   type MediaWorkflowInput,
 } from "./generationInputFieldValues";
+
+function shouldUseNumericWidgetInput(
+  widget: WorkflowWidgetInput,
+  value: unknown,
+): boolean {
+  const valueType = widget.config.valueType;
+  const hasExplicitNumericType = valueType === "int" || valueType === "float";
+  if (
+    valueType &&
+    !hasExplicitNumericType &&
+    valueType !== "unknown"
+  ) {
+    return false;
+  }
+
+  const hasNumericSource =
+    typeof widget.currentValue === "number" ||
+    typeof value === "number" ||
+    (hasExplicitNumericType && typeof value === "string");
+  if (!hasNumericSource) return false;
+
+  const hasUnsafeBounds =
+    (typeof widget.config.min === "number" &&
+      Number.isInteger(widget.config.min) &&
+      !Number.isSafeInteger(widget.config.min)) ||
+    (typeof widget.config.max === "number" &&
+      Number.isInteger(widget.config.max) &&
+      !Number.isSafeInteger(widget.config.max));
+
+  if (hasUnsafeBounds) return false;
+  if (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    !Number.isSafeInteger(value)
+  ) {
+    return false;
+  }
+  if (typeof value === "string" && isUnsafeIntegerString(value)) {
+    return false;
+  }
+  return true;
+}
+
+function isEnumWidget(widget: WorkflowWidgetInput): boolean {
+  return widget.config.valueType === "enum" && !!widget.config.options?.length;
+}
+
+function isBooleanWidget(widget: WorkflowWidgetInput): boolean {
+  return widget.config.valueType === "boolean";
+}
+
+function isSliderWidget(widget: WorkflowWidgetInput): boolean {
+  return widget.config.control === "slider";
+}
+
+/**
+ * String widgets are prompts in practice, so they get the same full-width
+ * multiline box the presented text inputs use instead of an inline row field.
+ */
+function isTextAreaWidget(widget: WorkflowWidgetInput): boolean {
+  return (
+    widget.config.valueType === "string" &&
+    !widget.config.options?.length &&
+    widget.config.control !== "slider"
+  );
+}
+
+function formatSliderValue(
+  widget: WorkflowWidgetInput,
+  value: number,
+): string {
+  const { displayUnit } = widget.config;
+  if (displayUnit) {
+    const transformed = value * displayUnit.scale + displayUnit.offset;
+    return formatSliderNumber(
+      transformed,
+      undefined,
+      displayUnit.unit,
+      displayUnit.precision ?? 0,
+    );
+  }
+
+  if (
+    widget.config.sliderDisplay === "percent" ||
+    (widget.config.sliderDisplay == null &&
+      widget.kind === "derived" &&
+      widget.deriveKind === "dual_sampler_denoise")
+  ) {
+    return formatSliderPercent(value);
+  }
+
+  return formatSliderNumber(value, widget.config.step, widget.config.unit);
+}
+
+function parseWidgetValue(
+  raw: string,
+  useNumericInput: boolean,
+  widget: WorkflowWidgetInput,
+): unknown {
+  if (isBooleanWidget(widget)) {
+    if (raw === "true") return true;
+    if (raw === "false") return false;
+    return raw;
+  }
+  if (isEnumWidget(widget)) {
+    return parseEnumValue(raw, widget.config.options);
+  }
+  if (!useNumericInput) return raw;
+
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return raw;
+
+  if (/^-?\d+$/.test(trimmed)) {
+    if (isUnsafeIntegerString(trimmed)) {
+      return trimmed;
+    }
+    const intValue = Number.parseInt(trimmed, 10);
+    if (Number.isNaN(intValue)) return raw;
+    if (widget.config.valueType === "float") return Number(intValue);
+    return intValue;
+  }
+
+  const floatValue = Number.parseFloat(trimmed);
+  if (Number.isNaN(floatValue)) return raw;
+  if (widget.config.valueType === "int") return raw;
+  return floatValue;
+}
+
+function isUnsafeIntegerString(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!/^-?\d+$/.test(trimmed)) return false;
+  try {
+    const intValue = BigInt(trimmed);
+    return (
+      intValue > BigInt(Number.MAX_SAFE_INTEGER) ||
+      intValue < BigInt(Number.MIN_SAFE_INTEGER)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function formatSliderPercent(value: number): string {
+  const percentage = value * 100;
+  if (Math.abs(percentage - Math.round(percentage)) < 0.0001) {
+    return `${Math.round(percentage)}%`;
+  }
+  return `${percentage.toFixed(1)}%`;
+}
+
+function formatSliderNumber(
+  value: number,
+  step: number | undefined,
+  unit: string | undefined,
+  precisionOverride?: number,
+): string {
+  const precision = precisionOverride ?? inferSliderPrecision(step);
+  const roundedValue =
+    precision === 0 ? Math.round(value) : Number(value.toFixed(precision));
+  const formatted =
+    precision === 0
+      ? String(roundedValue)
+      : roundedValue.toFixed(precision).replace(/\.?0+$/, "");
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function inferSliderPrecision(step: number | undefined): number {
+  if (typeof step !== "number" || !Number.isFinite(step) || step <= 0) {
+    return 2;
+  }
+
+  const normalized = step.toString();
+  if (!normalized.includes(".")) {
+    return 0;
+  }
+
+  return Math.min(4, normalized.split(".")[1]?.length ?? 0);
+}
+
+function parseEnumValue(
+  raw: string,
+  options: Array<string | number | boolean> | undefined,
+): unknown {
+  if (!options || options.length === 0) return raw;
+  const matched = options.find((option) => String(option) === raw);
+  return matched ?? raw;
+}
+
+function isResolutionLadderWidget(widget: WorkflowWidgetInput): boolean {
+  return (widget.config.resolutionLadder?.length ?? 0) > 0;
+}
+
+/**
+ * The stepped resolution control: a slider restricted to the workflow's
+ * interpolated rungs, plus a custom field for a short edge off the ladder.
+ *
+ * The rungs are guidance, not a whitelist — the custom field commits whatever
+ * the user types (the store bounds it), and the readout marks it as custom so
+ * an off-ladder value never looks like a snapped one.
+ */
+function ResolutionLadderRow({
+  widget,
+  value,
+  onWidgetChange,
+  disabled,
+}: {
+  widget: WorkflowWidgetInput;
+  value: unknown;
+  onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
+  disabled: boolean;
+}) {
+  const rungs = useMemo(
+    () => [...(widget.config.resolutionLadder ?? [])].sort((a, b) => a - b),
+    [widget.config.resolutionLadder],
+  );
+  const parsed = typeof value === "string" ? Number(value) : value;
+  const resolution =
+    typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0
+      ? Math.round(parsed)
+      : (rungs[rungs.length - 1] ?? 720);
+  const isCustom = !rungs.includes(resolution);
+  const marks = useMemo(
+    () => rungs.map((rung) => ({ value: rung, label: String(rung) })),
+    [rungs],
+  );
+  // An off-ladder value still needs a slider position, so the track stretches
+  // to cover it instead of silently clamping the thumb to an unrelated rung.
+  const min = Math.min(rungs[0] ?? resolution, resolution);
+  const max = Math.max(rungs[rungs.length - 1] ?? resolution, resolution);
+
+  return (
+    <Box sx={{ mb: 1.5 }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 0.25,
+        }}
+      >
+        <Typography variant="caption" sx={{ color: "text.secondary" }}>
+          {widget.config.label}
+        </Typography>
+        <Typography variant="caption" sx={{ color: "text.secondary" }}>
+          {resolution}p{isCustom ? " (custom)" : ""}
+        </Typography>
+      </Box>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+        <Box sx={{ px: 1, flexGrow: 1 }}>
+          <Slider
+            aria-label={widget.config.label}
+            size="small"
+            disabled={disabled}
+            value={resolution}
+            min={min}
+            max={max}
+            // Restricted values: the thumb can only land on a rung.
+            step={null}
+            marks={marks}
+            valueLabelDisplay="off"
+            onChange={(_, nextValue) => {
+              if (typeof nextValue !== "number") return;
+              onWidgetChange(widget.nodeId, widget.param, nextValue);
+            }}
+            sx={{
+              color: isCustom ? "text.disabled" : "primary.light",
+              "& .MuiSlider-markLabel": {
+                fontSize: "0.6rem",
+                color: "text.disabled",
+              },
+            }}
+          />
+        </Box>
+        <Box sx={{ flexShrink: 0, width: 92 }}>
+          <CommittedTextInput
+            key={resolution}
+            label="Custom"
+            disabled={disabled}
+            initialValue={String(resolution)}
+            type="number"
+            inputProps={{ min: 1, step: 1, "aria-label": "Custom resolution" }}
+            onCommit={(nextValue) => {
+              const nextResolution = Number(nextValue.trim());
+              if (!Number.isFinite(nextResolution) || nextResolution <= 0) {
+                return;
+              }
+              onWidgetChange(
+                widget.nodeId,
+                widget.param,
+                Math.round(nextResolution),
+              );
+            }}
+            sx={{
+              "& .MuiOutlinedInput-root": {
+                bgcolor: "#1a1a1a",
+                fontSize: "0.8rem",
+              },
+            }}
+          />
+        </Box>
+      </Box>
+      {widget.config.description ? (
+        <Typography
+          variant="caption"
+          sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
+        >
+          {widget.config.description}
+        </Typography>
+      ) : null}
+    </Box>
+  );
+}
+
+/** One titled run of widgets, as the panel groups them. */
+export interface WidgetGroup {
+  id: string;
+  sectionId: string;
+  title: string;
+  widgets: WorkflowWidgetInput[];
+}
 
 /**
  * One rendered generation input, shared by the live panel and by any staged
@@ -518,3 +841,434 @@ function MediaInputGroupSection({
 }
 
 export const MemoizedMediaInputGroupSection = memo(MediaInputGroupSection);
+
+interface WidgetRowProps {
+  widget: WorkflowWidgetInput;
+  value: unknown;
+  isRandomized: boolean;
+  /** This widget's node is switched off, so its value changes nothing. */
+  nodeBypassed: boolean;
+  onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
+  onToggleRandomize: (nodeId: string, param: string) => void;
+  showExactAspectRatioControl: boolean;
+  exactAspectRatio: boolean;
+  onExactAspectRatioChange?: (exact: boolean) => void;
+  exactAspectRatioTooltip?: string;
+}
+
+function WidgetRow({
+  widget,
+  value,
+  isRandomized,
+  nodeBypassed,
+  onWidgetChange,
+  onToggleRandomize,
+  showExactAspectRatioControl,
+  exactAspectRatio,
+  onExactAspectRatioChange,
+  exactAspectRatioTooltip,
+}: WidgetRowProps) {
+  const useNumericInput = shouldUseNumericWidgetInput(widget, value);
+  const useSelectInput =
+    !isRandomized && (isEnumWidget(widget) || isBooleanWidget(widget));
+  const isSlider = isSliderWidget(widget);
+  const isTextArea = !isRandomized && !useSelectInput && isTextAreaWidget(widget);
+  const showInlineExactAspectRatioControl =
+    showExactAspectRatioControl &&
+    typeof onExactAspectRatioChange === "function";
+  const displayValue =
+    value === undefined || value === null
+      ? isRandomized
+        ? "randomized"
+        : ""
+      : String(value);
+  const hasOutOfRangeEnumValue =
+    isEnumWidget(widget) &&
+    displayValue.length > 0 &&
+    displayValue !== widget.config.nodeBypassOption?.value &&
+    !(widget.config.options ?? []).some(
+      (option) => String(option) === displayValue,
+    );
+  const parsedSliderValue =
+    typeof value === "string" ? Number(value) : value;
+  const sliderValue =
+    typeof parsedSliderValue === "number" && Number.isFinite(parsedSliderValue)
+      ? parsedSliderValue
+      : typeof widget.currentValue === "number" && Number.isFinite(widget.currentValue)
+        ? widget.currentValue
+        : typeof widget.config.min === "number"
+          ? widget.config.min
+          : 0;
+
+  if (!isRandomized && isResolutionLadderWidget(widget)) {
+    return (
+      <ResolutionLadderRow
+        widget={widget}
+        value={value}
+        onWidgetChange={onWidgetChange}
+        disabled={nodeBypassed}
+      />
+    );
+  }
+
+  if (isSlider) {
+    const min = widget.config.min ?? 0;
+    const max = widget.config.max ?? 1;
+    const step = widget.config.step ?? 0.01;
+
+    return (
+      <Box sx={{ mb: 1.5 }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            mb: 0.75,
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block" }}
+          >
+            {widget.config.label}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block" }}
+          >
+            {formatSliderValue(widget, sliderValue)}
+          </Typography>
+        </Box>
+        <Box sx={{ px: 1 }}>
+          <Slider
+            aria-label={widget.config.label}
+            size="small"
+            disabled={nodeBypassed}
+            value={sliderValue}
+            min={min}
+            max={max}
+            step={step}
+            valueLabelDisplay="off"
+            valueLabelFormat={(nextValue) =>
+              formatSliderValue(widget, nextValue)
+            }
+            onChange={(_, nextValue) => {
+              if (typeof nextValue !== "number") return;
+              onWidgetChange(widget.nodeId, widget.param, nextValue);
+            }}
+            sx={{ color: "primary.light" }}
+          />
+        </Box>
+        {widget.config.description ? (
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
+          >
+            {widget.config.description}
+          </Typography>
+        ) : null}
+      </Box>
+    );
+  }
+
+  if (isTextArea) {
+    // The group heading already carries the name when they match (e.g. a
+    // "Prompt" widget alone in a "Prompt" group), so skip the repeat.
+    const showLabel =
+      widget.config.label.trim().toLowerCase() !==
+      (widget.config.groupTitle ?? "").trim().toLowerCase();
+
+    return (
+      <Box sx={{ mb: 1 }}>
+        {showLabel ? (
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block", mb: 0.5 }}
+          >
+            {widget.config.label}
+          </Typography>
+        ) : null}
+        <CommittedTextInput
+          initialValue={displayValue}
+          disabled={nodeBypassed}
+          onCommit={(nextValue) => {
+            onWidgetChange(widget.nodeId, widget.param, nextValue);
+          }}
+          commitDebounceMs={PROMPT_COMMIT_DEBOUNCE_MS}
+          multiline={true}
+          minRows={6}
+          maxRows={20}
+          placeholder={`Enter ${widget.config.label.toLowerCase()}...`}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              bgcolor: "#1a1a1a",
+              fontSize: "0.875rem",
+            },
+          }}
+        />
+        {widget.config.description ? (
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
+          >
+            {widget.config.description}
+          </Typography>
+        ) : null}
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ mb: 1 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <Box sx={{ minWidth: 120, flexShrink: 0 }}>
+          <Typography
+            variant="caption"
+            sx={{ color: "text.secondary", display: "block" }}
+          >
+            {widget.config.label}
+          </Typography>
+        </Box>
+        <TextField
+          fullWidth
+          select={useSelectInput}
+          size="small"
+          type={useNumericInput && !isRandomized ? "number" : "text"}
+          value={displayValue}
+          disabled={isRandomized || nodeBypassed}
+          onChange={(event) => {
+            onWidgetChange(
+              widget.nodeId,
+              widget.param,
+              parseWidgetValue(event.target.value, useNumericInput, widget),
+            );
+          }}
+          inputProps={{
+            ...(useNumericInput && !isRandomized
+              ? {
+                  min: widget.config.min,
+                  max: widget.config.max,
+                  step: widget.config.valueType === "int" ? 1 : 0.01,
+                }
+              : {}),
+          }}
+          sx={{
+            minWidth: 80,
+            "& .MuiOutlinedInput-root": {
+              bgcolor: isRandomized ? "#2a2a30" : "#1a1a1a",
+              fontSize: "0.875rem",
+            },
+          }}
+        >
+          {useSelectInput &&
+            (isBooleanWidget(widget)
+              ? [
+                  <MenuItem key="boolean:true" value="true">
+                    true
+                  </MenuItem>,
+                  <MenuItem key="boolean:false" value="false">
+                    false
+                  </MenuItem>,
+                ]
+              : [
+                  ...(widget.config.nodeBypassOption
+                    ? [
+                        <MenuItem
+                          key="node-bypass-option"
+                          value={widget.config.nodeBypassOption.value}
+                        >
+                          {widget.config.nodeBypassOption.label}
+                        </MenuItem>,
+                      ]
+                    : []),
+                  ...(widget.config.options ?? []).map((option) => (
+                    <MenuItem key={String(option)} value={String(option)}>
+                      {widget.config.optionLabels?.[String(option)] ??
+                        String(option)}
+                    </MenuItem>
+                  )),
+                  ...(hasOutOfRangeEnumValue
+                    ? [
+                        <MenuItem
+                          key="out-of-range-enum-value"
+                          value={displayValue}
+                          disabled={true}
+                        >
+                          {displayValue} (unavailable)
+                        </MenuItem>,
+                      ]
+                    : []),
+                ])}
+        </TextField>
+
+        {widget.config.controlAfterGenerate && (
+          <IconButton
+            size="small"
+            onClick={() => onToggleRandomize(widget.nodeId, widget.param)}
+            title={isRandomized ? "Disable randomize" : "Enable randomize"}
+            sx={{
+              color: isRandomized ? "primary.main" : "text.disabled",
+              bgcolor: isRandomized
+                ? "rgba(144,202,249,0.12)"
+                : "transparent",
+              borderRadius: 1,
+              p: 0.5,
+              "&:hover": {
+                bgcolor: isRandomized
+                  ? "rgba(144,202,249,0.2)"
+                  : "rgba(255,255,255,0.08)",
+              },
+            }}
+          >
+            <Casino sx={{ fontSize: 18 }} />
+          </IconButton>
+        )}
+      </Box>
+      {showInlineExactAspectRatioControl ? (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.5,
+            pl: "128px",
+            mt: 0.5,
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+              letterSpacing: "0.12em",
+            }}
+          >
+            EXACT
+          </Typography>
+          <Checkbox
+            checked={exactAspectRatio}
+            onChange={(event) => onExactAspectRatioChange(event.target.checked)}
+            size="small"
+            inputProps={{
+              "aria-label": "Use exact input aspect ratio",
+            }}
+            sx={{
+              color: "rgba(255, 255, 255, 0.65)",
+              p: 0.25,
+              "&.Mui-checked": {
+                color: "primary.main",
+              },
+            }}
+          />
+          {exactAspectRatioTooltip ? (
+            <Tooltip title={exactAspectRatioTooltip} arrow>
+              <InfoOutlined
+                fontSize="inherit"
+                aria-label="Exact aspect ratio help"
+                sx={{ color: "text.secondary" }}
+              />
+            </Tooltip>
+          ) : null}
+        </Box>
+      ) : null}
+      {widget.config.description ? (
+        <Typography
+          variant="caption"
+          sx={{
+            color: "text.secondary",
+            display: "block",
+            mt: 0.75,
+          }}
+        >
+          {widget.config.description}
+        </Typography>
+      ) : null}
+    </Box>
+  );
+}
+
+const MemoizedWidgetRow = memo(WidgetRow);
+
+interface WidgetGroupSectionProps {
+  group: WidgetGroup;
+  widgetValues: Record<string, Record<string, unknown>>;
+  bypassedWidgetTargets: ReadonlySet<string>;
+  randomizeToggles: Record<string, boolean>;
+  onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
+  onToggleRandomize: (nodeId: string, param: string) => void;
+  showExactAspectRatioControl: boolean;
+  resolvedExactAspectRatioWidgetKey: string | null;
+  exactAspectRatio: boolean;
+  onExactAspectRatioChange?: (exact: boolean) => void;
+  exactAspectRatioTooltip?: string;
+  showDivider: boolean;
+  /** Nodes the panel has switched off through their bypass choice. */
+  bypassedNodeIds: ReadonlySet<string>;
+}
+
+function WidgetGroupSection({
+  group,
+  widgetValues,
+  bypassedWidgetTargets,
+  randomizeToggles,
+  onWidgetChange,
+  onToggleRandomize,
+  showExactAspectRatioControl,
+  resolvedExactAspectRatioWidgetKey,
+  exactAspectRatio,
+  onExactAspectRatioChange,
+  exactAspectRatioTooltip,
+  showDivider,
+  bypassedNodeIds,
+}: WidgetGroupSectionProps) {
+  return (
+    <Box
+      sx={{
+        pt: showDivider ? 1.5 : 0,
+        borderTop: showDivider ? "1px solid rgba(255,255,255,0.08)" : "none",
+      }}
+    >
+      <Typography
+        variant="subtitle2"
+        sx={{ color: "text.primary", fontWeight: 600, mb: 1 }}
+      >
+        {group.title}
+      </Typography>
+      {group.widgets.map((widget) => {
+        const key = `${widget.nodeId}:${widget.param}`;
+        // A node switched off through its bypass choice keeps its remaining
+        // controls on screen — the panel would otherwise give no sign they
+        // exist — but greyed out, since this run leaves the node out.
+        const nodeBypassed =
+          !widget.config.nodeBypassOption &&
+          bypassedNodeIds.has(widget.nodeId);
+        const nodeValues = widgetValues[widget.nodeId] ?? {};
+        const value = bypassedWidgetTargets.has(
+          getNodeBypassWidgetKey(widget.nodeId, widget.param),
+        )
+          ? widget.config.nodeBypassOption?.value
+          : (nodeValues[widget.param] ?? widget.currentValue);
+        const isRandomized = randomizeToggles[key] ?? false;
+
+        return (
+          <MemoizedWidgetRow
+            key={key}
+            widget={widget}
+            value={value}
+            isRandomized={isRandomized}
+            nodeBypassed={nodeBypassed}
+            onWidgetChange={onWidgetChange}
+            onToggleRandomize={onToggleRandomize}
+            showExactAspectRatioControl={
+              showExactAspectRatioControl &&
+              resolvedExactAspectRatioWidgetKey === key
+            }
+            exactAspectRatio={exactAspectRatio}
+            onExactAspectRatioChange={onExactAspectRatioChange}
+            exactAspectRatioTooltip={exactAspectRatioTooltip}
+          />
+        );
+      })}
+    </Box>
+  );
+}
+
+export const MemoizedWidgetGroupSection = memo(WidgetGroupSection);

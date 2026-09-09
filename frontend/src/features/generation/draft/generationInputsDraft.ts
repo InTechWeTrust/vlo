@@ -46,6 +46,19 @@ export type GenerationInputDraftOp =
       readonly toOrdinal: number;
     }
   | {
+      /**
+       * A widget, not an input: the panel's `length` slider and its like are
+       * node parameters, and the transaction writes them with `setWidget`.
+       * Staged alongside inputs because a composer that derives text from a
+       * duration has to see the duration the user is choosing, not the one the
+       * panel still holds.
+       */
+      readonly kind: "setWidget";
+      readonly nodeId: string;
+      readonly param: string;
+      readonly value: unknown;
+    }
+  | {
       readonly kind: "setMediaOption";
       readonly inputId: string;
       readonly slotId: string;
@@ -96,7 +109,7 @@ function reindex(
 
 function applyToInput(
   input: GenerationInputSnapshot,
-  op: GenerationInputDraftOp,
+  op: Exclude<GenerationInputDraftOp, { kind: "setWidget" }>,
   resolveAsset: StagedAttachResolver,
   stagedSlotSeq: { value: number },
 ): GenerationInputSnapshot {
@@ -166,6 +179,7 @@ export function projectDraftInputs(
   const stagedSlotSeq = { value: 0 };
   const byId = new Map(session.inputs.map((input) => [input.id, input]));
   for (const op of ops) {
+    if (op.kind === "setWidget") continue;
     const input = byId.get(op.inputId);
     if (!input) continue;
     byId.set(op.inputId, applyToInput(input, op, resolveAsset, stagedSlotSeq));
@@ -177,7 +191,32 @@ export function projectDraftInputs(
 export function draftedInputIds(
   ops: readonly GenerationInputDraftOp[],
 ): ReadonlySet<string> {
-  return new Set(ops.map((op) => op.inputId));
+  return new Set(
+    ops.flatMap((op) => (op.kind === "setWidget" ? [] : [op.inputId])),
+  );
+}
+
+/** `nodeId:param`, the key both the panel and the transaction address by. */
+export function widgetKey(nodeId: string, param: string): string {
+  return `${nodeId}:${param}`;
+}
+
+/**
+ * The staged value of every widget the draft has touched.
+ *
+ * Values only — the widget's own description (its control, bounds, options)
+ * belongs to the panel and is read from there, the same division the inputs
+ * follow after a projection tried to carry both and dropped half of it.
+ */
+export function projectDraftWidgets(
+  ops: readonly GenerationInputDraftOp[],
+): ReadonlyMap<string, unknown> {
+  const staged = new Map<string, unknown>();
+  for (const op of ops) {
+    if (op.kind !== "setWidget") continue;
+    staged.set(widgetKey(op.nodeId, op.param), op.value);
+  }
+  return staged;
 }
 
 /**
@@ -241,7 +280,23 @@ export function compileDraftCommands(
   base: readonly GenerationInputSnapshot[],
   target: readonly GenerationInputSnapshot[],
   transaction: GenerationSessionTransaction,
+  /**
+   * Widget values to write, keyed `nodeId:param`. Passed rather than diffed:
+   * a widget is a scalar the panel owns, so the staged value *is* the target
+   * and there is no arrangement to reconstruct.
+   */
+  widgets: ReadonlyMap<string, unknown> = new Map(),
 ): void {
+  for (const [key, value] of widgets) {
+    const separator = key.lastIndexOf(":");
+    if (separator <= 0) continue;
+    // The transaction names the parameter `widget`, the panel names it
+    // `param`; same thing, addressed by node id either way.
+    transaction.setWidget(
+      { nodeId: key.slice(0, separator), widget: key.slice(separator + 1) },
+      value as never,
+    );
+  }
   const baseById = new Map(base.map((input) => [input.id, input]));
   for (const input of target) {
     const before = baseById.get(input.id);

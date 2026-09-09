@@ -4,9 +4,14 @@ import type { Asset } from "../../../types/Asset";
 import { resolveAssetType } from "../../../shared/utils/assetTypeDetection";
 import { useAssetStore } from "../../userAssets";
 import { useGenerationStore } from "../useGenerationStore";
+import { resolveWidgetInputs } from "../services/workflowRules";
 import { buildWorkflowInputLookup, getWorkflowInputId } from "../utils/workflowInputs";
 import { useGenerationInputsDraft } from "../draft/useGenerationInputsDraft";
-import type { GenerationInputsDraftController } from "../draft/useGenerationInputsDraft";
+import type {
+  GenerationDraftWidgetTarget,
+  GenerationInputsDraftController,
+} from "../draft/useGenerationInputsDraft";
+import { widgetKey } from "../draft/generationInputsDraft";
 import type {
   GenerationInputSnapshot,
   GenerationMediaItemSnapshot,
@@ -18,6 +23,7 @@ import type {
 import type { AssetDropSlotDisabledActions } from "../../panelUI";
 import { buildRepeatableInputSlotId } from "../utils/workflowInputs";
 import {
+  MemoizedWidgetGroupSection,
   MemoizedBatchMediaInputSection,
   MemoizedMediaInputGroupSection,
   MemoizedMediaInputSection,
@@ -46,8 +52,17 @@ import {
 export interface GenerationInputsDraftProps {
   /** The inputs to edit, by id. Anything else stays the panel's alone. */
   readonly inputIds: readonly string[];
+  /**
+   * Widgets to edit alongside them, addressed as the transaction addresses
+   * them. A duration that a composer derives text from belongs beside that
+   * text, not one panel away.
+   */
+  readonly widgetTargets?: readonly GenerationDraftWidgetTarget[];
   readonly children?: (controller: GenerationInputsDraftController) => ReactNode;
 }
+
+const EMPTY_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_TOGGLES: Record<string, boolean> = {};
 
 const STAGED_REFUSALS: AssetDropSlotDisabledActions = {
   select: "Selecting from the timeline starts a render, which cannot be held until you commit.",
@@ -110,9 +125,10 @@ function stageableAsset(
 
 export function GenerationInputsDraft({
   inputIds,
+  widgetTargets,
   children,
 }: GenerationInputsDraftProps) {
-  const controller = useGenerationInputsDraft(inputIds);
+  const controller = useGenerationInputsDraft(inputIds, widgetTargets);
   const { inputs, apply } = controller;
   const assets = useAssetStore((state) => state.assets);
   /**
@@ -126,6 +142,31 @@ export function GenerationInputsDraft({
    * definitions come from the store; only the *values* come from the draft.
    */
   const workflowInputs = useGenerationStore((state) => state.workflowInputs);
+  /**
+   * The panel's widget definitions, through the panel's own resolver.
+   *
+   * `useGenerationPanel` builds these in a hook rather than the store, so they
+   * are re-derived here from the same store values with the same function —
+   * not reimplemented. Only the rules path: manual-mode graphs and
+   * autodiscovered LoRA loaders are not resolved here, and a widget this does
+   * not find is simply not offered rather than rendered from a guess.
+   */
+  const syncedWorkflow = useGenerationStore((state) => state.syncedWorkflow);
+  const syncedGraphData = useGenerationStore((state) => state.syncedGraphData);
+  const activeWorkflowRules = useGenerationStore(
+    (state) => state.activeWorkflowRules,
+  );
+  const rawObjectInfo = useGenerationStore((state) => state.rawObjectInfo);
+  const widgetInputs = useMemo(
+    () =>
+      syncedWorkflow && activeWorkflowRules
+        ? resolveWidgetInputs(syncedWorkflow, activeWorkflowRules, {
+            graphData: syncedGraphData,
+            objectInfo: rawObjectInfo,
+          })
+        : [],
+    [syncedWorkflow, activeWorkflowRules, syncedGraphData, rawObjectInfo],
+  );
   const definitions = useMemo(
     () => buildWorkflowInputLookup(workflowInputs),
     [workflowInputs],
@@ -236,6 +277,39 @@ export function GenerationInputsDraft({
     },
     [resolveAsset],
   );
+
+  /**
+   * The requested widgets, as the panel describes them, carrying the staged
+   * value. Rendered through the panel's own widget row so the control, its
+   * bounds and its display unit — seconds, for a frame count — are the ones
+   * the user already knows.
+   */
+  const widgetGroup = useMemo(() => {
+    const wanted = new Set(
+      (widgetTargets ?? []).map((target) => widgetKey(target.nodeId, target.param)),
+    );
+    if (wanted.size === 0) return null;
+    const widgets = widgetInputs.filter((widget) =>
+      wanted.has(widgetKey(widget.nodeId, widget.param)),
+    );
+    if (widgets.length === 0) return null;
+    return {
+      id: "draft-widgets",
+      sectionId: "draft",
+      title: widgets.length === 1 ? widgets[0].config.label : "Settings",
+      widgets,
+    };
+  }, [widgetInputs, widgetTargets]);
+
+  const stagedWidgetValues = useMemo(() => {
+    const values: Record<string, Record<string, unknown>> = {};
+    for (const [key, value] of controller.widgetValues) {
+      const separator = key.lastIndexOf(":");
+      const nodeId = key.slice(0, separator);
+      values[nodeId] = { ...(values[nodeId] ?? {}), [key.slice(separator + 1)]: value };
+    }
+    return values;
+  }, [controller.widgetValues]);
 
   return (
     <Box
@@ -373,6 +447,23 @@ export function GenerationInputsDraft({
           />
         );
       })}
+      {widgetGroup ? (
+        <MemoizedWidgetGroupSection
+          group={widgetGroup}
+          widgetValues={stagedWidgetValues}
+          bypassedWidgetTargets={EMPTY_KEYS}
+          randomizeToggles={EMPTY_TOGGLES}
+          onWidgetChange={(nodeId, param, value) =>
+            apply({ kind: "setWidget", nodeId, param, value })
+          }
+          onToggleRandomize={() => undefined}
+          showExactAspectRatioControl={false}
+          resolvedExactAspectRatioWidgetKey={null}
+          exactAspectRatio={false}
+          showDivider={false}
+          bypassedNodeIds={EMPTY_KEYS}
+        />
+      ) : null}
       {children?.(controller)}
     </Box>
   );
