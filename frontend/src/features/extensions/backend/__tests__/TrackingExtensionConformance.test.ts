@@ -122,6 +122,7 @@ function createConformanceApi() {
       react: { createElement: () => ({}) },
       mui: {},
       panelUi: {},
+      generationUi: { InputsDraft: () => null },
     },
     color: extensionColorApi,
     backend: {

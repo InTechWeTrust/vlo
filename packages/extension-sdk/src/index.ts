@@ -2587,12 +2587,63 @@ export interface ExtensionPanelUiRuntime {
   readonly [exportName: string]: unknown;
 }
 
+/** One staged input, projected exactly as the session projects a live one. */
+export interface ExtensionGenerationInputsDraftController {
+  readonly inputs: readonly ExtensionGenerationInputSnapshot[];
+  /** The draft holds edits of its own. */
+  readonly hasDraftChanges: boolean;
+  /** The panel moved under an input this draft is holding. */
+  readonly hasConflict: boolean;
+  /**
+   * A transaction may be attempted. True with nothing staged, because a caller
+   * may still have `additionalWrites` of its own — a composer writing only
+   * prompt text has nothing staged here and must not be blocked.
+   */
+  readonly canCommit: boolean;
+  /** Why a commit is refused, or why the last one failed. */
+  readonly error: string | null;
+  /**
+   * Writes the staged edits and `additionalWrites` in **one** transaction, so
+   * a composer's prompt text and its keyframes land together or not at all.
+   * The staged edits are cleared only on success.
+   */
+  commit(
+    label: string,
+    additionalWrites?: (transaction: ExtensionGenerationTransaction) => void,
+  ): ExtensionGenerationTransactionResult;
+  revert(): void;
+}
+
+export interface ExtensionGenerationInputsDraftProps {
+  /** The inputs to edit, by id. Everything else stays the panel's alone. */
+  readonly inputIds: readonly string[];
+  readonly children?: (
+    controller: ExtensionGenerationInputsDraftController,
+  ) => unknown;
+}
+
+/**
+ * Generation-panel UI a package can render, typed rather than an open map.
+ *
+ * `InputsDraft` is the panel's own input fields over a *staged* draft: edits
+ * are held until `commit`, and only interactions the transaction can express
+ * are offered — timeline capture, external file drops and media editing are
+ * shown refused, because each starts work that cannot be held.
+ */
+export interface ExtensionGenerationUiRuntime {
+  readonly InputsDraft: (
+    props: ExtensionGenerationInputsDraftProps,
+  ) => unknown;
+}
+
 /** Exact host singleton runtimes supplied to trusted frontend extensions. */
 export interface ExtensionHostRuntimeApi {
   readonly pixi: ExtensionPixiRuntime;
   readonly react: ExtensionReactRuntime;
   readonly mui: ExtensionMuiRuntime;
   readonly panelUi: ExtensionPanelUiRuntime;
+  /** Typed generation-panel surfaces; see `ExtensionGenerationUiRuntime`. */
+  readonly generationUi: ExtensionGenerationUiRuntime;
 }
 
 /** One discoverable, version-coupled live host reference. */

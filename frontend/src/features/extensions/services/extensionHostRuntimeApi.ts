@@ -21,6 +21,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import * as panelUi from "../../panelUI";
+import { ExtensionGenerationInputsDraft } from "../generation/ExtensionGenerationInputsDraft";
 import type { ExtensionHostRuntimeApi } from "../types";
 
 /**
@@ -58,4 +59,13 @@ export const extensionHostRuntimeApi: ExtensionHostRuntimeApi = Object.freeze({
    * rollback, but trusted mode does not make that contract an authority ceiling.
    */
   panelUi: panelUi as unknown as ExtensionHostRuntimeApi["panelUi"],
+  /**
+   * Narrow and typed, unlike `panelUi`: these are generation-owned surfaces
+   * with a declared contract, so a package gets a checked component rather
+   * than an entry in an open map it has to assert its way through.
+   */
+  generationUi: Object.freeze({
+    InputsDraft:
+      ExtensionGenerationInputsDraft as unknown as ExtensionHostRuntimeApi["generationUi"]["InputsDraft"],
+  }),
 });
