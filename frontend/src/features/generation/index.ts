@@ -1,4 +1,7 @@
 export { GenerationPanel } from "./GenerationPanel";
+export { GenerationInputsDraft } from "./components/GenerationInputsDraft";
+export type { GenerationInputsDraftProps } from "./components/GenerationInputsDraft";
+export type { GenerationInputsDraftController } from "./draft/useGenerationInputsDraft";
 export { useGenerationStore } from "./useGenerationStore";
 export {
   COMFYUI_CANVAS_DROP_ID,

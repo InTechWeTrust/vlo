@@ -4,6 +4,7 @@ import type { Asset } from "../../../types/Asset";
 import {
   AssetBatchDropSlot,
   AssetDropSlot,
+  type AssetDropSlotDisabledActions,
   CommittedTextInput,
   PanelSection,
   type AssetBatchSlotItem,
@@ -142,6 +143,8 @@ interface MediaInputSectionProps {
   onInputClear: (inputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
   onEditMedia?: (inputId: string, inputType: "video") => void;
+  /** Actions to render refused, with the reason. See the staged editor. */
+  disabledActions?: AssetDropSlotDisabledActions;
 }
 
 function MediaInputSection({
@@ -153,6 +156,7 @@ function MediaInputSection({
   onInputClear,
   onClickSelect,
   onEditMedia,
+  disabledActions,
 }: MediaInputSectionProps) {
   const inputId = getWorkflowInputId(input);
   const mediaInputType = input.inputType;
@@ -175,6 +179,7 @@ function MediaInputSection({
         </Typography>
       ) : null}
       <AssetDropSlot
+        disabledActions={disabledActions}
         id={inputId}
         accept={acceptTypes}
         acceptAsset={acceptAsset}
@@ -213,6 +218,8 @@ interface BatchMediaInputSectionProps {
     option: WorkflowInputItemOption,
     active: boolean,
   ) => void;
+  /** Actions to render refused, with the reason. See the staged editor. */
+  disabledActions?: AssetDropSlotDisabledActions;
 }
 
 /**
@@ -233,6 +240,7 @@ function BatchMediaInputSection({
   onClickSelect,
   onEditMedia,
   onToggleItemOption,
+  disabledActions,
 }: BatchMediaInputSectionProps) {
   const max = Math.max(1, Math.floor(input.presentation?.repeatable?.max ?? 1));
   const mediaInputType = input.inputType;
@@ -347,6 +355,7 @@ function BatchMediaInputSection({
         </Typography>
       ) : null}
       <AssetBatchDropSlot
+        disabledActions={disabledActions}
         id={getWorkflowInputId(input)}
         accept={resolveAcceptTypes(mediaInputType)}
         acceptAsset={acceptAssetForInputType(mediaInputType)}
