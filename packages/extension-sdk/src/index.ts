@@ -3425,7 +3425,21 @@ export type ExtensionGenerationMediaSource =
 
 /** One occupied slot of a media input, as the graph will receive it. */
 export interface ExtensionGenerationMediaItem {
-  /** Addressable slot id; the same id every write takes. */
+  /**
+   * The address every media write takes — **positional, not an identity**.
+   *
+   * A repeatable input's slot ids follow position, and the panel front-packs
+   * the batch on every change, so removing or moving an item **renames every
+   * slot after it**. This id names this item only while the batch stands
+   * still.
+   *
+   * Inside a `transaction` that is handled for you: pass the ids you read from
+   * the snapshot and they keep naming the items you meant, however the
+   * transaction's own commands renumber things. Outside one they go stale —
+   * do not store a slot id and come back to it later, re-read the session. A
+   * write whose ids have gone stale fails `media_not_found`, or
+   * `session_changed` if the panel moved while your callback ran.
+   */
   readonly slotId: string;
   /**
    * Position among *filled* slots — the delivery position, and the number a
@@ -3599,6 +3613,16 @@ export interface ExtensionGenerationAttachOptions {
  * three slots, and attaching a video then toggling its `audio` switch works.
  * Every media write is validated exactly as the equivalent drag would be — an
  * extension cannot place an asset a user could not drag into the same slot.
+ *
+ * **Slot ids name the session as you read it.** A repeatable input's slot ids
+ * are positional, so removing or moving an item renames the ones after it. The
+ * transaction accounts for that: pass the ids the snapshot showed, and it
+ * translates them as its own commands renumber the batch. Ordinals are not
+ * translated — a position is a position — and a slot created inside the
+ * transaction has no id you could name, which is why `attachAsset` takes
+ * `itemOptions` instead. If the panel republishes its inputs while your
+ * callback runs, the write fails `session_changed` rather than landing on
+ * whatever moved into place.
  */
 export interface ExtensionGenerationTransaction {
   setTextInput(inputId: string, value: string): void;
@@ -3634,7 +3658,14 @@ export interface ExtensionGenerationTransaction {
    * render is about to write, and the host cannot cancel that render.
    */
   moveMedia(inputId: string, fromOrdinal: number, toOrdinal: number): void;
-  /** Also `input_busy` while the input has `reservedSlotIds`; see `moveMedia`. */
+  /**
+   * Also `input_busy` while the input has `reservedSlotIds`; see `moveMedia`.
+   *
+   * Pass the slot id as the snapshot showed it. Removing an item renumbers the
+   * batch, but the transaction translates the ids you read as its own commands
+   * advance, so two removals take the two ids you saw rather than the second
+   * one's new name.
+   */
   removeMedia(inputId: string, slotId: string): void;
   /**
    * Write one per-item switch. Only the ids the slot's snapshot lists in
@@ -3673,6 +3704,13 @@ export type ExtensionGenerationTransactionResult =
          */
         | "input_busy"
         | "option_not_available"
+        /**
+         * The panel republished its inputs while your callback ran, so the
+         * slot ids you staged name items that have since moved. Nothing was
+         * written. Retryable: read the session again and restage against the
+         * ids it now reports.
+         */
+        | "session_changed"
         | "callback_failed";
       readonly message: string;
       readonly label: string;

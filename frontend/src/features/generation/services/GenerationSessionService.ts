@@ -102,6 +102,158 @@ function failure(
 }
 
 /**
+ * Slot ids as the transaction opened on them, per input.
+ *
+ * Slot ids are positional, and every remove and move renumbers the batch
+ * (`applyMediaCommitToSnapshot`). A caller can only address items by the ids it
+ * read, so a sequence like "remove A, remove B" hands over two ids that were
+ * valid together but never valid *in turn* — by the time the second is read,
+ * the first removal has renamed it onto a different item. Left untranslated
+ * that writes to the wrong asset, or fails `media_not_found`, with nothing to
+ * tell the caller which.
+ *
+ * So the opening ids are kept in a list parallel to the working media and
+ * advanced by the same structural moves. Position is the durable thing here:
+ * entry *i* of this list is whatever the caller called item *i*, and the
+ * working snapshot says what that item is called now. `null` marks a slot
+ * minted inside this transaction, which the caller has no name for.
+ */
+type SlotAddressBook = Map<string, (string | null)[]>;
+
+function openSlotAddressBook(
+  snapshot: GenerationSessionSnapshot,
+): SlotAddressBook {
+  return new Map(
+    snapshot.inputs.map((input) => [
+      input.id,
+      (input.media ?? []).map((item) => item.slotId),
+    ]),
+  );
+}
+
+/**
+ * The slot a caller-supplied id names *now*, or `null` when it names nothing
+ * the transaction opened on.
+ *
+ * `null` must not fall back to the raw id. Slot ids are positional and get
+ * reused: after removing slot 0 of `[A, B]`, the id that named A now names B,
+ * so passing it through would let a repeated removal silently take a second
+ * item instead of failing, and would let a caller guess its way onto a slot
+ * this transaction created — the one thing the contract says it cannot
+ * address. An id absent from the address book was never addressable, which is
+ * exactly `media_not_found`.
+ *
+ * Searched across inputs because `setMediaOption` addresses a slot without an
+ * input id. Slot ids are derived from the input id, so they are unique panel-
+ * wide and the search cannot be ambiguous.
+ */
+function resolveOpeningSlotId(
+  addresses: SlotAddressBook,
+  working: GenerationSessionSnapshot,
+  slotId: string,
+): string | null {
+  for (const [inputId, opening] of addresses) {
+    const index = opening.indexOf(slotId);
+    if (index === -1) continue;
+    const input = working.inputs.find((candidate) => candidate.id === inputId);
+    return input?.media?.[index]?.slotId ?? null;
+  }
+  return null;
+}
+
+/**
+ * Mirror one commit's structural change onto the address book.
+ *
+ * Must run against the working snapshot *before* the commit is applied to it,
+ * so the affected index is still the one the commit named.
+ */
+function advanceSlotAddressBook(
+  addresses: SlotAddressBook,
+  working: GenerationSessionSnapshot,
+  commit: GenerationSessionMediaCommit,
+): void {
+  const opening = addresses.get(commit.inputId);
+  if (!opening) return;
+  const input = working.inputs.find(
+    (candidate) => candidate.id === commit.inputId,
+  );
+  if (!input) return;
+  const media = input.media ?? [];
+  switch (commit.kind) {
+    case "attach":
+      // A single-slot input replaces what it holds, so every previous address
+      // is gone; a batch inserts where the commit says it lands.
+      if (!input.repeatable) {
+        opening.length = 0;
+        opening.push(null);
+        return;
+      }
+      opening.splice(commit.moveTo ?? media.length, 0, null);
+      return;
+    case "remove": {
+      const at = media.findIndex((item) => item.slotId === commit.slotId);
+      if (at >= 0) opening.splice(at, 1);
+      return;
+    }
+    case "move": {
+      const from = media.findIndex((item) => item.slotId === commit.slotId);
+      if (from < 0) return;
+      const [moved] = opening.splice(from, 1);
+      opening.splice(commit.toOrdinal, 0, moved);
+      return;
+    }
+    case "set-option":
+      // Values only; the arrangement is untouched.
+      return;
+  }
+}
+
+/**
+ * Is every slot id still naming what it named, across all inputs?
+ *
+ * Deliberately narrower than `sameInputs`, which also compares labels,
+ * descriptions and text values. None of those can invalidate a slot id, and
+ * refusing a media write because an unrelated prompt changed under the
+ * callback would be a spurious failure the caller cannot act on.
+ *
+ * Two things matter, and only two: the ordered slot ids, which are the
+ * addresses themselves, and the asset in each slot — a swap in place keeps the
+ * address valid while changing what the caller was pointing at, and "remove
+ * this slot" meant "remove that item".
+ */
+function sameMediaArrangement(
+  left: readonly GenerationInputSnapshot[],
+  right: readonly GenerationInputSnapshot[],
+): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  return left.every((input, index) => {
+    const other = right[index];
+    if (input.id !== other.id) return false;
+    const before = input.media ?? [];
+    const after = other.media ?? [];
+    return (
+      before.length === after.length &&
+      before.every(
+        (item, slot) =>
+          item.slotId === after[slot].slotId &&
+          item.assetId === after[slot].assetId,
+      )
+    );
+  });
+}
+
+/** Commands that address media, and so depend on slot ids holding still. */
+function isMediaCommand(command: StagedCommand): command is StagedMediaCommand {
+  return (
+    command.kind === "attach" ||
+    command.kind === "move" ||
+    command.kind === "remove" ||
+    command.kind === "media-option"
+  );
+}
+
+/**
  * Would this command leave the panel exactly as it found it?
  *
  * Only the two commands that can genuinely address their own current state: a
@@ -531,6 +683,23 @@ export class GenerationSessionService {
         "The mounted workflow changed while the transaction ran.",
       );
     }
+    // A media change under the same workflow does not bump the workflow
+    // revision — `workflowChanged` compares identity, not values — so the
+    // check above does not catch the panel republishing its inputs under the
+    // callback. It has to be caught here, because every staged slot id names
+    // the arrangement the transaction opened on: translating them against
+    // inputs the caller never saw is exactly the silent wrong-target write
+    // this addressing model exists to prevent.
+    if (
+      staged.some(isMediaCommand) &&
+      !sameMediaArrangement(startSnapshot.inputs, snapshot.inputs)
+    ) {
+      return failure(
+        normalizedLabel,
+        "session_changed",
+        "The panel's inputs changed while the transaction ran; re-read the session and try again.",
+      );
+    }
 
     // Same workflow, so validate against the snapshot as it stands now: values
     // may have moved under the callback, and the freshest ones are the ones
@@ -545,6 +714,10 @@ export class GenerationSessionService {
     // the transaction opened on. Text and widget writes are independent of
     // media, so they keep reading the published snapshot.
     let working = snapshot;
+    // Seeded from the same snapshot `working` starts at, so the two describe
+    // one arrangement. Seeding from `startSnapshot` instead would pair a list
+    // taken before the callback with media read after it.
+    const addresses = openSlotAddressBook(snapshot);
 
     for (const command of staged) {
       if (command.kind === "text") {
@@ -583,7 +756,18 @@ export class GenerationSessionService {
         continue;
       }
 
-      const planned = this.planMediaCommand(working, host, command);
+      // Translated before validation, so every validator keeps reading a slot
+      // id that is live in `working` and none of them has to know that the
+      // caller's ids are one arrangement behind.
+      const addressed = this.readdressMediaCommand(addresses, working, command);
+      if (!addressed.ok) {
+        return failure(
+          normalizedLabel,
+          addressed.failure.code,
+          addressed.failure.message,
+        );
+      }
+      const planned = this.planMediaCommand(working, host, addressed.value);
       if (!planned.ok) {
         return failure(
           normalizedLabel,
@@ -596,6 +780,7 @@ export class GenerationSessionService {
       // extension gates follow-up work on, so it has to mean something moved.
       if (isMediaNoOp(working, planned.value.commit)) continue;
       mediaCommits.push(planned.value.commit);
+      advanceSlotAddressBook(addresses, working, planned.value.commit);
       working = applyMediaCommitToSnapshot(
         working,
         planned.value.commit,
@@ -645,6 +830,44 @@ export class GenerationSessionService {
         // No-ops were dropped above, so anything left here moves something.
         mediaCommits.length > 0,
       label: normalizedLabel,
+    };
+  }
+
+  /**
+   * Restate one staged command in the working snapshot's own slot ids.
+   *
+   * Only the id-addressed commands need it. `attach` names an input, and
+   * `move` names ordinals — a position stays a position however the batch was
+   * renumbered, so translating one would be wrong rather than merely
+   * unnecessary.
+   */
+  private readdressMediaCommand(
+    addresses: SlotAddressBook,
+    working: GenerationSessionSnapshot,
+    command: StagedMediaCommand,
+  ): ValidationResult<StagedMediaCommand> {
+    if (command.kind !== "remove" && command.kind !== "media-option") {
+      return { ok: true, value: command };
+    }
+    const slotId = resolveOpeningSlotId(addresses, working, command.slotId);
+    if (slotId === null) {
+      // Worded as the validators word it, so a caller cannot tell whether the
+      // slot was never there or has already been consumed — from the caller's
+      // side those are the same mistake, and the same repair.
+      return {
+        ok: false,
+        failure: {
+          code: "media_not_found",
+          message:
+            command.kind === "remove"
+              ? `Input '${command.inputId}' has nothing attached at slot '${command.slotId}'.`
+              : `No generation input has media attached at slot '${command.slotId}'.`,
+        },
+      };
+    }
+    return {
+      ok: true,
+      value: slotId === command.slotId ? command : { ...command, slotId },
     };
   }
 

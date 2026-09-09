@@ -330,6 +330,9 @@ describe("native and extension entry points agree", () => {
       // A workflow switch under the callback leaves the session the extension
       // addressed unreachable, which is what `unavailable` means publicly.
       workflow_changed: "unavailable",
+      // Published as itself: the session is reachable, the caller's slot ids
+      // are simply one arrangement behind, and re-read-and-retry is the fix.
+      session_changed: "session_changed",
       invalid_command: "invalid_command",
       callback_failed: "callback_failed",
       input_not_found: "input_not_found",

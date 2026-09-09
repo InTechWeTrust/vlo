@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { GenerationSessionService } from "../GenerationSessionService";
+import { buildRepeatableInputSlotId } from "../../utils/workflowInputs";
+import { applyGenerationCommit } from "../../../../testUtils/generationSession";
 import type {
   GenerationEditableWidgetSnapshot,
+  GenerationSessionAssetCandidate,
   GenerationInputSnapshot,
   GenerationNodeSnapshot,
   GenerationSessionCommit,
@@ -59,10 +62,29 @@ function publication(
   };
 }
 
-function mount(overrides: Partial<GenerationSessionPublication> = {}) {
+/** A library asset an `attachAsset` can resolve. */
+function videoAsset(id: string): GenerationSessionAssetCandidate {
+  return {
+    id,
+    name: `${id}.mp4`,
+    type: "video",
+    file: null,
+    src: `/library/${id}.mp4`,
+    hasAudio: true,
+  } as unknown as GenerationSessionAssetCandidate;
+}
+
+function mount(
+  overrides: Partial<GenerationSessionPublication> = {},
+  library: readonly GenerationSessionAssetCandidate[] = [],
+) {
   const service = new GenerationSessionService();
   const commit = vi.fn<(update: GenerationSessionCommit) => void>();
-  const unmount = service.mount({ commit, resolveAsset: () => null });
+  const assets = new Map(library.map((asset) => [asset.id, asset]));
+  const unmount = service.mount({
+    commit,
+    resolveAsset: (assetId) => assets.get(assetId) ?? null,
+  });
   service.publish(publication(overrides));
   return { service, commit, unmount };
 }
@@ -517,5 +539,240 @@ describe("GenerationSessionService transactions", () => {
       }),
     ).toMatchObject({ ok: false, code: "callback_failed", message: "extension bug" });
     expect(commit).not.toHaveBeenCalled();
+  });
+});
+
+const BATCH_KEY = { id: "10:images", nodeId: "10", param: "images" };
+const CLIPS_KEY = { id: "11:clips", nodeId: "11", param: "clips" };
+const slot = (index: number) => buildRepeatableInputSlotId(BATCH_KEY, index);
+const clipSlot = (index: number) =>
+  buildRepeatableInputSlotId(CLIPS_KEY, index);
+
+function batchItem(index: number, assetId: string) {
+  return {
+    slotId: slot(index),
+    ordinal: index,
+    source: "asset" as const,
+    assetId,
+    displayName: assetId,
+    mediaType: "image" as const,
+    hasAudio: false,
+    options: {},
+    preparing: false,
+  };
+}
+
+function batchInput(assetIds: readonly string[]): GenerationInputSnapshot {
+  return {
+    ...BATCH_KEY,
+    label: "Images",
+    inputType: "image",
+    repeatable: { max: 9, optionIds: [] },
+    media: assetIds.map((assetId, index) => batchItem(index, assetId)),
+  } as unknown as GenerationInputSnapshot;
+}
+
+function clipsInput(assetIds: readonly string[]): GenerationInputSnapshot {
+  return {
+    ...CLIPS_KEY,
+    label: "Clips",
+    inputType: "video",
+    repeatable: { max: 9, optionIds: ["audio"] },
+    media: assetIds.map((assetId, index) => ({
+      slotId: clipSlot(index),
+      ordinal: index,
+      source: "asset" as const,
+      assetId,
+      displayName: assetId,
+      mediaType: "video" as const,
+      hasAudio: true,
+      options: { audio: false },
+      preparing: false,
+    })),
+  } as unknown as GenerationInputSnapshot;
+}
+
+/**
+ * Slot ids are positional and the host renumbers a batch on every remove and
+ * move, so a caller issuing two media commands hands over ids that were valid
+ * together but never valid in turn. These cover the seam directly: no draft,
+ * no compiler, just a caller doing what the snapshot invites it to do.
+ *
+ * See docs/staged-generation-editor-plan.md §3.1.
+ */
+describe("GenerationSessionService media addressing", () => {
+  it("removes the two items the caller named", () => {
+    const { service, commit } = mount({ inputs: [batchInput(["a", "b", "c"])] });
+
+    const result = service.transaction("Remove two", (transaction) => {
+      transaction.removeMedia(BATCH_KEY.id, slot(0));
+      transaction.removeMedia(BATCH_KEY.id, slot(1));
+    });
+
+    expect(result.ok).toBe(true);
+    const panel = applyGenerationCommit(
+      [batchInput(["a", "b", "c"])],
+      commit.mock.calls[0][0] as GenerationSessionCommit,
+    );
+    expect((panel[0].media ?? []).map((item) => item.assetId)).toEqual(["c"]);
+  });
+
+  it("sets an option on the item the caller named after an earlier removal", () => {
+    const inputs = [clipsInput(["a", "b", "c"])];
+    const { service, commit } = mount({ inputs });
+
+    const result = service.transaction("Remove and switch", (transaction) => {
+      transaction.removeMedia(CLIPS_KEY.id, clipSlot(0));
+      transaction.setMediaOption(clipSlot(1), "audio", true);
+    });
+
+    expect(result.ok).toBe(true);
+    const panel = applyGenerationCommit(
+      inputs,
+      commit.mock.calls[0][0] as GenerationSessionCommit,
+    );
+    expect(
+      (panel[0].media ?? []).map((item) => [item.assetId, item.options.audio]),
+    ).toEqual([
+      ["b", true],
+      ["c", false],
+    ]);
+  });
+
+  it("keeps move ordinals as live positions rather than translating them", () => {
+    const inputs = [batchInput(["a", "b", "c"])];
+    const { service, commit } = mount({ inputs });
+
+    const result = service.transaction("Remove then move", (transaction) => {
+      transaction.removeMedia(BATCH_KEY.id, slot(0));
+      // Against the post-removal batch [b, c], as an ordinal always is.
+      transaction.moveMedia(BATCH_KEY.id, 1, 0);
+    });
+
+    expect(result.ok).toBe(true);
+    const panel = applyGenerationCommit(
+      inputs,
+      commit.mock.calls[0][0] as GenerationSessionCommit,
+    );
+    expect((panel[0].media ?? []).map((item) => item.assetId)).toEqual([
+      "c",
+      "b",
+    ]);
+  });
+
+  it("refuses a second removal of a slot already consumed", () => {
+    // The id that named the first item names the *second* one once the batch
+    // front-packs, so passing it through untranslated would quietly take
+    // another item rather than reporting that it is spent.
+    const { service, commit } = mount({ inputs: [batchInput(["a", "b"])] });
+
+    expect(
+      service.transaction("Remove twice", (transaction) => {
+        transaction.removeMedia(BATCH_KEY.id, slot(0));
+        transaction.removeMedia(BATCH_KEY.id, slot(0));
+      }),
+    ).toMatchObject({ ok: false, code: "media_not_found" });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a slot this transaction created, however well guessed", () => {
+    // A slot minted inside the transaction has no id the caller could have
+    // read, and the ids are predictable enough to guess. `itemOptions` on the
+    // attach is the supported way to set switches on a new item.
+    const { service, commit } = mount({ inputs: [clipsInput(["a"])] }, [
+      videoAsset("asset-new"),
+    ]);
+
+    expect(
+      service.transaction("Attach then address", (transaction) => {
+        transaction.attachAsset(CLIPS_KEY.id, "asset-new");
+        transaction.setMediaOption(clipSlot(1), "audio", true);
+      }),
+    ).toMatchObject({ ok: false, code: "media_not_found" });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("lets a media write through a text-only republish", () => {
+    // The guard is about slot ids. A prompt changing elsewhere cannot
+    // invalidate one, and refusing here would be a failure with no repair.
+    const inputs = [textInput(), batchInput(["a", "b", "c"])];
+    const { service, commit } = mount({ inputs });
+
+    const result = service.transaction("Racing prompt", (transaction) => {
+      service.publish(
+        publication({
+          inputs: [
+            textInput({ value: "typed in the panel" }),
+            batchInput(["a", "b", "c"]),
+          ],
+        }),
+      );
+      transaction.removeMedia(BATCH_KEY.id, slot(0));
+    });
+
+    expect(result.ok).toBe(true);
+    const panel = applyGenerationCommit(
+      inputs,
+      commit.mock.calls[0][0] as GenerationSessionCommit,
+    );
+    expect((panel[1].media ?? []).map((item) => item.assetId)).toEqual([
+      "b",
+      "c",
+    ]);
+  });
+
+  it("refuses a media write when an asset was swapped into the same slot", () => {
+    // The address survives, but "remove this slot" meant "remove that item".
+    const { service, commit } = mount({ inputs: [batchInput(["a", "b"])] });
+
+    const result = service.transaction("Racing swap", (transaction) => {
+      service.publish({ ...publication({ inputs: [batchInput(["x", "b"])] }) });
+      transaction.removeMedia(BATCH_KEY.id, slot(0));
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "session_changed" });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("still refuses a slot the opening snapshot never held", () => {
+    const { service, commit } = mount({ inputs: [batchInput(["a", "b"])] });
+
+    expect(
+      service.transaction("Remove a ghost", (transaction) => {
+        transaction.removeMedia(BATCH_KEY.id, slot(7));
+      }),
+    ).toMatchObject({ ok: false, code: "media_not_found" });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("refuses a media write when the panel republished under the callback", () => {
+    const { service, commit } = mount({ inputs: [batchInput(["a", "b", "c"])] });
+
+    const result = service.transaction("Racing removal", (transaction) => {
+      // The user clears a slot in the panel while the callback runs. The
+      // workflow is unchanged, so the workflow-revision guard does not see it.
+      service.publish(publication({ inputs: [batchInput(["b", "c"])] }));
+      transaction.removeMedia(BATCH_KEY.id, slot(2));
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "session_changed" });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("lets a text write through the same republish", () => {
+    // The guard is about slot ids, and a text input is addressed by name.
+    const { service, commit } = mount({
+      inputs: [textInput(), batchInput(["a", "b", "c"])],
+    });
+
+    const result = service.transaction("Racing text", (transaction) => {
+      service.publish(
+        publication({ inputs: [textInput(), batchInput(["b", "c"])] }),
+      );
+      transaction.setTextInput("6:text", "new prompt");
+    });
+
+    expect(result.ok).toBe(true);
+    expect(commit).toHaveBeenCalledTimes(1);
   });
 });

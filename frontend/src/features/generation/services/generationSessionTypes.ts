@@ -75,7 +75,22 @@ export type GenerationMediaItemSource = "asset" | "timeline-selection" | "frame"
  * `File`, an object URL, or a live store reference.
  */
 export interface GenerationMediaItemSnapshot {
-  /** Addressable slot id; the same id every media write takes. */
+  /**
+   * The address every media write takes — **positional, not an identity**.
+   *
+   * A repeatable input's slot ids are derived from position
+   * (`buildRepeatableInputSlotId`: `142:images`, then `142:images::repeat::1`),
+   * and the store front-packs the batch on every mutation, so removing or
+   * moving an item **reassigns the slot ids of everything after it**. The id
+   * here names the item only for as long as the batch stands still.
+   *
+   * Within one transaction that is handled for you: the ids you read from a
+   * snapshot keep naming the items you meant, and the transaction translates
+   * them as its own commands renumber the batch. Across transactions they do
+   * not — re-read the snapshot rather than storing a slot id and coming back
+   * to it, and see `GenerationSessionTransaction` for what happens when the
+   * panel moves underneath one.
+   */
   readonly slotId: string;
   /**
    * Position among *filled* slots — the delivery position, and the number a
@@ -204,6 +219,28 @@ export interface GenerationAttachAssetOptions {
   readonly itemOptions?: Readonly<Record<string, boolean>>;
 }
 
+/**
+ * One atomic batch of panel writes.
+ *
+ * **Slot ids name the state the transaction opened on.** Media commands are
+ * applied in order and each renumbers the batch (see
+ * `GenerationMediaItemSnapshot.slotId`), so the id a caller read is translated
+ * to the slot that item currently occupies as the sequence advances. Removing
+ * two items therefore means passing the two ids the snapshot showed, not
+ * guessing what the first removal renamed the second to.
+ *
+ * Two limits follow from that:
+ *
+ * - A slot created *inside* this transaction cannot be addressed within it —
+ *   the caller has no id for it, which is why `attachAsset` takes
+ *   `itemOptions` rather than expecting a following `setMediaOption`.
+ * - `moveMedia` ordinals are live positions, not opening ones. A position is a
+ *   position; only ids are translated.
+ *
+ * If the panel republishes its inputs while the callback runs, the staged ids
+ * describe a state nobody saw, and the whole transaction fails
+ * `session_changed` rather than being applied to the wrong items.
+ */
 export interface GenerationSessionTransaction {
   setTextInput(inputId: string, value: string): void;
   setWidget(target: GenerationWidgetTarget, value: unknown): void;
@@ -252,7 +289,14 @@ export type GenerationTransactionFailureCode =
    * requested change would repack the batch underneath it. Retryable.
    */
   | "input_busy"
-  | "option_not_available";
+  | "option_not_available"
+  /**
+   * The panel republished its inputs while the callback ran, so the slot ids
+   * the caller staged name items that have since moved. Refused rather than
+   * translated: those ids describe a state the caller never saw. Retryable
+   * after re-reading the session.
+   */
+  | "session_changed";
 
 export type GenerationTransactionResult =
   | { readonly ok: true; readonly changed: boolean; readonly label: string }

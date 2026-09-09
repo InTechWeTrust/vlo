@@ -439,35 +439,32 @@ describe("a committed draft matches what the editor showed", () => {
 });
 
 /**
- * Known broken: the compiler spends slot ids read from the opening snapshot
- * across a sequence that invalidates them.
+ * Sequences that spend more than one slot id.
  *
- * `withMedia({ renumber: true })` rewrites every slot id in a repeatable batch
- * after each remove and move, so the second command in a sequence names a
- * different item than the compiler meant — or no item at all. These are
- * `it.fails`: they assert the behaviour the editor promises, and they will
- * start failing (loudly, as "expected to fail but passed") the moment the
- * transaction learns to resolve caller ids against the state it opened on.
- *
- * Fix: docs/staged-generation-editor-plan.md §3.1, Phase 1.
+ * These are the cases the compiler got wrong while slot ids were taken at face
+ * value: every remove and move renumbers the batch, so the second id in a
+ * sequence named a different item than the caller meant — or none at all. The
+ * transaction now translates caller ids against the arrangement it opened on
+ * (docs/staged-generation-editor-plan.md §3.1), and the compiler is unchanged.
  */
-describe("known broken: slot ids are positional and renumber", () => {
-  it.fails("removes the two items the editor removed", () => {
-    const { target, panel } = commitDraft(
+describe("a committed draft matches what the editor showed: multi-command", () => {
+  it("removes the two items the editor removed", () => {
+    const { target, result, panel } = commitDraft(
       [BATCH_OF_THREE],
       [
         { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(0) },
         { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(1) },
       ],
     );
+    expect(result.ok).toBe(true);
     expect(assetIds(target)).toEqual(["asset-c"]);
-    // Today the panel is left holding asset-b: the second removal addresses
-    // `::repeat::1`, which is asset-c after the first removal renumbered.
+    // The second removal addresses `::repeat::1`, which the first removal
+    // renamed onto asset-c. Untranslated it takes asset-c and leaves asset-b.
     expect(assetIds(panel)).toEqual(["asset-c"]);
   });
 
-  it.fails("sets the option on the item the editor switched", () => {
-    const { target, panel } = commitDraft(
+  it("sets the option on the item the editor switched", () => {
+    const { target, result, panel } = commitDraft(
       [CLIPS],
       [
         { kind: "removeMedia", inputId: "143:clips", slotId: clipSlot(0) },
@@ -480,17 +477,18 @@ describe("known broken: slot ids are positional and renumber", () => {
         },
       ],
     );
+    expect(result.ok).toBe(true);
     expect(assetIds(target)).toEqual(["clip-b", "clip-c"]);
     expect(audioFlags(target)).toEqual([true, false]);
-    // Today the switch lands on clip-c.
+    // Untranslated the switch lands on clip-c.
     expect(assetIds(panel)).toEqual(["clip-b", "clip-c"]);
     expect(audioFlags(panel)).toEqual([true, false]);
   });
 
-  it.fails("empties a batch the editor emptied", () => {
-    // With two items the second removal addresses a slot that no longer
-    // exists at all, so the whole transaction is refused `media_not_found`
-    // and the panel keeps both — a hard failure rather than a silent one.
+  it("empties a batch the editor emptied", () => {
+    // With two items the second removal addresses a slot that, untranslated,
+    // no longer exists at all — a `media_not_found` refusal of the whole
+    // transaction rather than a silent wrong write.
     const { result, panel } = commitDraft(
       [BATCH],
       [
