@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   findDraftConflicts,
+  findDraftWidgetConflicts,
   projectDraftInputs,
   compileDraftCommands,
   type GenerationInputDraftOp,
@@ -33,6 +34,12 @@ const BATCH_KEY = { id: "142:images", nodeId: "142", param: "images" };
 const CLIPS_KEY = { id: "143:clips", nodeId: "143", param: "clips" };
 
 const batchSlot = (index: number) => buildRepeatableInputSlotId(BATCH_KEY, index);
+/**
+ * A staged item's slot id, which is built from the op's index in the draft log
+ * — not a count of attaches, so a skipped op cannot shift the ones after it.
+ * Real surfaces read this off the projection; only tests construct it.
+ */
+const stagedSlot = (opIndex: number) => `staged:${opIndex}`;
 const clipSlot = (index: number) => buildRepeatableInputSlotId(CLIPS_KEY, index);
 
 function imageAsset(id: string): GenerationSessionAssetCandidate {
@@ -281,7 +288,7 @@ describe("generation inputs draft", () => {
       base,
       [
         { kind: "attachAsset", inputId: "141:image", assetId: "asset-b" },
-        { kind: "removeMedia", inputId: "141:image", slotId: "staged:1" },
+        { kind: "removeMedia", inputId: "141:image", slotId: stagedSlot(0) },
       ],
       resolveAsset,
     );
@@ -297,7 +304,8 @@ describe("generation inputs draft", () => {
     const target = projectDraftInputs(
       base,
       [
-        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k", at: 0 },
+        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
+        { kind: "moveMedia", inputId: "142:images", fromOrdinal: 2, toOrdinal: 0 },
         { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(0) },
       ],
       resolveAsset,
@@ -328,7 +336,7 @@ describe("generation inputs draft", () => {
         {
           kind: "setMediaOption",
           inputId: "143:clips",
-          slotId: "staged:1",
+          slotId: stagedSlot(0),
           optionId: "audio",
           value: true,
         },
@@ -368,6 +376,152 @@ describe("generation inputs draft", () => {
     expect(findDraftConflicts(base, collided, ops)).toEqual(["Prompt"]);
   });
 
+  it("overwrites the tile a replace names, rather than inserting before it", () => {
+    const base = session([BATCH]);
+    const projected = projectDraftInputs(
+      base,
+      [
+        {
+          kind: "replaceMedia",
+          inputId: "142:images",
+          assetId: "asset-k",
+          at: 0,
+        },
+      ],
+      resolveAsset,
+    );
+    // Dropping onto an occupied tile replaces it. Inserting would push the tile
+    // the user aimed at along and grow the batch.
+    expect(projected[0].media?.map((item) => item.assetId)).toEqual([
+      "asset-k",
+      "asset-b",
+    ]);
+  });
+
+  it("stages nothing for a replace onto an empty position", () => {
+    const base = session([BATCH]);
+    const projected = projectDraftInputs(
+      base,
+      [
+        {
+          kind: "replaceMedia",
+          inputId: "142:images",
+          assetId: "asset-k",
+          at: 5,
+        },
+      ],
+      resolveAsset,
+    );
+    expect(projected[0].media?.map((item) => item.assetId)).toEqual([
+      "asset-a",
+      "asset-b",
+    ]);
+  });
+
+  it("refuses an append past the batch's capacity", () => {
+    // A projection that overfills shows the user an item the transaction will
+    // refuse, leaving a draft that cannot be committed at all.
+    const full = {
+      ...BATCH,
+      repeatable: { max: 2, optionIds: [] },
+    } as unknown as GenerationInputSnapshot;
+    const projected = projectDraftInputs(
+      session([full]),
+      [{ kind: "attachAsset", inputId: "142:images", assetId: "asset-k" }],
+      resolveAsset,
+    );
+    expect(projected[0].media?.map((item) => item.assetId)).toEqual([
+      "asset-a",
+      "asset-b",
+    ]);
+  });
+
+  it("counts reserved slots against capacity", () => {
+    // A slot held open for a render in flight is taken, as `findFreeSlotId`
+    // treats it.
+    const reserved = {
+      ...BATCH,
+      repeatable: { max: 3, optionIds: [] },
+      reservedSlotIds: [batchSlot(2)],
+    } as unknown as GenerationInputSnapshot;
+    const projected = projectDraftInputs(
+      session([reserved]),
+      [{ kind: "attachAsset", inputId: "142:images", assetId: "asset-k" }],
+      resolveAsset,
+    );
+    expect(projected[0].media?.map((item) => item.assetId)).toEqual([
+      "asset-a",
+      "asset-b",
+    ]);
+  });
+
+  it("keeps staged slot ids stable when an earlier op resolves to nothing", () => {
+    // The asset for the first attach has left the library. A counter of
+    // successful attaches would renumber the second one, moving React keys and
+    // per-tile state onto a neighbouring tile.
+    const projected = projectDraftInputs(
+      session([BATCH]),
+      [
+        { kind: "attachAsset", inputId: "142:images", assetId: "gone" },
+        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
+      ],
+      resolveAsset,
+    );
+    const staged = (projected[0].media ?? []).filter((item) =>
+      item.slotId.startsWith("staged:"),
+    );
+    expect(staged.map((item) => item.slotId)).toEqual([stagedSlot(1)]);
+  });
+
+  it("reports a conflict on a staged widget the panel then changed", () => {
+    const ops: GenerationInputDraftOp[] = [
+      { kind: "setWidget", nodeId: "9", param: "length", value: 96 },
+    ];
+    const base = new Map<string, unknown>([["9:length", 48]]);
+
+    // Untouched underneath: the draft simply wins.
+    expect(findDraftWidgetConflicts(base, new Map([["9:length", 48]]), ops)).toEqual(
+      [],
+    );
+    // Changed underneath: `compileDraftCommands` writes staged widgets
+    // unconditionally, so without this the panel's choice is overwritten with
+    // nothing on screen to say so.
+    expect(
+      findDraftWidgetConflicts(base, new Map([["9:length", 120]]), ops),
+    ).toEqual(["9:length"]);
+  });
+
+  it("reports a conflict when a slot is reserved under a staged append", () => {
+    // The projection re-derives capacity against the live session, so a
+    // reservation appearing after an append was staged makes that append
+    // refuse. Without a conflict the item just vanishes from the editor, the
+    // commit compiles to nothing, reports success, and clears the draft.
+    const ops: GenerationInputDraftOp[] = [
+      { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
+    ];
+    const before = [BATCH];
+    const busy = [
+      {
+        ...BATCH,
+        reservedSlotIds: [batchSlot(2)],
+      } as unknown as GenerationInputSnapshot,
+    ];
+    expect(findDraftConflicts(before, busy, ops)).toEqual(["Image inputs"]);
+  });
+
+  it("reports a conflict when the batch's capacity shrinks under a draft", () => {
+    const ops: GenerationInputDraftOp[] = [
+      { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
+    ];
+    const smaller = [
+      {
+        ...BATCH,
+        repeatable: { max: 2, optionIds: [] },
+      } as unknown as GenerationInputSnapshot,
+    ];
+    expect(findDraftConflicts([BATCH], smaller, ops)).toEqual(["Image inputs"]);
+  });
+
   it("stages nothing for an unresolvable asset", () => {
     const base = session([SINGLE_IMAGE]);
     const projected = projectDraftInputs(
@@ -392,7 +546,7 @@ describe("a committed draft matches what the editor showed", () => {
       [BATCH],
       [
         { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
-        { kind: "removeMedia", inputId: "142:images", slotId: "staged:1" },
+        { kind: "removeMedia", inputId: "142:images", slotId: stagedSlot(0) },
       ],
     );
     expect(result.ok).toBe(true);
@@ -400,11 +554,12 @@ describe("a committed draft matches what the editor showed", () => {
     expect(assetIds(panel)).toEqual(["asset-a", "asset-b"]);
   });
 
-  it("inserts at the front and removes an original", () => {
+  it("moves a staged item to the front and removes an original", () => {
     const { target, result, panel } = commitDraft(
       [BATCH],
       [
-        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k", at: 0 },
+        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
+        { kind: "moveMedia", inputId: "142:images", fromOrdinal: 2, toOrdinal: 0 },
         { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(0) },
       ],
     );

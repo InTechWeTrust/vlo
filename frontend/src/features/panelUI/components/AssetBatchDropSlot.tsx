@@ -203,6 +203,7 @@ function BatchTile({
     [crossInputRefused, ownSlotIds],
   );
   const externalRefused = disabledActions?.externalDrop;
+  const clearRefused = disabledActions?.clear;
   const canSelect = !disabledActions?.select && typeof onSelect === "function";
   const editRefused = disabledActions?.edit;
   const [externalHighlight, setExternalHighlight] =
@@ -410,8 +411,11 @@ function BatchTile({
               className="batch-slot-clear"
               size="small"
               aria-label={`Remove ${label}`}
+              disabled={Boolean(clearRefused)}
+              title={clearRefused}
               onClick={(event) => {
                 event.stopPropagation();
+                if (clearRefused) return;
                 onClear(item.slotId);
               }}
               onPointerDown={(event) => event.stopPropagation()}

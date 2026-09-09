@@ -34,7 +34,13 @@ export type AssetDropSlotAction =
   | "edit"
   | "reorder"
   /** Dragging an item in from a *different* media input, which swaps them. */
-  | "crossInputReorder";
+  | "crossInputReorder"
+  /**
+   * Emptying a filled slot. Refused where clearing would repack a batch the
+   * host is holding open — the same condition the session reports as
+   * `input_busy`.
+   */
+  | "clear";
 
 /** Actions this context refuses, each mapped to the reason shown to the user. */
 export type AssetDropSlotDisabledActions = Partial<

@@ -27,11 +27,27 @@ import type {
 export type GenerationInputDraftOp =
   | { readonly kind: "setText"; readonly inputId: string; readonly value: string }
   | {
+      /**
+       * Appends to a batch, or fills a single slot (replacing what it holds,
+       * as a drop on it would).
+       *
+       * There is deliberately no position here. An op that both appended and
+       * inserted was read as "put it at this tile" by the surface and applied
+       * as "insert before this tile" by the projection, which pushed the tile
+       * the user dropped on along instead of overwriting it. Overwriting is
+       * `replaceMedia`; nothing in the panel inserts between tiles.
+       */
       readonly kind: "attachAsset";
       readonly inputId: string;
       readonly assetId: string;
-      /** Position among filled slots; omitted appends. */
-      readonly at?: number;
+      readonly itemOptions?: Readonly<Record<string, boolean>>;
+    }
+  | {
+      /** Overwrites the filled slot at `at`, as a drop on that tile does. */
+      readonly kind: "replaceMedia";
+      readonly inputId: string;
+      readonly assetId: string;
+      readonly at: number;
       readonly itemOptions?: Readonly<Record<string, boolean>>;
     }
   | {
@@ -111,28 +127,52 @@ function applyToInput(
   input: GenerationInputSnapshot,
   op: Exclude<GenerationInputDraftOp, { kind: "setWidget" }>,
   resolveAsset: StagedAttachResolver,
-  stagedSlotSeq: { value: number },
+  /**
+   * This op's index in the draft log, which is what its staged slot id is
+   * built from.
+   *
+   * Not a running counter of successful attaches: `resolveAsset` returns null
+   * for an asset that has left the library mid-draft, and a counter would then
+   * shift every *later* staged id down one — moving React keys and per-tile UI
+   * state onto neighbouring tiles. An op's position in the log never moves.
+   */
+  opIndex: number,
 ): GenerationInputSnapshot {
   if (op.kind === "setText") {
     return { ...input, value: op.value };
   }
   const media = input.media ?? [];
-  if (op.kind === "attachAsset") {
-    const replaced = input.repeatable ? null : (media[0] ?? null);
+  if (op.kind === "attachAsset" || op.kind === "replaceMedia") {
+    const at = op.kind === "replaceMedia" ? op.at : null;
+    // A single slot always replaces; a batch replaces only where told to.
+    const replaced = !input.repeatable
+      ? (media[0] ?? null)
+      : at !== null
+        ? (media[at] ?? null)
+        : null;
+    if (op.kind === "replaceMedia" && replaced === null) return input;
+    // A batch that is full — or whose remaining slots are spoken for by media
+    // still being produced — refuses an append, exactly as the transaction
+    // would. Without this a draft can show an item it can never commit.
+    if (
+      op.kind === "attachAsset" &&
+      input.repeatable &&
+      media.length + (input.reservedSlotIds?.length ?? 0) >=
+        input.repeatable.max
+    ) {
+      return input;
+    }
     const simulated = resolveAsset(input, op.assetId, replaced);
     if (!simulated) return input;
-    stagedSlotSeq.value += 1;
     const item: GenerationMediaItemSnapshot = {
       ...simulated,
-      slotId: `${STAGED_SLOT_PREFIX}${stagedSlotSeq.value}`,
+      slotId: `${STAGED_SLOT_PREFIX}${opIndex}`,
       options: { ...simulated.options, ...(op.itemOptions ?? {}) },
     };
-    // A single-slot input replaces what it holds, exactly as a drop on it
-    // would; a batch inserts at the position or appends.
     if (!input.repeatable) return { ...input, media: reindex([item]) };
     const next = [...media];
-    const at = op.at ?? next.length;
-    next.splice(Math.max(0, Math.min(at, next.length)), 0, item);
+    if (at === null) next.push(item);
+    else next.splice(at, 1, item);
     return { ...input, media: reindex(next) };
   }
   if (op.kind === "removeMedia") {
@@ -176,14 +216,13 @@ export function projectDraftInputs(
   resolveAsset: StagedAttachResolver,
 ): readonly GenerationInputSnapshot[] {
   if (ops.length === 0) return session.inputs;
-  const stagedSlotSeq = { value: 0 };
   const byId = new Map(session.inputs.map((input) => [input.id, input]));
-  for (const op of ops) {
-    if (op.kind === "setWidget") continue;
+  ops.forEach((op, opIndex) => {
+    if (op.kind === "setWidget") return;
     const input = byId.get(op.inputId);
-    if (!input) continue;
-    byId.set(op.inputId, applyToInput(input, op, resolveAsset, stagedSlotSeq));
-  }
+    if (!input) return;
+    byId.set(op.inputId, applyToInput(input, op, resolveAsset, opIndex));
+  });
   return session.inputs.map((input) => byId.get(input.id) ?? input);
 }
 
@@ -254,8 +293,48 @@ export function findDraftConflicts(
     }
     const changed =
       before.value !== input.value ||
-      JSON.stringify(before.media ?? []) !== JSON.stringify(input.media ?? []);
+      JSON.stringify(before.media ?? []) !== JSON.stringify(input.media ?? []) ||
+      // Capacity is part of the disagreement, not just contents. The
+      // projection re-derives against the live session on every read, so a
+      // slot reserved after an append was staged makes that append refuse —
+      // the item vanishes from the editor, the commit compiles to nothing,
+      // succeeds, and clears the draft. Silently losing the user's work is the
+      // one outcome this whole design exists to prevent, so a capacity change
+      // under a drafted input is reported like any other.
+      JSON.stringify(before.reservedSlotIds ?? []) !==
+        JSON.stringify(input.reservedSlotIds ?? []) ||
+      before.repeatable?.max !== input.repeatable?.max;
     if (changed) conflicts.push(input.label);
+  }
+  return conflicts;
+}
+
+/**
+ * The staged widgets whose panel value moved underneath, keyed `nodeId:param`.
+ *
+ * Widgets need this as much as inputs do, and for a worse reason:
+ * `compileDraftCommands` writes every staged widget unconditionally — the
+ * staged value *is* the target, so there is no diff to notice a disagreement.
+ * Without a conflict check a draft holding a duration silently overwrites
+ * whatever the user then chose in the panel, which for a composer means the
+ * prose and the length stop agreeing.
+ *
+ * Keys rather than labels: a widget's label lives in the node catalogue, and
+ * the caller already has it.
+ */
+export function findDraftWidgetConflicts(
+  base: ReadonlyMap<string, unknown>,
+  current: ReadonlyMap<string, unknown>,
+  ops: readonly GenerationInputDraftOp[],
+): readonly string[] {
+  const conflicts: string[] = [];
+  for (const key of projectDraftWidgets(ops).keys()) {
+    if (!base.has(key)) continue;
+    // Compared structurally: a widget value may be a small object, and the
+    // panel republishes a fresh one for every keystroke elsewhere.
+    if (JSON.stringify(base.get(key)) !== JSON.stringify(current.get(key))) {
+      conflicts.push(key);
+    }
   }
   return conflicts;
 }

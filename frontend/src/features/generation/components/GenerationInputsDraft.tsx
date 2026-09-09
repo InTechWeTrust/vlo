@@ -71,6 +71,35 @@ const STAGED_REFUSALS: AssetDropSlotDisabledActions = {
 };
 
 /**
+ * What a batch refuses while it is holding slots open.
+ *
+ * Clearing, reordering and replacing all repack the batch, and the session
+ * refuses every one of them with `input_busy` while `reservedSlotIds` is
+ * non-empty. Offering them here would stage an edit that cannot commit, so
+ * they are shown refused with the reason instead — the same treatment the
+ * gestures a draft can never express already get.
+ *
+ * Appending is still allowed: it writes one free slot and leaves the rest,
+ * reservations included, exactly where they are.
+ */
+const BUSY_BATCH_REASON =
+  "This batch is holding slots for media still being produced, so it cannot be rearranged until that finishes.";
+
+function refusalsFor(
+  input: GenerationInputSnapshot,
+): AssetDropSlotDisabledActions {
+  if (!input.repeatable || (input.reservedSlotIds?.length ?? 0) === 0) {
+    return STAGED_REFUSALS;
+  }
+  return {
+    ...STAGED_REFUSALS,
+    clear: BUSY_BATCH_REASON,
+    reorder: BUSY_BATCH_REASON,
+    crossInputReorder: BUSY_BATCH_REASON,
+  };
+}
+
+/**
  * The panel-shaped value for one staged media item.
  *
  * The fields consume the panel's own value type; the draft holds the detached
@@ -397,17 +426,27 @@ export function GenerationInputsDraft({
               bgColor={bgColor}
               mediaInputs={mediaValuesFor(snapshot, input)}
               firstValue={toPanelValue(staged[0], resolveAsset)}
-              disabledActions={STAGED_REFUSALS}
+              disabledActions={refusalsFor(snapshot)}
               onInputDrop={(slotKey, asset) => {
-                // The strip names the tile dropped on, and that is a position:
-                // a drop on an occupied tile replaces it, as the panel does.
+                // The strip names the tile dropped on. An occupied tile is
+                // overwritten and an empty one appends — said with two ops,
+                // because one op meaning both was read as "put it here" by the
+                // strip and applied as "insert before here" by the projection.
                 const at = indexOfSlotKey(slotKey);
-                apply({
-                  kind: "attachAsset",
-                  inputId: snapshot.id,
-                  assetId: asset.id,
-                  ...(at === null || at >= staged.length ? {} : { at }),
-                });
+                apply(
+                  at === null || at >= staged.length
+                    ? {
+                        kind: "attachAsset",
+                        inputId: snapshot.id,
+                        assetId: asset.id,
+                      }
+                    : {
+                        kind: "replaceMedia",
+                        inputId: snapshot.id,
+                        assetId: asset.id,
+                        at,
+                      },
+                );
               }}
               onExternalInputDrop={() => undefined}
               onInputClear={(slotKey) => {

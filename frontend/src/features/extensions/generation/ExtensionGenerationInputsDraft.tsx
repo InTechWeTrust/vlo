@@ -95,7 +95,11 @@ export function ExtensionGenerationInputsDraft({
                 // The same port every other extension write crosses, so a
                 // bad id or an oversize value is refused here and rolls the
                 // whole staged commit back rather than reaching the store.
-                additionalWrites(createExtensionTransactionPort(session));
+                //
+                // Returned, not called and discarded: the session refuses an
+                // async callback, and it can only see one if the value travels
+                // back through both this wrapper and the host controller.
+                return additionalWrites(createExtensionTransactionPort(session));
               }),
             ),
           revert: controller.revert,

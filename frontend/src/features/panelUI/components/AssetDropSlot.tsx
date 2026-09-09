@@ -111,6 +111,7 @@ function AssetDropSlotComponent({
   const selectRefused = disabledActions?.select;
   const editRefused = disabledActions?.edit;
   const externalRefused = disabledActions?.externalDrop;
+  const clearRefused = disabledActions?.clear;
   const canSelect = !selectRefused && typeof onSelect === "function";
   const canEdit = !editRefused && typeof onEdit === "function";
   const canExternalDrop = !externalRefused && typeof onExternalDrop === "function";
@@ -339,8 +340,11 @@ function AssetDropSlotComponent({
               <ClearButton
                 className="drop-slot-clear"
                 size="small"
+                disabled={Boolean(clearRefused)}
+                title={clearRefused}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (clearRefused) return;
                   onClear();
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
