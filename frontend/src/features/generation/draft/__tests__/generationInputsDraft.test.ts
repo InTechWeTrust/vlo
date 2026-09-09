@@ -1,16 +1,61 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   findDraftConflicts,
   projectDraftInputs,
   compileDraftCommands,
   type GenerationInputDraftOp,
 } from "../generationInputsDraft";
+import { generationSessionService } from "../../services/GenerationSessionService";
+import { simulateAttachedItem } from "../../services/generationSessionValidation";
+import { buildRepeatableInputSlotId } from "../../utils/workflowInputs";
+import {
+  mountGenerationSession,
+  type MountedGenerationSession,
+} from "../../../../testUtils/generationSession";
 import type {
   GenerationInputSnapshot,
-  GenerationMediaItemSnapshot,
+  GenerationSessionAssetCandidate,
   GenerationSessionSnapshot,
   GenerationSessionTransaction,
+  GenerationTransactionResult,
 } from "../../services/generationSessionTypes";
+
+/**
+ * Slot ids are built the way the host builds them, never invented.
+ *
+ * `buildRepeatableInputSlotId` derives a repeatable slot id from its *index*
+ * (`142:images`, then `142:images::repeat::1`), and the host renumbers the
+ * whole batch on every remove and move. A fixture using stable labels like
+ * `"slot-a"` describes a host that does not exist and cannot see any bug that
+ * depends on renumbering — see docs/staged-generation-editor-plan.md §2.4.
+ */
+const BATCH_KEY = { id: "142:images", nodeId: "142", param: "images" };
+const CLIPS_KEY = { id: "143:clips", nodeId: "143", param: "clips" };
+
+const batchSlot = (index: number) => buildRepeatableInputSlotId(BATCH_KEY, index);
+const clipSlot = (index: number) => buildRepeatableInputSlotId(CLIPS_KEY, index);
+
+function imageAsset(id: string): GenerationSessionAssetCandidate {
+  return {
+    id,
+    name: `${id}.png`,
+    type: "image",
+    file: null,
+    src: `/library/${id}.png`,
+    hasAudio: false,
+  } as unknown as GenerationSessionAssetCandidate;
+}
+
+function videoAsset(id: string): GenerationSessionAssetCandidate {
+  return {
+    id,
+    name: `${id}.mp4`,
+    type: "video",
+    file: null,
+    src: `/library/${id}.mp4`,
+    hasAudio: true,
+  } as unknown as GenerationSessionAssetCandidate;
+}
 
 function mediaItem(slotId: string, assetId: string, ordinal: number) {
   return {
@@ -22,6 +67,20 @@ function mediaItem(slotId: string, assetId: string, ordinal: number) {
     mediaType: "image" as const,
     hasAudio: false,
     options: {},
+    preparing: false,
+  };
+}
+
+function clipItem(slotId: string, assetId: string, ordinal: number) {
+  return {
+    slotId,
+    ordinal,
+    source: "asset" as const,
+    assetId,
+    displayName: `${assetId}.mp4`,
+    mediaType: "video" as const,
+    hasAudio: true,
+    options: { audio: false },
     preparing: false,
   };
 }
@@ -64,30 +123,58 @@ const SINGLE_IMAGE: GenerationInputSnapshot = {
 } as unknown as GenerationInputSnapshot;
 
 const BATCH: GenerationInputSnapshot = {
-  id: "142:images",
-  nodeId: "142",
-  param: "images",
+  ...BATCH_KEY,
   label: "Image inputs",
   inputType: "image",
   repeatable: { max: 9, optionIds: [] },
-  media: [mediaItem("slot-a", "asset-a", 0), mediaItem("slot-b", "asset-b", 1)],
+  media: [
+    mediaItem(batchSlot(0), "asset-a", 0),
+    mediaItem(batchSlot(1), "asset-b", 1),
+  ],
 } as unknown as GenerationInputSnapshot;
 
+/** Three items, so a second removal has somewhere wrong to land. */
+const BATCH_OF_THREE: GenerationInputSnapshot = {
+  ...BATCH,
+  media: [
+    mediaItem(batchSlot(0), "asset-a", 0),
+    mediaItem(batchSlot(1), "asset-b", 1),
+    mediaItem(batchSlot(2), "asset-c", 2),
+  ],
+} as unknown as GenerationInputSnapshot;
+
+/** A video batch that offers the per-item audio switch. */
+const CLIPS: GenerationInputSnapshot = {
+  ...CLIPS_KEY,
+  label: "Clips",
+  inputType: "video",
+  repeatable: { max: 9, optionIds: ["audio"] },
+  media: [
+    clipItem(clipSlot(0), "clip-a", 0),
+    clipItem(clipSlot(1), "clip-b", 1),
+    clipItem(clipSlot(2), "clip-c", 2),
+  ],
+} as unknown as GenerationInputSnapshot;
+
+const LIBRARY = new Map<string, GenerationSessionAssetCandidate>([
+  ["asset-a", imageAsset("asset-a")],
+  ["asset-b", imageAsset("asset-b")],
+  ["asset-c", imageAsset("asset-c")],
+  ["asset-k", imageAsset("asset-k")],
+  ["clip-a", videoAsset("clip-a")],
+  ["clip-b", videoAsset("clip-b")],
+  ["clip-c", videoAsset("clip-c")],
+]);
+
+/** The host's own attach derivation, as `useGenerationInputsDraft` uses it. */
 const resolveAsset = (
-  _input: GenerationInputSnapshot,
+  input: GenerationInputSnapshot,
   assetId: string,
-): GenerationMediaItemSnapshot =>
-  ({
-    slotId: "",
-    ordinal: 0,
-    source: "asset",
-    assetId,
-    displayName: `${assetId}.png`,
-    mediaType: "image",
-    hasAudio: false,
-    options: {},
-    preparing: false,
-  }) as unknown as GenerationMediaItemSnapshot;
+  replaced: Parameters<typeof simulateAttachedItem>[2],
+) => {
+  const asset = LIBRARY.get(assetId);
+  return asset ? simulateAttachedItem(input, asset, replaced) : null;
+};
 
 function recordTransaction() {
   const calls: string[] = [];
@@ -112,6 +199,46 @@ function recordTransaction() {
   } as unknown as GenerationSessionTransaction;
   return { calls, transaction };
 }
+
+let mounted: MountedGenerationSession | null = null;
+
+afterEach(() => {
+  mounted?.unmount();
+  mounted = null;
+});
+
+/**
+ * Stage `ops`, compile them, and commit through the **real** session.
+ *
+ * Nothing here models the panel: the transaction validates and sequences the
+ * commands itself, and `panelInputs()` folds the resulting commit back through
+ * the host's own apply. What comes out is what the panel would really hold.
+ */
+function commitDraft(
+  inputs: readonly GenerationInputSnapshot[],
+  ops: readonly GenerationInputDraftOp[],
+): {
+  readonly target: readonly GenerationInputSnapshot[];
+  readonly result: GenerationTransactionResult;
+  readonly panel: readonly GenerationInputSnapshot[];
+} {
+  mounted = mountGenerationSession({ inputs });
+  for (const [id, asset] of LIBRARY) mounted.assets.set(id, asset);
+
+  const snapshot = generationSessionService.getSnapshot();
+  if (!snapshot) throw new Error("the session did not mount");
+  const target = projectDraftInputs(snapshot, ops, resolveAsset);
+  const result = generationSessionService.transaction("draft", (transaction) => {
+    compileDraftCommands(snapshot.inputs, target, transaction);
+  });
+  return { target, result, panel: mounted.panelInputs() };
+}
+
+const assetIds = (inputs: readonly GenerationInputSnapshot[], index = 0) =>
+  (inputs[index].media ?? []).map((item) => item.assetId);
+
+const audioFlags = (inputs: readonly GenerationInputSnapshot[], index = 0) =>
+  (inputs[index].media ?? []).map((item) => item.options.audio === true);
 
 describe("generation inputs draft", () => {
   it("projects staged edits without touching the session", () => {
@@ -147,7 +274,7 @@ describe("generation inputs draft", () => {
     // editor shows an empty slot.
     const withA: GenerationInputSnapshot = {
       ...SINGLE_IMAGE,
-      media: [mediaItem("slot-a", "asset-a", 0)],
+      media: [mediaItem("141:image", "asset-a", 0)],
     } as unknown as GenerationInputSnapshot;
     const base = session([withA]);
     const target = projectDraftInputs(
@@ -162,7 +289,7 @@ describe("generation inputs draft", () => {
 
     const { calls, transaction } = recordTransaction();
     compileDraftCommands(base.inputs, target, transaction);
-    expect(calls).toEqual(["remove 141:image slot-a"]);
+    expect(calls).toEqual(["remove 141:image 141:image"]);
   });
 
   it("appends then reorders rather than attaching at a stale position", () => {
@@ -171,7 +298,7 @@ describe("generation inputs draft", () => {
       base,
       [
         { kind: "attachAsset", inputId: "142:images", assetId: "asset-k", at: 0 },
-        { kind: "removeMedia", inputId: "142:images", slotId: "slot-a" },
+        { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(0) },
       ],
       resolveAsset,
     );
@@ -186,21 +313,21 @@ describe("generation inputs draft", () => {
     // positioned attach is an append plus a reorder anyway, and this keeps the
     // attach off the repack path.
     expect(calls).toEqual([
-      "remove 142:images slot-a",
+      `remove 142:images ${batchSlot(0)}`,
       "attach 142:images asset-k at=end opts={}",
       "move 142:images 1->0",
     ]);
   });
 
   it("carries an option set on staged media into its own attach", () => {
-    const base = session([BATCH]);
+    const base = session([CLIPS]);
     const target = projectDraftInputs(
       base,
       [
-        { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
+        { kind: "attachAsset", inputId: "143:clips", assetId: "clip-a" },
         {
           kind: "setMediaOption",
-          inputId: "142:images",
+          inputId: "143:clips",
           slotId: "staged:1",
           optionId: "audio",
           value: true,
@@ -212,9 +339,7 @@ describe("generation inputs draft", () => {
     compileDraftCommands(base.inputs, target, transaction);
     // A staged slot has no id the host has seen, so the option rides the
     // attach that creates it.
-    expect(calls).toEqual([
-      'attach 142:images asset-k at=end opts={"audio":true}',
-    ]);
+    expect(calls).toEqual(['attach 143:clips clip-a at=end opts={"audio":true}']);
   });
 
   it("writes nothing when the projection matches the panel", () => {
@@ -234,7 +359,7 @@ describe("generation inputs draft", () => {
     // touching is not a disagreement.
     const elsewhere = [
       TEXT_INPUT,
-      { ...BATCH, media: [mediaItem("slot-a", "asset-a", 0)] },
+      { ...BATCH, media: [mediaItem(batchSlot(0), "asset-a", 0)] },
     ];
     expect(findDraftConflicts(base, elsewhere, ops)).toEqual([]);
 
@@ -252,78 +377,128 @@ describe("generation inputs draft", () => {
     );
     expect(projected[0].media).toEqual([]);
   });
+});
 
-  /**
-   * The invariant the compiler exists to hold: whatever the editor shows is
-   * what the panel holds afterwards. Applies the compiled commands to a naive
-   * model of the panel and compares, ignoring the staged-versus-real slot ids
-   * that necessarily differ.
-   */
-  it.each([
-    [
-      "clearing a staged replacement",
+/**
+ * The invariant the compiler exists to hold: whatever the editor shows is what
+ * the panel holds afterwards. Every case here runs the compiled commands
+ * through the real session transaction and the host's own apply, so a command
+ * addressing a slot the host has renumbered fails here rather than passing
+ * against a model that never renumbers.
+ */
+describe("a committed draft matches what the editor showed", () => {
+  it("clears a staged replacement without touching the panel", () => {
+    const { target, result, panel } = commitDraft(
+      [BATCH],
       [
         { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
         { kind: "removeMedia", inputId: "142:images", slotId: "staged:1" },
       ],
-    ],
-    [
-      "inserting at the front and removing an original",
+    );
+    expect(result.ok).toBe(true);
+    expect(assetIds(panel)).toEqual(assetIds(target));
+    expect(assetIds(panel)).toEqual(["asset-a", "asset-b"]);
+  });
+
+  it("inserts at the front and removes an original", () => {
+    const { target, result, panel } = commitDraft(
+      [BATCH],
       [
         { kind: "attachAsset", inputId: "142:images", assetId: "asset-k", at: 0 },
-        { kind: "removeMedia", inputId: "142:images", slotId: "slot-a" },
+        { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(0) },
       ],
-    ],
-    [
-      "reordering around a staged item",
+    );
+    expect(result.ok).toBe(true);
+    expect(assetIds(panel)).toEqual(assetIds(target));
+    expect(assetIds(panel)).toEqual(["asset-k", "asset-b"]);
+  });
+
+  it("reorders around a staged item", () => {
+    const { target, result, panel } = commitDraft(
+      [BATCH],
       [
         { kind: "attachAsset", inputId: "142:images", assetId: "asset-k" },
         { kind: "moveMedia", inputId: "142:images", fromOrdinal: 2, toOrdinal: 0 },
         { kind: "moveMedia", inputId: "142:images", fromOrdinal: 2, toOrdinal: 1 },
       ],
-    ],
-    [
-      "removing everything",
+    );
+    expect(result.ok).toBe(true);
+    expect(assetIds(panel)).toEqual(assetIds(target));
+    expect(assetIds(panel)).toEqual(["asset-k", "asset-b", "asset-a"]);
+  });
+
+  it("removes a single item", () => {
+    const { target, result, panel } = commitDraft(
+      [BATCH_OF_THREE],
+      [{ kind: "removeMedia", inputId: "142:images", slotId: batchSlot(1) }],
+    );
+    expect(result.ok).toBe(true);
+    expect(assetIds(panel)).toEqual(assetIds(target));
+    expect(assetIds(panel)).toEqual(["asset-a", "asset-c"]);
+  });
+});
+
+/**
+ * Known broken: the compiler spends slot ids read from the opening snapshot
+ * across a sequence that invalidates them.
+ *
+ * `withMedia({ renumber: true })` rewrites every slot id in a repeatable batch
+ * after each remove and move, so the second command in a sequence names a
+ * different item than the compiler meant — or no item at all. These are
+ * `it.fails`: they assert the behaviour the editor promises, and they will
+ * start failing (loudly, as "expected to fail but passed") the moment the
+ * transaction learns to resolve caller ids against the state it opened on.
+ *
+ * Fix: docs/staged-generation-editor-plan.md §3.1, Phase 1.
+ */
+describe("known broken: slot ids are positional and renumber", () => {
+  it.fails("removes the two items the editor removed", () => {
+    const { target, panel } = commitDraft(
+      [BATCH_OF_THREE],
       [
-        { kind: "removeMedia", inputId: "142:images", slotId: "slot-a" },
-        { kind: "removeMedia", inputId: "142:images", slotId: "slot-b" },
+        { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(0) },
+        { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(1) },
       ],
-    ],
-  ] as [string, GenerationInputDraftOp[]][])(
-    "commits a projection the panel then matches: %s",
-    (_name, ops) => {
-      const base = session([BATCH]);
-      const target = projectDraftInputs(base, ops, resolveAsset);
+    );
+    expect(assetIds(target)).toEqual(["asset-c"]);
+    // Today the panel is left holding asset-b: the second removal addresses
+    // `::repeat::1`, which is asset-c after the first removal renumbered.
+    expect(assetIds(panel)).toEqual(["asset-c"]);
+  });
 
-      // A panel that applies the commands the way the real one does.
-      let panel = (base.inputs[0].media ?? []).map((item) => ({ ...item }));
-      let staged = 0;
-      compileDraftCommands(base.inputs, target, {
-        setTextInput: () => undefined,
-        setWidget: () => undefined,
-        attachAsset: (_inputId: string, assetId: string) => {
-          staged += 1;
-          panel.push({ ...mediaItem(`real-${staged}`, assetId, 0) });
+  it.fails("sets the option on the item the editor switched", () => {
+    const { target, panel } = commitDraft(
+      [CLIPS],
+      [
+        { kind: "removeMedia", inputId: "143:clips", slotId: clipSlot(0) },
+        {
+          kind: "setMediaOption",
+          inputId: "143:clips",
+          slotId: clipSlot(1),
+          optionId: "audio",
+          value: true,
         },
-        removeMedia: (_inputId: string, slotId: string) => {
-          panel = panel.filter((item) => item.slotId !== slotId);
-        },
-        moveMedia: (_inputId: string, from: number, to: number) => {
-          const [moved] = panel.splice(from, 1);
-          panel.splice(to, 0, moved);
-        },
-        setMediaOption: (slotId: string, optionId: string, value: boolean) => {
-          panel = panel.map((item) =>
-            item.slotId === slotId
-              ? { ...item, options: { ...item.options, [optionId]: value } }
-              : item,
-          );
-        },
-      } as unknown as GenerationSessionTransaction);
+      ],
+    );
+    expect(assetIds(target)).toEqual(["clip-b", "clip-c"]);
+    expect(audioFlags(target)).toEqual([true, false]);
+    // Today the switch lands on clip-c.
+    expect(assetIds(panel)).toEqual(["clip-b", "clip-c"]);
+    expect(audioFlags(panel)).toEqual([true, false]);
+  });
 
-      expect(panel.map((item) => item.assetId)).toEqual(
-        (target[0].media ?? []).map((item) => item.assetId),
-      );
-    },
-  );
+  it.fails("empties a batch the editor emptied", () => {
+    // With two items the second removal addresses a slot that no longer
+    // exists at all, so the whole transaction is refused `media_not_found`
+    // and the panel keeps both — a hard failure rather than a silent one.
+    const { result, panel } = commitDraft(
+      [BATCH],
+      [
+        { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(0) },
+        { kind: "removeMedia", inputId: "142:images", slotId: batchSlot(1) },
+      ],
+    );
+    expect(result.ok).toBe(true);
+    expect(assetIds(panel)).toEqual([]);
+  });
 });

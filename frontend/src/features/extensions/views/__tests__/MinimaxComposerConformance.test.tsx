@@ -89,6 +89,15 @@ function createGenerationHarness(options: {
   const listeners = new Set<() => void>();
   let text = options.prompt;
   let revision = 0;
+  /**
+   * Set to make the next write fail.
+   *
+   * Without it every commit in this suite succeeds, so the composer's refusal
+   * path — surface the message, keep the draft — is never exercised. The real
+   * controller refuses on a conflict, and a stub that cannot is a stub that
+   * quietly promises the host never says no.
+   */
+  let refusal: { code: string; message: string } | null = null;
   let snapshot: unknown = null;
   let snapshotRevision = -1;
 
@@ -182,6 +191,11 @@ function createGenerationHarness(options: {
         setTextInput(inputId: string, value: string): void;
       }) => void,
     ) => {
+      if (refusal) {
+        // Refused before the callback runs, as the session does: nothing is
+        // staged, so nothing is half-written.
+        return { ok: false as const, ...refusal, label };
+      }
       let next = text;
       callback({
         setTextInput: (_inputId, value) => {
@@ -201,6 +215,18 @@ function createGenerationHarness(options: {
 
   const staged: { current: readonly unknown[] } = { current: [] };
   const stagedWidgets = new Map<string, unknown>();
+  /**
+   * Publish a change, as the session does.
+   *
+   * Every mutation here goes through this. A setter that quietly mutates and
+   * does not notify leaves the view rendering the previous value until some
+   * unrelated render happens to pick it up, which makes a test pass or fail on
+   * render timing rather than on behaviour.
+   */
+  const notify = () => {
+    revision += 1;
+    for (const listener of [...listeners]) listener();
+  };
   return {
     commits,
     generation,
@@ -210,20 +236,33 @@ function createGenerationHarness(options: {
     },
     stage(inputs: readonly unknown[]) {
       staged.current = inputs;
+      notify();
     },
     get stagedWidgets() {
       return stagedWidgets as ReadonlyMap<string, unknown>;
     },
     stageWidget(key: string, value: unknown) {
       stagedWidgets.set(key, value);
+      notify();
+    },
+    /** A draft holds edits when *either* half of it does. */
+    get hasStagedEdits() {
+      return staged.current.length > 0 || stagedWidgets.size > 0;
+    },
+    get refusal() {
+      return refusal;
+    },
+    /** Make every subsequent write fail, the way a conflicted draft does. */
+    refuse(next: { code: string; message: string } | null) {
+      refusal = next;
+      notify();
     },
     get text() {
       return text;
     },
     setText(next: string) {
       text = next;
-      revision += 1;
-      for (const listener of [...listeners]) listener();
+      notify();
     },
   };
 }
@@ -239,9 +278,16 @@ function mountComposer(
       react: React,
       mui: createMuiStubs(),
       panelUi: {},
-      // Stands in for the host's staged editor: it renders nothing of its own
-      // and hands the composer a controller over the inputs it asked for, so
-      // the composer's *use* of a draft is exercised without the panel.
+      // A seam stub, deliberately: this suite runs against stubbed MUI to test
+      // the *composer's* logic, and mounting the real staged editor would drag
+      // the whole panel field stack in with it. What it must not do is promise
+      // behaviour the real controller does not have — so refusal comes from the
+      // harness rather than being hardcoded away, and `commit` goes through the
+      // same transaction that honours it.
+      //
+      // The real controller is covered host-side against the real session:
+      // features/generation/draft/__tests__/generationInputsDraft.test.ts and
+      // features/generation/components/__tests__/GenerationInputsDraft.test.tsx.
       generationUi: {
         InputsDraft: ({
           inputIds,
@@ -255,8 +301,10 @@ function mountComposer(
               inputIds.includes(entry.id),
             ),
             widgetValues: harness.stagedWidgets,
-            canCommit: true,
-            error: null,
+            hasDraftChanges: harness.hasStagedEdits,
+            hasConflict: harness.refusal !== null,
+            canCommit: harness.refusal === null,
+            error: harness.refusal?.message ?? null,
             commit: (label: string, writes?: (tx: unknown) => void) =>
               harness.generation.transaction(label, writes as never),
             revert: () => undefined,
@@ -693,6 +741,38 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
       "<Subject 1> is the person in <Picture 1>.",
     );
     expect(textAreaFor("Summary").value).toBe("");
+    view.unmount();
+  });
+
+  it("keeps the draft and says why when the write is refused", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["vloMiniMaxH3ReferenceToVideoBatch"],
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+
+    type("Subject definitions", "<Subject 1> is the person in <Picture 1>.");
+    harness.refuse({
+      code: "unavailable",
+      message: "Image inputs changed in the panel while you were editing.",
+    });
+    click("Commit to prompt");
+
+    expect(harness.commits).toEqual([]);
+    expect(
+      screen.getByText("Image inputs changed in the panel while you were editing."),
+    ).toBeTruthy();
+    // The draft survives a refusal. The panel was never written, so clearing
+    // the author's sections would lose an edit that exists nowhere else — the
+    // failure mode a commit-then-clear ordering produces.
+    expect(textAreaFor("Subject definitions").value).toBe(
+      "<Subject 1> is the person in <Picture 1>.",
+    );
     view.unmount();
   });
 
