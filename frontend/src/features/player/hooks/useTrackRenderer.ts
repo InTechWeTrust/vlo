@@ -160,5 +160,9 @@ export function useTrackRenderer(
     app,
     overlayContainer,
     maskGizmoInteractions,
+    // Same reason the clip gizmo has one: the mask overlay empties from the
+    // Pixi ticker, so without a per-tick gate the gizmo is left measuring an
+    // empty container — a zero-size box with all handles stacked on a point.
+    maskInteractionHandlers.isMaskGizmoTargetRenderable,
   );
 }

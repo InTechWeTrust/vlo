@@ -82,28 +82,47 @@ export function isBrushBufferExplicitlyEmpty(
   return !!buffer && buffer.dirty && !buffer.paintedBounds;
 }
 
+function hasPaintedArea(
+  bounds: BrushPaintedBounds | null | undefined,
+): bounds is BrushPaintedBounds {
+  return !!bounds && bounds.width > 0 && bounds.height > 0;
+}
+
 /**
- * True when a brush mask has painted content to composite.
+ * The painted region a brush mask should be drawn and hit-tested against, or
+ * null when it has none.
  *
  * A buffer's `paintedBounds` is a *cache* of the mask clip's persisted
  * `brushPaintedBounds`, not an independent source of truth: it is legitimately
  * absent for a freshly (re)created buffer and can be lost to a hydrate that ran
- * without crop metadata. The persisted value is the durable record, so either
- * one counts as content — unless the buffer was explicitly cleared, which
- * supersedes it.
+ * without crop metadata. Live bounds win when they cover real area (so the
+ * gizmo tracks strokes as they are painted), an explicit clear wins over both,
+ * and the persisted record is the fallback.
  *
- * A brush mask with neither has genuinely never been painted and must NOT
- * composite — its buffer is all black, and compositing that as an alpha mask
- * would blank the clip it masks.
+ * Every consumer — compositing, the canvas overlay, the gizmo, hit testing —
+ * must resolve through here, or they disagree about whether the mask exists.
+ */
+export function resolveBrushPaintedBounds(
+  buffer: BrushBuffer | null,
+  persistedBounds: BrushPaintedBounds | null | undefined,
+): BrushPaintedBounds | null {
+  if (hasPaintedArea(buffer?.paintedBounds)) return buffer.paintedBounds;
+  if (isBrushBufferExplicitlyEmpty(buffer)) return null;
+  return hasPaintedArea(persistedBounds) ? persistedBounds : null;
+}
+
+/**
+ * True when a brush mask has painted content to composite.
+ *
+ * A brush mask with no resolvable painted region has genuinely never been
+ * painted (or was just cleared) and must NOT composite — its buffer is all
+ * black, and compositing that as an alpha mask would blank the clip it masks.
  */
 export function hasBrushContent(
   buffer: BrushBuffer | null,
   persistedBounds: BrushPaintedBounds | null | undefined,
 ): boolean {
-  if (!buffer) return false;
-  if (buffer.paintedBounds) return true;
-  if (isBrushBufferExplicitlyEmpty(buffer)) return false;
-  return !!persistedBounds;
+  return !!buffer && !!resolveBrushPaintedBounds(buffer, persistedBounds);
 }
 
 function notify(maskId: string): void {

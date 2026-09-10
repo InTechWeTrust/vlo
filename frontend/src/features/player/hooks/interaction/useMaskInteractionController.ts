@@ -87,6 +87,7 @@ import {
   isBrushBufferReadyForSource,
   paintBrushDot,
   paintBrushStroke,
+  resolveBrushPaintedBounds,
   subscribeToBrushBuffer,
 } from "../../../masks/runtime/brushBufferRegistry";
 import { flushBrushMaskCommit } from "../../../masks/runtime/brushAssetSync";
@@ -574,9 +575,16 @@ export function useMaskInteractionController(
       const resolvedLayout = resolveMaskRenderableLayout(maskClip, {
         layout: layoutOverride ?? resolveMaskLayoutAtPlayhead(maskClip),
         parentClipContentSize: resolveActiveClipContentSize(),
+        // Resolve through the shared rule rather than reading the live buffer
+        // directly: a buffer whose cached bounds are missing (or zero-area)
+        // must fall back to the clip's persisted record, or the overlay and the
+        // gizmo blank out while the compositor still draws the mask.
         brushPaintedBounds:
           maskClip.maskType === "brush"
-            ? getBrushBuffer(maskClip.id)?.paintedBounds ?? null
+            ? resolveBrushPaintedBounds(
+                getBrushBuffer(maskClip.id),
+                maskClip.brushPaintedBounds,
+              )
             : null,
       });
       return createMaskRenderableShapeSource(maskClip, resolvedLayout);
@@ -595,6 +603,32 @@ export function useMaskInteractionController(
       getMaskRenderableBaseSize(resolveMaskRenderableShape(maskClip)),
     [resolveMaskRenderableShape],
   );
+
+  /**
+   * Per-tick gate for the mask gizmo: true only while the overlay it decorates
+   * actually has geometry on screen.
+   *
+   * The gizmo measures `maskOverlay`'s local bounds, so a cleared Graphics
+   * collapses it to a zero-size box with every handle stacked on one point.
+   * `isMaskGizmoVisible` alone cannot prevent that — it is React state, so it
+   * lags the Pixi ticker that empties the overlay by at least a frame, and it
+   * stays stale for good if the overlay empties without the branch that would
+   * clear it running. Mirrors the clip gizmo's `spriteInstance.visible` gate.
+   */
+  const isMaskGizmoTargetRenderable = useCallback(() => {
+    const clipOverlay = clipOverlayRef.current;
+    const graphics = maskGraphicsRef.current;
+    return !!(
+      clipOverlay &&
+      !clipOverlay.destroyed &&
+      clipOverlay.visible &&
+      graphics &&
+      !graphics.destroyed &&
+      graphics.visible &&
+      // Empty string means nothing has been drawn into the Graphics.
+      overlayShapeSignatureRef.current !== ""
+    );
+  }, [clipOverlayRef, maskGraphicsRef]);
 
   const syncOverlayToSprite = useCallback(() => {
     const clipOverlay = clipOverlayRef.current;
@@ -665,6 +699,10 @@ export function useMaskInteractionController(
 
       if (!mask) {
         graphics.clear();
+        // An undrawn mask must not stay click-selectable: `registerCanvasSelectable`
+        // gates on `maskGraphics.visible`, and a cleared Graphics has no area to
+        // hit-test against.
+        graphics.visible = false;
         clipOverlay.visible = false;
         overlayShapeSignatureRef.current = "";
         return;
@@ -2215,13 +2253,16 @@ export function useMaskInteractionController(
         const isPainting = tool === "paint" || tool === "erase";
         syncSam2EditingCursor(isPainting);
         renderMaskToOverlay(renderableShape);
-        // Gizmo handles visible only when the gizmo tool is selected.
-        setIsMaskGizmoVisible(tool === "gizmo" && isActiveMaskSelection);
+        // Gizmo handles visible only when the gizmo tool is selected — and
+        // never for a mask with nothing drawn, which has no box to decorate.
+        setIsMaskGizmoVisible(
+          !!renderableShape && tool === "gizmo" && isActiveMaskSelection,
+        );
         return;
       }
 
       renderMaskToOverlay(renderableShape);
-      setIsMaskGizmoVisible(isActiveMaskSelection);
+      setIsMaskGizmoVisible(!!renderableShape && isActiveMaskSelection);
     };
 
     app.ticker.add(updateOverlay);
@@ -2399,5 +2440,6 @@ export function useMaskInteractionController(
     onHandlePointerDown: handlers.onHandlePointerDown,
     gizmoTarget,
     isMaskGizmoVisible: interactionsEnabled && isMaskGizmoVisible,
+    isMaskGizmoTargetRenderable,
   };
 }

@@ -63,6 +63,8 @@ export interface MaskInteractionHandlers {
   onHandlePointerDown: (e: FederatedPointerEvent, key: string) => void;
   gizmoTarget: Container | null;
   isMaskGizmoVisible: boolean;
+  /** Per-tick gate: true only while the gizmo's target has drawn geometry. */
+  isMaskGizmoTargetRenderable: () => boolean;
 }
 
 export function createInitialMaskInteractionState(): MaskInteractionState {

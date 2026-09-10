@@ -29,7 +29,7 @@ const {
   mockFlushBrushMaskCommit,
 } = vi.hoisted(() => ({
   mockEnsureBrushBuffer: vi.fn(),
-  mockGetBrushBuffer: vi.fn(() => null),
+  mockGetBrushBuffer: vi.fn<() => BrushBuffer | null>(() => null),
   mockHydrateBrushBufferFromUrl: vi.fn(),
   mockIsBrushBufferEditing: vi.fn(() => false),
   mockIsBrushBufferReadyForSource: vi.fn(() => false),
@@ -58,7 +58,12 @@ vi.mock("pixi.js", async () => {
   };
 });
 
-vi.mock("../../../../masks/runtime/brushBufferRegistry", () => ({
+// Only the stateful registry functions are stubbed — `resolveBrushPaintedBounds`
+// is a pure rule and stays real so these tests exercise the actual resolution.
+vi.mock("../../../../masks/runtime/brushBufferRegistry", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../../../masks/runtime/brushBufferRegistry")
+  >()),
   ensureBrushBuffer: mockEnsureBrushBuffer,
   getBrushBuffer: mockGetBrushBuffer,
   hydrateBrushBufferFromUrl: mockHydrateBrushBufferFromUrl,
@@ -330,6 +335,103 @@ describe("useMaskInteractionController", () => {
     });
 
     expect(result.current.isMaskGizmoVisible).toBe(true);
+  });
+
+  it("hides the gizmo when a brush mask has no painted region to decorate", () => {
+    // Regression: the gizmo measures the mask overlay's bounds, so enabling it
+    // for a mask whose shape resolved to null left a zero-size box with every
+    // handle stacked on one point, detached from the clip.
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const mask = createBrushMaskClip(parent, "mask_brush");
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_brush");
+    useMaskViewStore.getState().setMaskTabActive(true);
+    useMaskViewStore.getState().setBrushTool("gizmo");
+
+    // Nothing painted, and no persisted bounds on the clip either.
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({ paintedBounds: null }),
+    );
+
+    const viewport = new Container();
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    const { result } = renderHook(() => {
+      useCanvasSelectionManager(null);
+      return useMaskInteractionController(
+        trackId,
+        1,
+        sprite,
+        activeClipRef,
+        app,
+        viewport,
+      );
+    });
+
+    expect(result.current.isMaskGizmoVisible).toBe(false);
+    expect(result.current.isMaskGizmoTargetRenderable()).toBe(false);
+  });
+
+  it("keeps the brush gizmo on the clip's persisted bounds when live bounds are degenerate", () => {
+    // Regression: `expandBounds` can produce a zero-area rect. Being non-null it
+    // won the old `??` fallback outright, so it masked the clip's good persisted
+    // record and collapsed the overlay — while the compositor, which reads the
+    // persisted record, kept drawing the mask.
+    const trackId = useTimelineStore.getState().tracks[0].id;
+    const parent = createParentClip(trackId);
+    const mask: MaskTimelineClip = {
+      ...createBrushMaskClip(parent, "mask_brush"),
+      brushPaintedBounds: { x: 8, y: 12, width: 40, height: 32 },
+    };
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.getState().setSelectedMask(parent.id, "mask_brush");
+    useMaskViewStore.getState().setMaskTabActive(true);
+    useMaskViewStore.getState().setBrushTool("gizmo");
+
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({
+        paintedBounds: { x: 12, y: 12, width: 0, height: 0 },
+      }),
+    );
+
+    const viewport = new Container();
+    const spriteParent = new Container();
+    const sprite = new Sprite();
+    spriteParent.addChild(sprite);
+    viewport.addChild(spriteParent);
+
+    const app = new Application();
+    const activeClipRef = { current: parent };
+
+    const { result } = renderHook(() => {
+      useCanvasSelectionManager(null);
+      return useMaskInteractionController(
+        trackId,
+        1,
+        sprite,
+        activeClipRef,
+        app,
+        viewport,
+      );
+    });
+
+    expect(result.current.isMaskGizmoVisible).toBe(true);
+    expect(result.current.isMaskGizmoTargetRenderable()).toBe(true);
   });
 
   it("hides the gizmo when the playhead is outside the mask's active range", () => {

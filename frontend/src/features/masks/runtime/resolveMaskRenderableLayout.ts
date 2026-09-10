@@ -33,9 +33,16 @@ export function resolveMaskRenderableLayout(
   const layout =
     options.layout ??
     resolveMaskLayoutStateAtTime(maskClip, options.rawTimeTicks ?? 0);
+  // `undefined` means the caller has no opinion and the clip's persisted record
+  // stands. An explicit `null` is a resolved "nothing painted" (see
+  // `resolveBrushPaintedBounds`) and must NOT fall through to the stale
+  // persisted bounds — that is what let a cleared or empty live buffer keep
+  // reporting the mask's old footprint.
   const paintedBounds =
     maskClip.maskType === "brush"
-      ? options.brushPaintedBounds ?? maskClip.brushPaintedBounds ?? null
+      ? options.brushPaintedBounds !== undefined
+        ? options.brushPaintedBounds
+        : maskClip.brushPaintedBounds ?? null
       : null;
 
   if (maskClip.maskType === "brush") {
