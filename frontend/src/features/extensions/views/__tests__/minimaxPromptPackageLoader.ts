@@ -52,6 +52,8 @@ import * as composerSessionModule from "../../../../../../extensions/installed/v
 import * as composerViewModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/ComposerView";
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
 import * as keyframeModesModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/keyframeModes";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+import * as shotsModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/shots";
 import type { ExtensionModule, JsonValue } from "../../types";
 
 /** A reference in emission order. Mirrors the package's `DerivedTag`. */
@@ -125,6 +127,8 @@ export interface LoadedPromptGuide {
     readonly label: string;
     readonly title: string;
     readonly hint: string;
+    /** Set on the one section the guide's `[Shot N]` markers live in. */
+    readonly shots?: boolean;
   }[];
 }
 
@@ -178,6 +182,15 @@ export interface MinimaxPromptPackage {
   ): LoadedParsedPrompt;
   setPreamble(parsed: LoadedParsedPrompt, preamble: string): LoadedParsedPrompt;
   composerDraftKey(workflowFingerprint: string, inputId: string): string;
+  parseShots(text: string): {
+    readonly shots: readonly string[];
+    readonly irregular: "leading-text" | "out-of-order" | null;
+  };
+  serializeShots(shots: readonly string[]): string;
+  citesShot(shots: readonly string[], ordinal: number): boolean;
+  removeShot(shots: readonly string[], index: number): readonly string[];
+  readonly SHOT_IRREGULAR_TEXT: Readonly<Record<string, string>>;
+  readonly DANGLING_CITATION: string;
   promptInput(session: unknown): { readonly id: string } | null;
   keyframeInputIds(inputs: readonly unknown[]): readonly string[];
   referenceInputIds(inputs: readonly unknown[]): readonly string[];
@@ -270,6 +283,7 @@ export const minimaxPromptPackage = {
   ...composerSessionModule,
   ...composerViewModule,
   ...keyframeModesModule,
+  ...shotsModule,
   ...subjectModelModule,
   ...subjectStoreModule,
   ...tagsModule,

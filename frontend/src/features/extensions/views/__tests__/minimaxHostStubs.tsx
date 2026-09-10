@@ -40,10 +40,18 @@ export function createMuiStubs(): Record<string, unknown> {
         children?: React.ReactNode;
         onClick?: () => void;
         disabled?: boolean;
+        "aria-label"?: string;
       }) =>
         React.createElement(
           "button",
-          { onClick: props.onClick, disabled: props.disabled },
+          {
+            onClick: props.onClick,
+            disabled: props.disabled,
+            // Forwarded as the real IconButton forwards it: a glyph-only
+            // control is addressable *only* by its accessible name, and a stub
+            // that dropped it would let one ship without one.
+            "aria-label": props["aria-label"],
+          },
           props.children,
         )) as React.FunctionComponent<never>;
     }

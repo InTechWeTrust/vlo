@@ -424,6 +424,13 @@ function textAreaFor(label: string): HTMLTextAreaElement {
   return screen.getByLabelText(label) as HTMLTextAreaElement;
 }
 
+/** The shot boxes on screen, in order, by their accessible names. */
+function shotBoxLabels(): string[] {
+  return screen
+    .queryAllByLabelText(/^Shot \d+$/)
+    .map((element) => element.getAttribute("aria-label") ?? "");
+}
+
 function type(label: string, value: string): void {
   act(() => {
     fireEvent.change(textAreaFor(label), { target: { value } });
@@ -697,6 +704,311 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     const parsed = parsePrompt(prompt, BASE_GUIDE);
     expect(parsed.preamble).toBe("The first frame of the video is <Picture 1>.");
     expect(serializePrompt(parsed)).toBe(prompt);
+  });
+
+  // The shot codec, one level under the section model: the guides describe a
+  // video as an ordered list of `[Shot N]`, and the composer draws a box per
+  // shot rather than one box for the lot.
+  it("splits a description at its shot markers and renumbers on the way back", async () => {
+    const { parseShots, serializeShots } = await loadPackage();
+
+    const description =
+      "[Shot 1] The boy looks up.\n[Shot 2] At 00:03.500, the mech roars.";
+    expect(parseShots(description)).toEqual({
+      shots: ["The boy looks up.", "At 00:03.500, the mech roars."],
+      irregular: null,
+    });
+    expect(serializeShots(parseShots(description).shots)).toBe(description);
+
+    // Numbered by position, so closing the middle box cannot leave a gap. The
+    // timestamp inside a shot is the author's text and is left alone —
+    // removing a shot does not change when the survivors happen.
+    expect(
+      serializeShots(["The boy looks up.", "At 00:07.000, it falls."]),
+    ).toBe("[Shot 1] The boy looks up.\n[Shot 2] At 00:07.000, it falls.");
+
+    // A description with no markers is one shot holding all of it, which is
+    // what a single-shot clip looks like before anyone writes [Shot 1].
+    expect(parseShots("A slow push in.")).toEqual({
+      shots: ["A slow push in."],
+      irregular: null,
+    });
+    expect(parseShots("")).toEqual({ shots: [""], irregular: null });
+
+    // A lone empty shot writes nothing, so an untouched description is dropped
+    // from the prompt rather than committed as a bare marker. An empty shot
+    // beside a written one is kept: a box the user opened stays open.
+    expect(serializeShots([""])).toBe("");
+    expect(serializeShots(["A push in.", ""])).toBe(
+      "[Shot 1] A push in.\n[Shot 2]",
+    );
+    expect(parseShots("[Shot 1] A push in.\n[Shot 2]").shots).toEqual([
+      "A push in.",
+      "",
+    ]);
+  });
+
+  it("round-trips the whitespace a shot box lets you type", async () => {
+    const { parseShots, serializeShots } = await loadPackage();
+    // Trimming instead of undoing exactly what was emitted would eat the blank
+    // line a user just typed at the end of a box — the box would silently
+    // refuse to take a Return.
+    const shots = ["A push in.\n", "  then a roar."];
+    expect(parseShots(serializeShots(shots)).shots).toEqual(shots);
+    expect(parseShots(serializeShots(["A.\n\nB."])).shots).toEqual(["A.\n\nB."]);
+
+    // The sole shot is the trap: `trim()` there collapses a lone Return to "",
+    // and since every keystroke round-trips through this pair the controlled
+    // box would erase the newline as soon as it was typed. Only the exact
+    // empty string means untouched.
+    for (const sole of ["\n", " ", "  \n  "]) {
+      expect(parseShots(serializeShots([sole])).shots).toEqual([sole]);
+    }
+    expect(serializeShots([""])).toBe("");
+  });
+
+  it("leaves a description it cannot split as one box, with a reason", async () => {
+    const { parseShots, SHOT_IRREGULAR_TEXT } = await loadPackage();
+
+    // Renumbering someone's markers to fit the boxes is the silent rewrite the
+    // composer refuses everywhere else, so these come back whole.
+    const outOfOrder = "[Shot 2] Later.\n[Shot 1] Earlier.";
+    expect(parseShots(outOfOrder)).toEqual({
+      shots: [outOfOrder],
+      irregular: "out-of-order",
+    });
+    expect(parseShots("[Shot 2] Opens late.").irregular).toBe("out-of-order");
+    // A marker naming a shot that does not exist *yet* is the one the scan
+    // cannot place: guessing between "a boundary written out of order" and "a
+    // forward reference" means renumbering someone's markers either way.
+    expect(parseShots("[Shot 1] One.\n[Shot 3] Skips two.").irregular).toBe(
+      "out-of-order",
+    );
+
+    // There is no shot zero, and it must not fall through to the citation
+    // test — `0 <= 0` passes that with nothing established, which established
+    // no shot, returned no boxes at all, and dropped everything ahead of the
+    // next marker with the author's text nowhere on screen.
+    expect(parseShots("[Shot 0] Keep this.")).toEqual({
+      shots: ["[Shot 0] Keep this."],
+      irregular: "out-of-order",
+    });
+    const zeroThenOne = "[Shot 0] Keep this.\n[Shot 1] A.";
+    expect(parseShots(zeroThenOne)).toEqual({
+      shots: [zeroThenOne],
+      irregular: "out-of-order",
+    });
+    // Nothing this module returns is ever empty: the boxes are the only place
+    // the description is on screen.
+    for (const text of ["", "[Shot 0] x", "[Shot 3] x", "lead\n[Shot 1] x"]) {
+      expect(parseShots(text).shots.length).toBeGreaterThan(0);
+    }
+
+    const leading = "A rooftop at dusk.\n[Shot 1] The boy looks up.";
+    expect(parseShots(leading)).toEqual({
+      shots: [leading],
+      irregular: "leading-text",
+    });
+
+    // Each reason has to say what the user should do about it.
+    for (const reason of ["out-of-order", "leading-text"]) {
+      expect(SHOT_IRREGULAR_TEXT[reason].length).toBeGreaterThan(0);
+    }
+  });
+
+  it("establishes a shot on first mention and cites it on every later one", async () => {
+    const { parseShots, serializeShots } = await loadPackage();
+
+    // The guides describe shots in prose that refers back to earlier ones, so
+    // a repeat of a marker is a reference, not a second boundary.
+    const description =
+      "[Shot 1] The boy looks up.\n[Shot 2] At 00:03.500, the mech roars, mirroring the pose from [Shot 1].";
+    expect(parseShots(description)).toEqual({
+      shots: [
+        "The boy looks up.",
+        "At 00:03.500, the mech roars, mirroring the pose from [Shot 1].",
+      ],
+      irregular: null,
+    });
+    // The citation is body text, so it survives the round trip untouched.
+    expect(serializeShots(parseShots(description).shots)).toBe(description);
+
+    // Only the *first* mention counts, wherever it sits: a repeat at the start
+    // of a line is still a citation, and is read into the body of the shot it
+    // was written in rather than collapsing the description.
+    expect(parseShots("[Shot 1] One.\n[Shot 1] Also one.")).toEqual({
+      shots: ["One.\n[Shot 1] Also one."],
+      irregular: null,
+    });
+    // A shot may cite itself; that is still not a boundary.
+    expect(parseShots("[Shot 1] A.\n[Shot 2] As in [Shot 2] itself.").shots)
+      .toEqual(["A.", "As in [Shot 2] itself."]);
+  });
+
+  it("repairs the citations a removal would leave pointing elsewhere", async () => {
+    const { removeShot, citesShot, DANGLING_CITATION } = await loadPackage();
+
+    const shots = ["A.", "B, unlike [Shot 1].", "C, as in [Shot 2]."];
+    expect(citesShot(shots, 1)).toBe(true);
+    expect(citesShot(shots, 3)).toBe(false);
+
+    // Shots renumber by position, so a citation above the removed one has to
+    // shift with it — left alone it would name whichever shot inherited the
+    // number, which is the silent retarget this package refuses.
+    expect(removeShot(shots, 0)).toEqual([
+      `B, unlike ${DANGLING_CITATION}.`,
+      "C, as in [Shot 1].",
+    ]);
+    // Below the removed ordinal, nothing moves.
+    expect(removeShot(shots, 2)).toEqual(["A.", "B, unlike [Shot 1]."]);
+
+    // A shot's own citation goes away with the shot it is written in, so it is
+    // not something a removal leaves dangling.
+    expect(citesShot(["A.", "B, as in [Shot 2]."], 2)).toBe(false);
+  });
+
+  it("says so when closing a shot breaks a reference to it", async () => {
+    const { createComposerView, createComposerSession, DANGLING_CITATION } =
+      await loadPackage();
+    const harness = createGenerationHarness({
+      prompt:
+        "integrated_multimodal_description:\n[Shot 1] The boy looks up.\n[Shot 2] The mech roars, mirroring [Shot 1].",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+
+    expect(shotBoxLabels()).toEqual(["Shot 1", "Shot 2"]);
+    act(() => {
+      fireEvent.click(screen.getByLabelText("Remove shot 1"));
+    });
+
+    // The sentence is about a shot that no longer exists, and no number can
+    // say that — so it is marked rather than renumbered onto its neighbour,
+    // and the footer says it happened, because the box may be scrolled away.
+    expect(shotBoxLabels()).toEqual(["Shot 1"]);
+    expect(textAreaFor("Shot 1").value).toBe(
+      `The mech roars, mirroring ${DANGLING_CITATION}.`,
+    );
+    expect(
+      screen.getByText(
+        `Shot 1 was referred to elsewhere. Those references now read ${DANGLING_CITATION}.`,
+      ),
+    ).toBeTruthy();
+    view.unmount();
+  });
+
+  it("opens one shot box, adds more, and closes them", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+
+    // One box for [Shot 1], and it cannot be closed: a description is at least
+    // one shot.
+    expect(shotBoxLabels()).toEqual(["Shot 1"]);
+    expect(
+      (screen.getByLabelText("Remove shot 1") as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    type("Shot 1", "The boy looks up.");
+    click("Add shot");
+    expect(shotBoxLabels()).toEqual(["Shot 1", "Shot 2"]);
+    type("Shot 2", "At 00:03.500, the mech roars.");
+    click("Add shot");
+    type("Shot 3", "At 00:07.000, it falls.");
+
+    // Closing the middle box renumbers what survives, so the markers cannot
+    // drift out of step with the boxes on screen.
+    act(() => {
+      fireEvent.click(screen.getByLabelText("Remove shot 2"));
+    });
+    expect(shotBoxLabels()).toEqual(["Shot 1", "Shot 2"]);
+    expect(textAreaFor("Shot 2").value).toBe("At 00:07.000, it falls.");
+
+    click("Commit to prompt");
+    expect(harness.commits[0].value).toBe(
+      "integrated_multimodal_description:\n[Shot 1] The boy looks up.\n[Shot 2] At 00:07.000, it falls.\n\nnon_diegetic_music:\nN/A",
+    );
+    view.unmount();
+  });
+
+  it("keeps a Return typed into an untouched shot box", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+
+    // The box is controlled off the serialized draft, so a newline that does
+    // not survive serialization is a keystroke the user watches disappear.
+    type("Shot 1", "\n");
+    expect(textAreaFor("Shot 1").value).toBe("\n");
+    type("Shot 1", "\nA late start.");
+    expect(textAreaFor("Shot 1").value).toBe("\nA late start.");
+    view.unmount();
+  });
+
+  it("reads an existing description back into its shots", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: [
+        "detailed_description:",
+        "[Shot 1] The boy looks up.",
+        "[Shot 2] At 00:03.500, the mech roars.",
+        "",
+        "overall_soundscape:",
+        "Wind, then a roar.",
+      ].join("\n"),
+      classTypes: ["vloMiniMaxH3ReferenceToVideoBatch"],
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+
+    // The prompt is the artifact: the boxes are a projection of what the panel
+    // already holds, including a description written by hand elsewhere.
+    expect(shotBoxLabels()).toEqual(["Shot 1", "Shot 2"]);
+    expect(textAreaFor("Shot 2").value).toBe("At 00:03.500, the mech roars.");
+    view.unmount();
+  });
+
+  it("shows a description it cannot split as the single box it was", async () => {
+    const { createComposerView, createComposerSession, SHOT_IRREGULAR_TEXT } =
+      await loadPackage();
+    const harness = createGenerationHarness({
+      prompt:
+        "integrated_multimodal_description:\n[Shot 2] Opens late.\n[Shot 3] Then later.",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+    });
+    const view = mountComposer(
+      createComposerView,
+      createComposerSession(),
+      harness,
+    );
+
+    expect(shotBoxLabels()).toEqual([]);
+    expect(
+      textAreaFor("Integrated multimodal description").value,
+    ).toBe("[Shot 2] Opens late.\n[Shot 3] Then later.");
+    expect(screen.getByText(SHOT_IRREGULAR_TEXT["out-of-order"])).toBeTruthy();
+    view.unmount();
   });
 
   it("leaves a prompt it cannot split whole, with a reason", async () => {
@@ -1183,7 +1495,10 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
 
     // It tracks its inputs: the final shot index comes from the description
     // being written, so the line follows it without being re-applied.
-    type("Integrated multimodal description", "[Shot 1] A push in.\n[Shot 2] A roar.");
+    type("Shot 1", "A push in.");
+    expect(instruction().value).toContain("(from [Shot 1]) aligns with the 5.17-second mark");
+    click("Add shot");
+    type("Shot 2", "A roar.");
     expect(instruction().value).toContain("(from [Shot 2]) aligns with the 5.17-second mark");
 
     // First line, then one blank line, then the core fields.
