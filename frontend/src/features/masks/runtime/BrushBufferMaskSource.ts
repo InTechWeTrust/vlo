@@ -1,4 +1,4 @@
-import { Sprite, type Renderer } from "pixi.js";
+import { Sprite, Texture, type Renderer } from "pixi.js";
 import type { Asset } from "../../../types/Asset";
 import type { SourceFrameSyncRef } from "../../renderer";
 import { ensureAssetSourceLoaded } from "../../userAssets";
@@ -6,6 +6,7 @@ import {
   ensureBrushBuffer,
   getBrushBuffer,
   getBrushBufferForRenderer,
+  hasBrushContent,
   hydrateBrushBufferFromUrl,
   isBrushBufferEditing,
   isBrushBufferReadyForSource,
@@ -62,9 +63,9 @@ export class BrushBufferMaskSource {
     this.sprite.anchor.set(0.5);
     this.sprite.visible = false;
     this.unsubscribe = subscribeToBrushBuffer(maskClipId, () => {
-      this.bindToBuffer();
+      this.syncToBuffer();
     });
-    this.bindToBuffer();
+    this.syncToBuffer();
   }
 
   public setHydrationContext(context: {
@@ -91,7 +92,7 @@ export class BrushBufferMaskSource {
           (existingBuffer.paintedBounds !== null ||
             existingBuffer.sourceAssetId !== null)));
     if (liveBufferIsAuthoritative) {
-      this.bindToBuffer();
+      this.syncToBuffer();
       return;
     }
 
@@ -106,7 +107,7 @@ export class BrushBufferMaskSource {
       )
     ) {
       this.currentAssetId = asset.id;
-      this.bindToBuffer();
+      this.syncToBuffer();
       return;
     }
 
@@ -114,13 +115,13 @@ export class BrushBufferMaskSource {
       this.currentAssetId === asset.id &&
       this.isBufferReadyForContext(existingBuffer, ctx)
     ) {
-      this.bindToBuffer();
+      this.syncToBuffer();
       return;
     }
 
     this.currentAssetId = asset.id;
     if (!ctx) {
-      this.bindToBuffer();
+      this.syncToBuffer();
       return;
     }
 
@@ -142,7 +143,7 @@ export class BrushBufferMaskSource {
         ctx.canvasHeight,
         this.renderer,
       );
-      this.bindToBuffer();
+      this.syncToBuffer();
       return;
     }
 
@@ -157,7 +158,7 @@ export class BrushBufferMaskSource {
     )
       .then(() => {
         if (this.disposed) return;
-        this.bindToBuffer();
+        this.syncToBuffer();
         this.onFrameReady?.();
       })
       .catch((error) => {
@@ -186,7 +187,7 @@ export class BrushBufferMaskSource {
       this.maskClipId,
       this.renderer,
     );
-    return !!(buffer && buffer.paintedBounds);
+    return hasBrushContent(buffer, this.hydrationContext?.paintedBounds);
   }
 
   public dispose(): void {
@@ -198,13 +199,24 @@ export class BrushBufferMaskSource {
     }
   }
 
-  private bindToBuffer(): void {
+  /**
+   * Rebind the sprite to the current state of the brush buffer.
+   *
+   * Safe to call every frame, and the mask controller does: nothing else
+   * re-runs this on the render path, so a buffer that was momentarily missing
+   * (or missing its bounds) used to stay hidden until a timeline commit
+   * happened to re-run the hook that re-hydrates it.
+   */
+  public syncToBuffer(): void {
     if (this.disposed || this.sprite.destroyed) return;
     const buffer = getBrushBufferForRenderer(
       this.maskClipId,
       this.renderer,
     );
-    if (!buffer || !buffer.paintedBounds) {
+    if (!buffer) {
+      // The buffer took its RenderTexture with it. Drop our reference so the
+      // sprite can never be left holding a destroyed texture.
+      this.sprite.texture = Texture.EMPTY;
       this.sprite.visible = false;
       return;
     }
@@ -221,7 +233,10 @@ export class BrushBufferMaskSource {
     }
     this.sprite.width = buffer.canvasSize.width;
     this.sprite.height = buffer.canvasSize.height;
-    this.sprite.visible = true;
+    this.sprite.visible = hasBrushContent(
+      buffer,
+      this.hydrationContext?.paintedBounds,
+    );
   }
 
   private isBufferReadyForContext(

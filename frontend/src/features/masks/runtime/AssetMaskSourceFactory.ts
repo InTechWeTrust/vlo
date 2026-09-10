@@ -6,7 +6,11 @@ import type {
 } from "../../../types/TimelineTypes";
 import { createMaskBinaryThresholdFilter } from "../../transformations/catalogue/mask/maskBinaryThresholdFilter";
 import type { SourceFrameSyncRef } from "../../renderer/utils/sourceFrameSync";
-import { getBrushBufferForRenderer } from "./brushBufferRegistry";
+import {
+  getBrushBufferForRenderer,
+  hasBrushContent,
+  isBrushBufferExplicitlyEmpty,
+} from "./brushBufferRegistry";
 import { BrushBufferMaskSource } from "./BrushBufferMaskSource";
 import { ImageMaskSource } from "./ImageMaskSource";
 import { MaskVideoFramePlayer } from "./MaskVideoFramePlayer";
@@ -94,10 +98,16 @@ export class AssetMaskSourceFactory {
     assetsById?: Map<string, Asset>,
   ): AssetMaskNodeEntry | null {
     if (maskClip.maskType === "brush") {
-      const liveBuffer =
-        this.renderer &&
-        getBrushBufferForRenderer(maskClip.id, this.renderer);
-      if (liveBuffer?.paintedBounds) {
+      const liveBuffer = this.renderer
+        ? getBrushBufferForRenderer(maskClip.id, this.renderer)
+        : null;
+      // Stay on the live-buffer source for as long as a buffer with content
+      // exists on this renderer. `kind` decides node identity in
+      // `reconcileAssetMaskNodes`, so flipping to the PNG-backed image source
+      // tears the buffer source down — letting a transient gap in the buffer's
+      // cached bounds flip it would drop uncommitted strokes and re-read a
+      // stale crop from disk.
+      if (hasBrushContent(liveBuffer, maskClip.brushPaintedBounds)) {
         return {
           maskId: maskClip.id,
           assetId:
@@ -107,7 +117,13 @@ export class AssetMaskSourceFactory {
         };
       }
 
-      if (!maskClip.brushMaskAssetId) {
+      // A cleared buffer supersedes the PNG it was committed from. Falling
+      // through to the image source here would flash the mask the user just
+      // cleared back onto the clip until the async flush drops the asset id.
+      if (
+        isBrushBufferExplicitlyEmpty(liveBuffer) ||
+        !maskClip.brushMaskAssetId
+      ) {
         return null;
       }
 
@@ -181,7 +197,11 @@ export class AssetMaskSourceFactory {
   ): Promise<void> {
     const maskAssetId =
       node.player instanceof BrushBufferMaskSource
-        ? node.assetId
+        ? // A brush node keeps its live-buffer source across the first PNG
+          // commit, so read the clip's asset id rather than the placeholder the
+          // node was built with — reading `node.assetId` here only ever
+          // re-writes its own stale value.
+          (maskClip.brushMaskAssetId ?? node.assetId)
         : getAssetBackedMaskId(maskClip);
     if (!maskAssetId) {
       return;
@@ -197,6 +217,11 @@ export class AssetMaskSourceFactory {
           options.parentClipContentSize,
         ),
       );
+      // Rebind every sync. Brush pixels change outside the render loop (the
+      // registry notifies subscribers), and nothing else re-runs the bind on
+      // this path — so without this a buffer that was momentarily absent stays
+      // hidden until an unrelated timeline commit happens to re-hydrate it.
+      node.player.syncToBuffer();
     } else if (node.player instanceof ImageMaskSource) {
       const context = getImageMaskHydrationContext(
         maskClip,

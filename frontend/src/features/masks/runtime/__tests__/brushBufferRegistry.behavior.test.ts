@@ -447,6 +447,38 @@ describe("brushBufferRegistry behavior", () => {
     expect(mocks.textureFrom).not.toHaveBeenCalled();
   });
 
+  it("keeps bounds when hydrating a PNG whose crop metadata was lost", async () => {
+    // Regression: painted bounds double as the brush source's content gate, so
+    // writing the null straight through blanked a mask whose pixels had just
+    // been painted into the buffer.
+    class ImageMock {
+      crossOrigin = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal("Image", ImageMock);
+
+    const buffer = await hydrateBrushBufferFromUrl(
+      "hydrate",
+      "blob:mask",
+      10,
+      20,
+      null,
+      activeRenderer as never,
+      "asset-1",
+    );
+
+    expect(buffer.paintedBounds).toEqual({
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 20,
+    });
+  });
+
   it("loads and positions hydrated PNG textures", async () => {
     class ImageMock {
       crossOrigin = "";

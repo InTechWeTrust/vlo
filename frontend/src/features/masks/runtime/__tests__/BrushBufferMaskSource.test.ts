@@ -25,7 +25,10 @@ vi.mock("../../../userAssets", () => ({
   ensureAssetSourceLoaded: mockEnsureAssetSourceLoaded,
 }));
 
-vi.mock("../brushBufferRegistry", () => ({
+// Only the stateful registry functions are stubbed — `hasBrushContent` is a
+// pure predicate and stays real so these tests exercise the actual content gate.
+vi.mock("../brushBufferRegistry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../brushBufferRegistry")>()),
   ensureBrushBuffer: mockEnsureBrushBuffer,
   getBrushBuffer: mockGetBrushBuffer,
   getBrushBufferForRenderer: mockGetBrushBuffer,
@@ -73,6 +76,106 @@ describe("BrushBufferMaskSource", () => {
     mockIsBrushBufferEditing.mockReturnValue(false);
     mockIsBrushBufferReadyForSource.mockReturnValue(false);
     mockEnsureAssetSourceLoaded.mockResolvedValue(null);
+  });
+
+  it("keeps the mask composited when the buffer loses its cached bounds", () => {
+    // Regression: the buffer's `paintedBounds` is a cache of the clip's
+    // persisted bounds, and a hydrate or buffer rebuild can drop it. Gating
+    // visibility on it alone blanked the brush mask until an unrelated timeline
+    // commit forced a re-hydrate.
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
+    source.setHydrationContext({
+      canvasWidth: 128,
+      canvasHeight: 72,
+      paintedBounds: { x: 10, y: 12, width: 30, height: 20 },
+    });
+
+    const renderTexture = Texture.WHITE as never;
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({ paintedBounds: null, renderTexture }),
+    );
+
+    source.syncToBuffer();
+
+    expect(source.sprite.visible).toBe(true);
+    expect(source.sprite.texture).toBe(renderTexture);
+    expect(source.hasFrame()).toBe(true);
+  });
+
+  it("stays hidden for a brush mask that has never been painted", () => {
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
+    source.setHydrationContext({
+      canvasWidth: 128,
+      canvasHeight: 72,
+      paintedBounds: null,
+    });
+
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({ paintedBounds: null }),
+    );
+
+    source.syncToBuffer();
+
+    // An all-black buffer composited as an alpha mask would blank the clip.
+    expect(source.sprite.visible).toBe(false);
+    expect(source.hasFrame()).toBe(false);
+  });
+
+  it("hides a cleared buffer even while the clip still has persisted bounds", () => {
+    // Regression: `clearBrushBuffer` empties the buffer synchronously and fills
+    // it black, but the clip keeps its persisted bounds until the async flush
+    // lands. Falling back to those bounds composited the black texture as the
+    // alpha mask, so the masked clip vanished instead of going unmasked — and
+    // stayed that way for good if the flush failed.
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
+    source.setHydrationContext({
+      canvasWidth: 128,
+      canvasHeight: 72,
+      paintedBounds: { x: 10, y: 12, width: 30, height: 20 },
+    });
+
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({
+        paintedBounds: null,
+        dirty: true,
+        sourceAssetId: null,
+        renderTexture: Texture.WHITE as never,
+      }),
+    );
+
+    source.syncToBuffer();
+
+    expect(source.sprite.visible).toBe(false);
+    expect(source.hasFrame()).toBe(false);
+  });
+
+  it("releases the texture when its buffer is gone", () => {
+    const source = new BrushBufferMaskSource(
+      "clip_1::mask::mask_brush",
+      brushRenderer,
+    );
+    mockGetBrushBuffer.mockReturnValue(
+      createBrushBuffer({ renderTexture: Texture.WHITE as never }),
+    );
+    source.syncToBuffer();
+    expect(source.sprite.visible).toBe(true);
+
+    // `ensureBrushBuffer` destroys the RenderTexture when it replaces a buffer,
+    // so holding the reference would leave the sprite on a destroyed texture.
+    mockGetBrushBuffer.mockReturnValue(null);
+    source.syncToBuffer();
+
+    expect(source.sprite.visible).toBe(false);
+    expect(source.sprite.texture).toBe(Texture.EMPTY);
   });
 
   it("hydrates using the resolved asset source url", async () => {

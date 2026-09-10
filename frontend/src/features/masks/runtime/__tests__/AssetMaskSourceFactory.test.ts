@@ -15,7 +15,10 @@ const {
     ),
 }));
 
-vi.mock("../brushBufferRegistry", () => ({
+// Only the stateful lookups are stubbed — `hasBrushContent` is a pure
+// predicate and stays real so these tests exercise the actual content gate.
+vi.mock("../brushBufferRegistry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../brushBufferRegistry")>()),
   getBrushBuffer: mockGetBrushBuffer,
   getBrushBufferForRenderer: mockGetBrushBufferForRenderer,
 }));
@@ -115,5 +118,78 @@ describe("AssetMaskSourceFactory", () => {
       assetId: "committed-brush-png",
       kind: "image",
     });
+  });
+
+  it("stays on the live buffer when its cached bounds are missing", () => {
+    // Regression: `kind` is the node identity in `reconcileAssetMaskNodes`, so
+    // flipping brush -> image here tore down the live-buffer source and re-read
+    // a stale crop from disk. The clip's persisted bounds still prove content.
+    const liveRenderer = {} as Renderer;
+    const buffer = {
+      renderer: liveRenderer,
+      renderTexture: {},
+      canvasSize: { width: 64, height: 64 },
+      paintedBounds: null,
+      dirty: false,
+      revision: 4,
+      sourceAssetId: null,
+    } as BrushBuffer;
+    mockGetBrushBufferForRenderer.mockReturnValue(buffer);
+
+    const mask = createMask("brush", {
+      brushMaskAssetId: "committed-brush-png",
+      brushPaintedBounds: { x: 2, y: 3, width: 10, height: 12 },
+    });
+
+    expect(
+      new AssetMaskSourceFactory(liveRenderer).resolveMaskEntry(mask),
+    ).toEqual({
+      maskId: mask.id,
+      assetId: "committed-brush-png",
+      kind: "brush",
+    });
+  });
+
+  it("produces no entry for a cleared buffer that still has a committed PNG", () => {
+    // A cleared buffer supersedes the PNG it came from; falling through to the
+    // image source would flash the just-cleared mask back onto the clip.
+    const liveRenderer = {} as Renderer;
+    mockGetBrushBufferForRenderer.mockReturnValue({
+      renderer: liveRenderer,
+      renderTexture: {},
+      canvasSize: { width: 64, height: 64 },
+      paintedBounds: null,
+      dirty: true,
+      revision: 7,
+      sourceAssetId: null,
+    } as BrushBuffer);
+
+    expect(
+      new AssetMaskSourceFactory(liveRenderer).resolveMaskEntry(
+        createMask("brush", {
+          brushMaskAssetId: "committed-brush-png",
+          brushPaintedBounds: { x: 2, y: 3, width: 10, height: 12 },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("produces no entry for a brush mask that has never been painted", () => {
+    const liveRenderer = {} as Renderer;
+    mockGetBrushBufferForRenderer.mockReturnValue({
+      renderer: liveRenderer,
+      renderTexture: {},
+      canvasSize: { width: 64, height: 64 },
+      paintedBounds: null,
+      dirty: false,
+      revision: 0,
+      sourceAssetId: null,
+    } as BrushBuffer);
+
+    expect(
+      new AssetMaskSourceFactory(liveRenderer).resolveMaskEntry(
+        createMask("brush"),
+      ),
+    ).toBeNull();
   });
 });

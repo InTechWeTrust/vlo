@@ -66,6 +66,46 @@ export function getBrushBufferForRenderer(
   return buffer?.renderer === renderer ? buffer : null;
 }
 
+/**
+ * True when the buffer has been deliberately emptied and not yet persisted.
+ *
+ * `dirty` means the buffer is *ahead of* the PNG on disk, so a dirty buffer
+ * with no painted bounds is an authoritative "nothing is painted here" —
+ * `clearBrushBuffer` is the only thing that produces it (paint and erase both
+ * expand bounds). The clip keeps its stale `brushPaintedBounds` and
+ * `brushMaskAssetId` until the asynchronous flush lands, so the persisted
+ * record must not be consulted in this window.
+ */
+export function isBrushBufferExplicitlyEmpty(
+  buffer: BrushBuffer | null,
+): boolean {
+  return !!buffer && buffer.dirty && !buffer.paintedBounds;
+}
+
+/**
+ * True when a brush mask has painted content to composite.
+ *
+ * A buffer's `paintedBounds` is a *cache* of the mask clip's persisted
+ * `brushPaintedBounds`, not an independent source of truth: it is legitimately
+ * absent for a freshly (re)created buffer and can be lost to a hydrate that ran
+ * without crop metadata. The persisted value is the durable record, so either
+ * one counts as content — unless the buffer was explicitly cleared, which
+ * supersedes it.
+ *
+ * A brush mask with neither has genuinely never been painted and must NOT
+ * composite — its buffer is all black, and compositing that as an alpha mask
+ * would blank the clip it masks.
+ */
+export function hasBrushContent(
+  buffer: BrushBuffer | null,
+  persistedBounds: BrushPaintedBounds | null | undefined,
+): boolean {
+  if (!buffer) return false;
+  if (buffer.paintedBounds) return true;
+  if (isBrushBufferExplicitlyEmpty(buffer)) return false;
+  return !!persistedBounds;
+}
+
 function notify(maskId: string): void {
   listeners.get(maskId)?.forEach((listener) => listener());
 }
@@ -387,7 +427,12 @@ export function isBrushBufferReadyForSource(
     buffer.sourceAssetId === sourceAssetId &&
     buffer.canvasSize.width === Math.max(1, Math.round(canvasWidth)) &&
     buffer.canvasSize.height === Math.max(1, Math.round(canvasHeight)) &&
-    brushBoundsEqual(buffer.paintedBounds, bounds)
+    // A caller with no crop bounds is saying "I don't know the crop", not
+    // "the crop is empty" — a clean buffer already holding this exact asset's
+    // pixels is ready either way. Demanding an exact match here would re-hydrate
+    // the same PNG on every commit once bounds metadata went missing. Mirrors
+    // `BrushBufferMaskSource.isBufferReadyForContext`.
+    (!bounds || brushBoundsEqual(buffer.paintedBounds, bounds))
   );
 }
 
@@ -568,7 +613,18 @@ export async function hydrateBrushBufferFromUrl(
   sprite.destroy();
   texture.destroy(true);
 
-  buffer.paintedBounds = bounds;
+  // A hydrated PNG always carries real painted pixels: `commitBrushMaskAsset`
+  // clears the asset reference rather than saving an empty buffer. Absent crop
+  // bounds therefore mean "the bounds metadata was lost", not "nothing is
+  // painted" — so fall back to the full canvas, exactly as the sprite placement
+  // above already does. Writing null here would blank the mask, because painted
+  // bounds double as the brush source's content gate.
+  buffer.paintedBounds = bounds ?? {
+    x: 0,
+    y: 0,
+    width: buffer.canvasSize.width,
+    height: buffer.canvasSize.height,
+  };
   // Hydration mirrors what's already on disk — no commit required.
   buffer.dirty = false;
   bumpRevision(buffer);
