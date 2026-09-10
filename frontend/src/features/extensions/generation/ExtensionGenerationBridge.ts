@@ -2,6 +2,7 @@ import { generationSessionService } from "../../generation/services/GenerationSe
 import { generationTextInputClaims } from "../../generation/services/GenerationTextInputClaims";
 import { validateTextInputCommand } from "../../generation/services/generationSessionValidation";
 import { createExtensionTransactionPort } from "./extensionGenerationTransactionPort";
+import { createScopedInputsDraft } from "./extensionGenerationInputsDraft";
 import type { RevisionSource } from "../../../core/shell/revisionRelay";
 import type {
   GenerationTransactionResult,
@@ -270,6 +271,7 @@ export function createExtensionGenerationApi(
       generationSessionSignal,
       "Generation session",
     ),
+    createInputsDraft: (request) => createScopedInputsDraft(scope, request),
     registerSubmissionContributor,
     transaction: (label, callback) => {
       if (typeof label !== "string") {

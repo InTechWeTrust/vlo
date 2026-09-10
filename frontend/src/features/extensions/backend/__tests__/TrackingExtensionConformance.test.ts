@@ -122,7 +122,7 @@ function createConformanceApi() {
       react: { createElement: () => ({}) },
       mui: {},
       panelUi: {},
-      generationUi: { InputsDraft: () => null },
+      generationUi: { InputsDraftFields: () => null },
     },
     color: extensionColorApi,
     backend: {
@@ -173,6 +173,7 @@ function createConformanceApi() {
       project: null,
     },
     generation: {
+      createInputsDraft: () => null,
       ui: {
         registerSection: (definition) => ({
           id: definition.id,

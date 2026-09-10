@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo } from "react";
 import { Alert, Box } from "@mui/material";
 import type { Asset } from "../../../types/Asset";
 import { resolveAssetType } from "../../../shared/utils/assetTypeDetection";
@@ -6,11 +6,7 @@ import { useAssetStore } from "../../userAssets";
 import { useGenerationStore } from "../useGenerationStore";
 import { resolveWidgetInputs } from "../services/workflowRules";
 import { buildWorkflowInputLookup, getWorkflowInputId } from "../utils/workflowInputs";
-import { useGenerationInputsDraft } from "../draft/useGenerationInputsDraft";
-import type {
-  GenerationDraftWidgetTarget,
-  GenerationInputsDraftController,
-} from "../draft/useGenerationInputsDraft";
+import type { GenerationInputsDraftHandle } from "../draft/useGenerationInputsDraft";
 import { widgetKey } from "../draft/generationInputsDraft";
 import type {
   GenerationInputSnapshot,
@@ -39,8 +35,8 @@ import {
  *
  * Renders the panel's own field components against a draft, so the two
  * surfaces look like one panel rather than two implementations of it. Nothing
- * is written until the caller commits; `children` receives the controller so
- * it can put its own commit control wherever it belongs.
+ * is written until the draft's owner commits, and this renders no commit
+ * control of its own — where that belongs is the caller's business.
  *
  * Only the interactions the session transaction can express are offered.
  * Timeline capture, external file drops and media editing all *start real
@@ -49,16 +45,13 @@ import {
  * a reason rather than hidden: a slot that silently loses an affordance looks
  * broken, and a no-op callback looks enabled.
  */
-export interface GenerationInputsDraftProps {
-  /** The inputs to edit, by id. Anything else stays the panel's alone. */
-  readonly inputIds: readonly string[];
+export interface GenerationInputsDraftFieldsProps {
   /**
-   * Widgets to edit alongside them, addressed as the transaction addresses
-   * them. A duration that a composer derives text from belongs beside that
-   * text, not one panel away.
+   * The draft to render. Supplied rather than created here: the draft's
+   * lifetime belongs to whoever opened it, and a renderer that owned one could
+   * not be pointed at a draft an extension activation holds.
    */
-  readonly widgetTargets?: readonly GenerationDraftWidgetTarget[];
-  readonly children?: (controller: GenerationInputsDraftController) => ReactNode;
+  readonly controller: GenerationInputsDraftHandle;
 }
 
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
@@ -152,13 +145,10 @@ function stageableAsset(
   return resolveAssetType(asset) !== "video";
 }
 
-export function GenerationInputsDraft({
-  inputIds,
-  widgetTargets,
-  children,
-}: GenerationInputsDraftProps) {
-  const controller = useGenerationInputsDraft(inputIds, widgetTargets);
-  const { inputs, apply } = controller;
+export function GenerationInputsDraftFields({
+  controller,
+}: GenerationInputsDraftFieldsProps) {
+  const { inputs, stage: apply } = controller;
   const assets = useAssetStore((state) => state.assets);
   /**
    * The panel's *own* input definitions, not ones rebuilt from the snapshot.
@@ -314,9 +304,10 @@ export function GenerationInputsDraft({
    * the user already knows.
    */
   const widgetGroup = useMemo(() => {
-    const wanted = new Set(
-      (widgetTargets ?? []).map((target) => widgetKey(target.nodeId, target.param)),
-    );
+    // The draft already publishes a value for exactly the widgets it was asked
+    // to edit, so its keys *are* the requested set — no second list to keep in
+    // step with the first.
+    const wanted = new Set(controller.widgetValues.keys());
     if (wanted.size === 0) return null;
     const widgets = widgetInputs.filter((widget) =>
       wanted.has(widgetKey(widget.nodeId, widget.param)),
@@ -328,7 +319,7 @@ export function GenerationInputsDraft({
       title: widgets.length === 1 ? widgets[0].config.label : "Settings",
       widgets,
     };
-  }, [widgetInputs, widgetTargets]);
+  }, [widgetInputs, controller.widgetValues]);
 
   const stagedWidgetValues = useMemo(() => {
     const values: Record<string, Record<string, unknown>> = {};
@@ -503,7 +494,6 @@ export function GenerationInputsDraft({
           bypassedNodeIds={EMPTY_KEYS}
         />
       ) : null}
-      {children?.(controller)}
     </Box>
   );
 }

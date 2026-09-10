@@ -2587,12 +2587,83 @@ export interface ExtensionPanelUiRuntime {
   readonly [exportName: string]: unknown;
 }
 
-/** One staged input, projected exactly as the session projects a live one. */
-export interface ExtensionGenerationInputsDraftController {
+/**
+ * One staged edit, as an editing surface performs it.
+ *
+ * These describe *gestures*, not writes. The draft derives what to commit by
+ * diffing its projection against the panel, so what you see staged is what
+ * lands — an attach you then clear simply is not in the target.
+ *
+ * `attachAsset` appends (a single-slot input replaces what it holds);
+ * `replaceMedia` overwrites the filled position `at`. There is deliberately no
+ * positioned insert: nothing in the panel inserts between tiles, and one op
+ * meaning both is how a drop meant to overwrite ended up pushing the tile
+ * along instead.
+ */
+export type ExtensionGenerationDraftOp =
+  | { readonly kind: "setText"; readonly inputId: string; readonly value: string }
+  | {
+      readonly kind: "attachAsset";
+      readonly inputId: string;
+      readonly assetId: string;
+      readonly itemOptions?: Readonly<Record<string, boolean>>;
+    }
+  | {
+      readonly kind: "replaceMedia";
+      readonly inputId: string;
+      readonly assetId: string;
+      /** The filled position to overwrite. */
+      readonly at: number;
+      readonly itemOptions?: Readonly<Record<string, boolean>>;
+    }
+  | {
+      readonly kind: "removeMedia";
+      readonly inputId: string;
+      readonly slotId: string;
+    }
+  | {
+      readonly kind: "moveMedia";
+      readonly inputId: string;
+      readonly fromOrdinal: number;
+      readonly toOrdinal: number;
+    }
+  | {
+      readonly kind: "setMediaOption";
+      readonly inputId: string;
+      readonly slotId: string;
+      readonly optionId: string;
+      readonly value: boolean;
+    }
+  | {
+      /**
+       * A widget, not an input: the panel's `length` slider and its like are
+       * node parameters. Staged alongside inputs because a composer deriving
+       * text from a duration has to see the duration the user is choosing.
+       */
+      readonly kind: "setWidget";
+      readonly nodeId: string;
+      readonly param: string;
+      readonly value: JsonValue;
+    };
+
+/** What a draft edits. Everything outside it stays the panel's alone. */
+export interface ExtensionGenerationInputsDraftRequest {
+  readonly inputIds: readonly string[];
+  /**
+   * Widgets to edit alongside them. A duration a composer derives text from
+   * belongs beside that text, not one panel away.
+   */
+  readonly widgetTargets?: readonly ExtensionGenerationWidgetTarget[];
+}
+
+/** A draft's current reading, projected exactly as a live session is. */
+export interface ExtensionGenerationInputsDraftState {
   readonly inputs: readonly ExtensionGenerationInputSnapshot[];
+  /** The addressed widgets, keyed `nodeId:param`, staged values included. */
+  readonly widgetValues: ReadonlyMap<string, JsonValue>;
   /** The draft holds edits of its own. */
   readonly hasDraftChanges: boolean;
-  /** The panel moved under an input this draft is holding. */
+  /** The panel moved under an input or widget this draft is holding. */
   readonly hasConflict: boolean;
   /**
    * A transaction may be attempted. True with nothing staged, because a caller
@@ -2602,6 +2673,27 @@ export interface ExtensionGenerationInputsDraftController {
   readonly canCommit: boolean;
   /** Why a commit is refused, or why the last one failed. */
   readonly error: string | null;
+}
+
+/**
+ * A staged editor over some of the generation panel's inputs.
+ *
+ * Edits are held, not written: the panel is untouched until `commit`. Opened
+ * through `api.generation.createInputsDraft`, so it is owned by your activation
+ * and refuses to write once that ends — which is why it is not a component.
+ * Render it with `runtime.generationUi.InputsDraftFields`, or read `getState`
+ * and draw your own.
+ */
+export interface ExtensionGenerationInputsDraft {
+  getState(): ExtensionGenerationInputsDraftState;
+  /** Notified whenever the reading changes. Returns an unsubscribe. */
+  subscribe(listener: () => void): () => void;
+  /**
+   * Stage one edit. Ignored if it addresses something this draft is not
+   * editing; throws on a malformed op rather than failing later at commit.
+   */
+  stage(op: ExtensionGenerationDraftOp): void;
+  revert(): void;
   /**
    * Writes the staged edits and `additionalWrites` in **one** transaction, so
    * a composer's prompt text and its keyframes land together or not at all.
@@ -2611,28 +2703,29 @@ export interface ExtensionGenerationInputsDraftController {
     label: string,
     additionalWrites?: (transaction: ExtensionGenerationTransaction) => void,
   ): ExtensionGenerationTransactionResult;
-  revert(): void;
+  /** Drop the draft and stop tracking the panel. Also done on deactivation. */
+  dispose(): void;
 }
 
-export interface ExtensionGenerationInputsDraftProps {
-  /** The inputs to edit, by id. Everything else stays the panel's alone. */
-  readonly inputIds: readonly string[];
-  readonly children?: (
-    controller: ExtensionGenerationInputsDraftController,
-  ) => unknown;
+export interface ExtensionGenerationDraftFieldsProps {
+  /** A draft from `api.generation.createInputsDraft`. */
+  readonly controller: ExtensionGenerationInputsDraft;
 }
 
 /**
  * Generation-panel UI a package can render, typed rather than an open map.
  *
- * `InputsDraft` is the panel's own input fields over a *staged* draft: edits
- * are held until `commit`, and only interactions the transaction can express
- * are offered — timeline capture, external file drops and media editing are
- * shown refused, because each starts work that cannot be held.
+ * `InputsDraftFields` draws the panel's own input fields over a draft you
+ * opened. Only interactions the transaction can express are offered — timeline
+ * capture, external file drops and media editing are shown refused, because
+ * each starts work that cannot be held until commit.
+ *
+ * It writes nothing itself: every edit goes through the controller you passed,
+ * which is the thing your activation owns.
  */
 export interface ExtensionGenerationUiRuntime {
-  readonly InputsDraft: (
-    props: ExtensionGenerationInputsDraftProps,
+  readonly InputsDraftFields: (
+    props: ExtensionGenerationDraftFieldsProps,
   ) => unknown;
 }
 
@@ -3841,6 +3934,18 @@ export interface ExtensionGenerationApi {
     label: string,
     callback: (transaction: ExtensionGenerationTransaction) => void,
   ): ExtensionGenerationTransactionResult;
+  /**
+   * Open a staged editor over some of the panel's inputs.
+   *
+   * `null` once the activation has ended. The draft is owned by your
+   * activation and disposed with it, which is why it is opened here rather than
+   * rendered as a component: it writes to the session, and a write needs an
+   * owner. Draw it with `runtime.generationUi.InputsDraftFields`, or read
+   * `getState` and draw your own.
+   */
+  createInputsDraft(
+    request: ExtensionGenerationInputsDraftRequest,
+  ): ExtensionGenerationInputsDraft | null;
   /** Contribute graph effects to every generation submitted from this panel. */
   registerSubmissionContributor(
     definition: ExtensionGenerationSubmissionContributorDefinition,

@@ -1,7 +1,16 @@
 export { GenerationPanel } from "./GenerationPanel";
-export { GenerationInputsDraft } from "./components/GenerationInputsDraft";
-export type { GenerationInputsDraftProps } from "./components/GenerationInputsDraft";
-export type { GenerationInputsDraftController } from "./draft/useGenerationInputsDraft";
+export { GenerationInputsDraftFields } from "./components/GenerationInputsDraftFields";
+export type { GenerationInputsDraftFieldsProps } from "./components/GenerationInputsDraftFields";
+export { createGenerationInputsDraft } from "./draft/generationInputsDraftController";
+export type {
+  GenerationDraftReading,
+  GenerationDraftWidgetTarget,
+  GenerationInputsDraftController,
+  GenerationInputsDraftRequest,
+} from "./draft/generationInputsDraftController";
+export type { GenerationInputDraftOp } from "./draft/generationInputsDraft";
+export { useGenerationInputsDraft } from "./draft/useGenerationInputsDraft";
+export type { GenerationInputsDraftHandle } from "./draft/useGenerationInputsDraft";
 export { useGenerationStore } from "./useGenerationStore";
 export {
   COMFYUI_CANVAS_DROP_ID,

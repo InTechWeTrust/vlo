@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { useGenerationInputsDraft } from "../useGenerationInputsDraft";
+import { createGenerationInputsDraft } from "../generationInputsDraftController";
 import {
   mountGenerationSession,
   type MountedGenerationSession,
@@ -18,6 +19,13 @@ const TEXT_INPUT = {
   label: "Prompt",
   inputType: "text",
   value: "before",
+} as unknown as GenerationInputSnapshot;
+
+const OTHER_TEXT_INPUT = {
+  ...TEXT_INPUT,
+  id: "7:text",
+  nodeId: "7",
+  label: "Negative",
 } as unknown as GenerationInputSnapshot;
 
 const LENGTH_TARGET = { nodeId: "9", param: "length" };
@@ -57,7 +65,7 @@ describe("useGenerationInputsDraft lifetime", () => {
     const { result } = renderHook(() => useGenerationInputsDraft(["6:text"]));
 
     act(() => {
-      result.current.apply({
+      result.current.stage({
         kind: "setText",
         inputId: "6:text",
         value: "drafted",
@@ -91,7 +99,7 @@ describe("useGenerationInputsDraft lifetime", () => {
     const { result } = renderHook(() => useGenerationInputsDraft(["6:text"]));
 
     act(() => {
-      result.current.apply({
+      result.current.stage({
         kind: "setText",
         inputId: "6:text",
         value: "drafted",
@@ -117,13 +125,51 @@ describe("useGenerationInputsDraft lifetime", () => {
   });
 });
 
+describe("createGenerationInputsDraft addressing", () => {
+  it("drops edits to inputs it no longer addresses", () => {
+    mounted = mountGenerationSession({
+      inputs: [TEXT_INPUT, OTHER_TEXT_INPUT],
+    });
+    const draft = createGenerationInputsDraft({ inputIds: ["6:text"] });
+
+    draft.stage({ kind: "setText", inputId: "6:text", value: "drafted" });
+    expect(draft.getSnapshot().hasDraftChanges).toBe(true);
+
+    // Re-pointed at a different input. The reading already filters by what is
+    // addressed, so a retained op would be invisible — and `commit` compiles
+    // every op it holds, so it would still write the input nobody can see.
+    draft.address({ inputIds: ["7:text"] });
+    expect(draft.getSnapshot().hasDraftChanges).toBe(false);
+    expect(draft.getSnapshot().error).toContain("no longer covers");
+
+    expect(draft.commit("Compose")).toMatchObject({ ok: true, changed: false });
+    expect(mounted.commit).not.toHaveBeenCalled();
+    draft.dispose();
+  });
+
+  it("refuses to stage without a mounted panel", () => {
+    // A `null` workflow revision is indistinguishable from "nothing staged
+    // yet", so an op recorded now would sit invisible and then apply itself to
+    // whatever workflow mounts next.
+    const draft = createGenerationInputsDraft({ inputIds: ["6:text"] });
+    draft.stage({ kind: "setText", inputId: "6:text", value: "drafted" });
+    expect(draft.getSnapshot().hasDraftChanges).toBe(false);
+
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
+    expect(draft.getSnapshot().hasDraftChanges).toBe(false);
+    expect(draft.commit("Compose")).toMatchObject({ ok: true, changed: false });
+    expect(mounted.commit).not.toHaveBeenCalled();
+    draft.dispose();
+  });
+});
+
 describe("useGenerationInputsDraft commit", () => {
   it("re-checks conflicts against the snapshot it is writing", () => {
     mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
     const { result } = renderHook(() => useGenerationInputsDraft(["6:text"]));
 
     act(() => {
-      result.current.apply({
+      result.current.stage({
         kind: "setText",
         inputId: "6:text",
         value: "drafted",
@@ -153,7 +199,7 @@ describe("useGenerationInputsDraft commit", () => {
     const { result } = renderHook(() => useGenerationInputsDraft(["6:text"]));
 
     act(() => {
-      result.current.apply({
+      result.current.stage({
         kind: "setText",
         inputId: "6:text",
         value: "drafted",
@@ -197,7 +243,7 @@ describe("useGenerationInputsDraft commit", () => {
     );
 
     act(() => {
-      result.current.apply({
+      result.current.stage({
         kind: "setWidget",
         nodeId: "9",
         param: "length",

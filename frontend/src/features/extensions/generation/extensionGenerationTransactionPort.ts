@@ -3,12 +3,17 @@ import type { ExtensionGenerationTransaction } from "../types";
 import type { GenerationSessionTransaction } from "../../generation/services/generationSessionTypes";
 
 /**
- * The owner-bound transaction an extension is handed.
+ * The bounded transaction an extension is handed.
  *
  * Every write crosses this boundary rather than reaching the session directly:
  * ids and values are bounded here, and a violation throws inside the host's
  * transaction so the whole batch rolls back with a translated failure instead
  * of a raw store error escaping to package code.
+ *
+ * It bounds *arguments*, and nothing more — it takes a session, not a scope, so
+ * it is not owner-bound and cannot be. The owner binding lives in the callers
+ * (`api.generation.transaction` and the scoped draft), which check
+ * `scope.signal.aborted` before opening a transaction at all.
  *
  * Shared so every surface that lets an extension write — `api.generation
  * .transaction`, and the staged inputs editor's `additionalWrites` — hands
@@ -33,7 +38,7 @@ const MAX_MEDIA_ORDINAL = 10_000;
 /** The host declares a handful of per-item switches, not an open dictionary. */
 const MAX_ITEM_OPTIONS = 32;
 /** A sentence for the user beside the box, not a document. */
-function boundedId(value: unknown, what: string): string {
+export function boundedId(value: unknown, what: string): string {
   if (
     typeof value !== "string" ||
     value.trim().length === 0 ||
@@ -47,11 +52,74 @@ function boundedId(value: unknown, what: string): string {
 }
 
 /**
+ * A text value an extension may write.
+ *
+ * Shared with the staged editor's `stage()`, which compiles into these same
+ * writes: bounding only here would let an oversize value be staged, shown, and
+ * committed through the draft while the direct write refused it.
+ */
+export function boundedTextValue(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    value.length > MAX_TEXT_VALUE_LENGTH ||
+    serializeFiniteJson(value) === null
+  ) {
+    throw new Error(
+      `Generation text values must contain at most ${MAX_TEXT_VALUE_LENGTH} characters.`,
+    );
+  }
+  return value;
+}
+
+/**
+ * A widget value an extension may write, **detached**.
+ *
+ * Finite JSON and bounded before the host sees it, then re-parsed so the host
+ * holds a copy: a caller that keeps mutating the object it passed would
+ * otherwise change what a staged edit commits, with no notification and nothing
+ * on screen to show it moved.
+ */
+export function boundedWidgetValue(value: unknown): unknown {
+  const serialized = serializeFiniteJson(value);
+  if (serialized === null || serialized.length > MAX_WIDGET_VALUE_LENGTH) {
+    throw new Error(
+      `Generation widget values must be finite JSON of at most ${MAX_WIDGET_VALUE_LENGTH} serialized characters.`,
+    );
+  }
+  return JSON.parse(serialized) as unknown;
+}
+
+/** Per-item switches an attach may carry, detached from the caller's object. */
+export function boundedItemOptions(
+  value: unknown,
+): Readonly<Record<string, boolean>> | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null) {
+    throw new Error("Generation item options must be an object of booleans.");
+  }
+  const entries = Object.entries(value);
+  if (entries.length > MAX_ITEM_OPTIONS) {
+    throw new Error(
+      `An attach may set at most ${MAX_ITEM_OPTIONS} item options.`,
+    );
+  }
+  const detached: Record<string, boolean> = {};
+  for (const [optionId, flag] of entries) {
+    boundedId(optionId, "Generation option IDs");
+    if (typeof flag !== "boolean") {
+      throw new Error("Generation media options take boolean values.");
+    }
+    detached[optionId] = flag;
+  }
+  return detached;
+}
+
+/**
  * A delivery position, not an arbitrary number: bounded here so a huge or
  * fractional ordinal is refused as malformed input rather than travelling on
  * to be reported as out of range, which would read as a batch-size problem.
  */
-function boundedOrdinal(value: unknown): number {
+export function boundedOrdinal(value: unknown): number {
   if (
     typeof value !== "number" ||
     !Number.isInteger(value) ||
@@ -75,16 +143,7 @@ export function createExtensionTransactionPort(
         "Generation input IDs must be non-empty strings.",
       );
     }
-    if (
-      typeof value !== "string" ||
-      value.length > MAX_TEXT_VALUE_LENGTH ||
-      serializeFiniteJson(value) === null
-    ) {
-      throw new Error(
-        `Generation text values must contain at most ${MAX_TEXT_VALUE_LENGTH} characters.`,
-      );
-    }
-    session.setTextInput(inputId, value);
+    session.setTextInput(inputId, boundedTextValue(value));
   },
   setWidget: (target, value) => {
     const nodeId =
@@ -101,46 +160,17 @@ export function createExtensionTransactionPort(
         `Generation widget targets need a node id and a widget name of at most ${MAX_TARGET_PART_LENGTH} characters.`,
       );
     }
-    // Finite JSON and bounded *before* the host sees it. The host
-    // validates the value against the widget; the adapter validates
-    // that it is a value at all, because an SDK caller is untrusted
-    // input and a native control is not.
-    const serialized = serializeFiniteJson(value);
-    if (
-      serialized === null ||
-      serialized.length > MAX_WIDGET_VALUE_LENGTH
-    ) {
-      throw new Error(
-        `Generation widget values must be finite JSON of at most ${MAX_WIDGET_VALUE_LENGTH} serialized characters.`,
-      );
-    }
-    session.setWidget(
-      { nodeId, widget },
-      JSON.parse(serialized) as unknown,
-    );
+    // The host validates the value against the widget; the adapter validates
+    // that it is a value at all, because an SDK caller is untrusted input and
+    // a native control is not.
+    session.setWidget({ nodeId, widget }, boundedWidgetValue(value));
   },
   // Media writes carry no payload — an id, a position, a boolean —
   // so the adapter's job is bounding the identifiers and refusing
   // anything that is not a whole number. What a slot will actually
   // accept is the host's, judged against the drop rules.
   attachAsset: (inputId, assetId, options) => {
-    const itemOptions = options?.itemOptions;
-    if (itemOptions !== undefined) {
-      const entries = Object.entries(itemOptions);
-      if (entries.length > MAX_ITEM_OPTIONS) {
-        throw new Error(
-          `An attach may set at most ${MAX_ITEM_OPTIONS} item options.`,
-        );
-      }
-      for (const [optionId, value] of entries) {
-        boundedId(optionId, "Generation option IDs");
-        if (typeof value !== "boolean") {
-          throw new Error(
-            "Generation media options take boolean values.",
-          );
-        }
-      }
-    }
+    const itemOptions = boundedItemOptions(options?.itemOptions);
     session.attachAsset(
       boundedId(inputId, "Generation input IDs"),
       boundedId(assetId, "Asset IDs"),

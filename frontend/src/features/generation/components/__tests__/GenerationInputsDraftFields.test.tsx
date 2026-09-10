@@ -3,7 +3,8 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GenerationInputs } from "../GenerationInputs";
-import { GenerationInputsDraft } from "../GenerationInputsDraft";
+import { GenerationInputsDraftFields } from "../GenerationInputsDraftFields";
+import { useGenerationInputsDraft } from "../../draft/useGenerationInputsDraft";
 import {
   mountGenerationSession,
   type MountedGenerationSession,
@@ -62,6 +63,12 @@ function DroppableProbe() {
   );
 }
 
+/** The staged editor as a caller assembles it: one draft, one renderer. */
+function StagedEditor() {
+  const draft = useGenerationInputsDraft([INPUT_ID]);
+  return <GenerationInputsDraftFields controller={draft} />;
+}
+
 function Editors({ takeoverOpen }: { takeoverOpen: boolean }) {
   return (
     <DndContext>
@@ -85,7 +92,7 @@ function Editors({ takeoverOpen }: { takeoverOpen: boolean }) {
         onToggleRandomize={vi.fn()}
       />
       {/* The staged editor, mounted over it during a takeover. */}
-      {takeoverOpen ? <GenerationInputsDraft inputIds={[INPUT_ID]} /> : null}
+      {takeoverOpen ? <StagedEditor /> : null}
     </DndContext>
   );
 }

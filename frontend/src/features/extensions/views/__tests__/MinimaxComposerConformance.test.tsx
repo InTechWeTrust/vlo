@@ -177,7 +177,53 @@ function createGenerationHarness(options: {
     return snapshot;
   };
 
+  const staged: { current: readonly unknown[] } = { current: [] };
+  const stagedWidgets = new Map<string, unknown>();
+
   const generation = {
+    /**
+     * The staged editor as `api.generation` hands one over.
+     *
+     * A draft is opened, not rendered: it writes to the panel, so the host owns
+     * it and the composer holds a handle. This stands in for that handle — the
+     * reading comes from `stage`/`stageWidget`, and `commit` goes through the
+     * same transaction, so a refusal set on the harness is honoured here too.
+     */
+    createInputsDraft: (request: { inputIds: readonly string[] }) => {
+      // Cached against the harness revision, because `getState` feeds
+      // `useSyncExternalStore`: a fresh object per call is an infinite render
+      // loop. The real draft caches for the same reason.
+      let cached: unknown = null;
+      let cachedRevision = -1;
+      return {
+      getState: () => {
+        if (cachedRevision !== revision) {
+          cachedRevision = revision;
+          cached = {
+            inputs: (staged.current as readonly { id: string }[]).filter(
+              (entry) => request.inputIds.includes(entry.id),
+            ),
+            widgetValues: stagedWidgets as ReadonlyMap<string, unknown>,
+            hasDraftChanges:
+              staged.current.length > 0 || stagedWidgets.size > 0,
+            hasConflict: refusal !== null,
+            canCommit: refusal === null,
+            error: refusal?.message ?? null,
+          };
+        }
+        return cached;
+      },
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      stage: () => undefined,
+      revert: () => undefined,
+      commit: (label: string, writes?: (tx: unknown) => void) =>
+        generation.transaction(label, writes as never),
+      dispose: () => undefined,
+      };
+    },
     getSession: read,
     listInputs: () => (read() as { inputs: unknown[] }).inputs,
     getRevision: () => revision,
@@ -213,8 +259,6 @@ function createGenerationHarness(options: {
     },
   };
 
-  const staged: { current: readonly unknown[] } = { current: [] };
-  const stagedWidgets = new Map<string, unknown>();
   /**
    * Publish a change, as the session does.
    *
@@ -281,34 +325,15 @@ function mountComposer(
       // A seam stub, deliberately: this suite runs against stubbed MUI to test
       // the *composer's* logic, and mounting the real staged editor would drag
       // the whole panel field stack in with it. What it must not do is promise
-      // behaviour the real controller does not have — so refusal comes from the
+      // behaviour the real draft does not have — so refusal comes from the
       // harness rather than being hardcoded away, and `commit` goes through the
       // same transaction that honours it.
       //
-      // The real controller is covered host-side against the real session:
-      // features/generation/draft/__tests__/generationInputsDraft.test.ts and
-      // features/generation/components/__tests__/GenerationInputsDraft.test.tsx.
+      // The real draft is covered host-side against the real session:
+      // features/generation/draft/__tests__/*, and
+      // features/extensions/generation/__tests__/extensionGenerationInputsDraft.
       generationUi: {
-        InputsDraft: ({
-          inputIds,
-          children,
-        }: {
-          inputIds: readonly string[];
-          children?: (controller: unknown) => unknown;
-        }) =>
-          children?.({
-            inputs: (harness.stagedInputs ?? []).filter((entry) =>
-              inputIds.includes(entry.id),
-            ),
-            widgetValues: harness.stagedWidgets,
-            hasDraftChanges: harness.hasStagedEdits,
-            hasConflict: harness.refusal !== null,
-            canCommit: harness.refusal === null,
-            error: harness.refusal?.message ?? null,
-            commit: (label: string, writes?: (tx: unknown) => void) =>
-              harness.generation.transaction(label, writes as never),
-            revert: () => undefined,
-          }) ?? null,
+        InputsDraftFields: () => null,
       },
     },
   };

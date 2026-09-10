@@ -21,7 +21,7 @@ import {
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
 import * as panelUi from "../../panelUI";
-import { ExtensionGenerationInputsDraft } from "../generation/ExtensionGenerationInputsDraft";
+import { ExtensionGenerationDraftFields } from "../generation/ExtensionGenerationDraftFields";
 import type { ExtensionHostRuntimeApi } from "../types";
 
 /**
@@ -65,7 +65,7 @@ export const extensionHostRuntimeApi: ExtensionHostRuntimeApi = Object.freeze({
    * than an entry in an open map it has to assert its way through.
    */
   generationUi: Object.freeze({
-    InputsDraft:
-      ExtensionGenerationInputsDraft as unknown as ExtensionHostRuntimeApi["generationUi"]["InputsDraft"],
+    InputsDraftFields:
+      ExtensionGenerationDraftFields as unknown as ExtensionHostRuntimeApi["generationUi"]["InputsDraftFields"],
   }),
 });

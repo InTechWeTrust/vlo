@@ -527,33 +527,63 @@ Four rules worth knowing before you build on it:
 
 ## Edit panel inputs without committing them
 
-`runtime.generationUi.InputsDraft` renders the panel's own input fields over a
-*staged* draft: edits are held until you commit, and the panel is untouched
-until then.
+A draft is *opened*, not rendered: `api.generation.createInputsDraft` hands you
+one owned by your activation, and edits are held until you commit — the panel is
+untouched until then. Draw it with `runtime.generationUi.InputsDraftFields`,
+which renders the panel's own input fields over your draft.
+
+The split matters: the draft **writes to the panel**, so it needs an owner that
+can be disposed, which is why it comes from `api` and not as a component. The
+renderer writes nothing of its own, so it lives on `runtime`.
 
 ```ts
-h(api.runtime.generationUi.InputsDraft, {
-  inputIds: [promptInputId, startFrameInputId],
-  children: (draft) =>
-    h(Button, {
-      disabled: !draft.canCommit,
-      onClick: () =>
-        // Staged input edits and your own writes, in one transaction.
-        draft.commit("Compose prompt", (tx) =>
-          tx.setTextInput(promptInputId, composedText),
-        ),
-    }, "Commit"),
-});
+const draft = hooks.useMemo(
+  () =>
+    api.generation.createInputsDraft({
+      inputIds: [promptInputId, startFrameInputId],
+      // Optional: node widgets to edit alongside them.
+      widgetTargets: [{ nodeId: "9", widget: "length" }],
+    }),
+  [],
+);
+hooks.useEffect(() => () => draft?.dispose(), [draft]);
+// `getState` is identity-stable between changes, so it drives a store hook.
+hooks.useSyncExternalStore(
+  (onChange) => draft?.subscribe(onChange) ?? (() => undefined),
+  () => draft?.getState() ?? null,
+);
+
+const state = draft?.getState();
+return h(
+  Box,
+  null,
+  draft ? h(api.runtime.generationUi.InputsDraftFields, { controller: draft }) : null,
+  h(Button, {
+    disabled: !state?.canCommit,
+    onClick: () =>
+      // Staged edits and your own writes, in one transaction.
+      draft?.commit("Compose prompt", (tx) =>
+        tx.setTextInput(promptInputId, composedText),
+      ),
+  }, "Commit"),
+);
 ```
 
-- `inputs` is the staged projection, described exactly as the session describes
-  a live input.
+- `createInputsDraft` returns `null` once your activation has ended.
+- Call your hooks **before** any early return. A workflow that stops being
+  supported while your view is mounted must not change the hook count.
+- `getState().inputs` is the staged projection, described exactly as the session
+  describes a live input; `widgetValues` is keyed `nodeId:param`.
 - `hasDraftChanges` is "I hold edits"; `hasConflict` is "the panel moved under
-  an input I hold"; `canCommit` is "a transaction may be attempted" — true with
+  something I hold"; `canCommit` is "a transaction may be attempted" — true with
   nothing staged, because your `additionalWrites` may still have something to
   say.
 - The draft clears only after a successful transaction, so a failed commit
   leaves your edits in place rather than showing a panel that never took them.
+- `stage(op)` edits it programmatically — `setText`, `attachAsset`,
+  `replaceMedia`, `removeMedia`, `moveMedia`, `setMediaOption`, `setWidget` — so
+  you can preview a preset without a rendered field. `attachAsset` appends;
+  `replaceMedia` overwrites the position `at`.
 
 **Only what the transaction can express can be staged.** Timeline capture,
 external file drops and media editing each start real work — a render, an
