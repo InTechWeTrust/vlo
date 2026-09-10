@@ -161,14 +161,19 @@ function projectDraftInputs(
  * meaning what the host says it means.
  */
 function readOnlyMap<T>(source: ReadonlyMap<string, T>): ReadonlyMap<string, T> {
-  const copy = new Map(source);
+  // Values are detached, not just the map. A widget value can be an object, and
+  // the staged one is the host's — handing the live reference over lets a
+  // package change what commits by mutating what it read, with no `stage` call
+  // and nothing notified. Frozen as well as cloned so the attempt is loud.
+  const copy = new Map<string, T>();
+  for (const [key, value] of source) copy.set(key, detachJson(value));
   const refuse = () => {
     throw new Error("A generation draft's widget values are read-only.");
   };
   // A delegating view, not a prototype over the Map: Map's methods need its
   // internal slot on `this`, so anything inheriting from an instance throws
   // "incompatible receiver" on the first `get`.
-  return Object.freeze({
+  const view = {
     get size() {
       return copy.size;
     },
@@ -180,13 +185,39 @@ function readOnlyMap<T>(source: ReadonlyMap<string, T>): ReadonlyMap<string, T> 
     forEach: (
       callback: (value: T, key: string, map: ReadonlyMap<string, T>) => void,
       thisArg?: unknown,
-    ) => copy.forEach(callback as never, thisArg),
+    ) =>
+      copy.forEach((value, key) => {
+        // The facade, never `copy` — `Map.forEach` hands its callback the
+        // backing map as the third argument, which would pass out the very
+        // object this wrapper exists to keep in.
+        callback.call(thisArg, value, key, view as ReadonlyMap<string, T>);
+      }),
     [Symbol.iterator]: () => copy[Symbol.iterator](),
     [Symbol.toStringTag]: "Map",
     set: refuse,
     delete: refuse,
     clear: refuse,
-  }) as unknown as ReadonlyMap<string, T>;
+  };
+  return Object.freeze(view) as unknown as ReadonlyMap<string, T>;
+}
+
+/**
+ * A deeply frozen copy of a finite-JSON value.
+ *
+ * Widget values reach the host through `boundedWidgetValue`, which already
+ * re-parses them, so the staged value is the host's own object — which is
+ * exactly why the *published* one has to be a further copy.
+ */
+function detachJson<T>(value: T): T {
+  if (value === null || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map((entry) => detachJson(entry))) as T;
+  }
+  const clone: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    clone[key] = detachJson(entry);
+  }
+  return Object.freeze(clone) as T;
 }
 
 function publicResult(

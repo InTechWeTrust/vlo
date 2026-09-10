@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
   createGenerationInputsDraft,
+  INERT_DRAFT_READING,
   type GenerationDraftReading,
   type GenerationDraftWidgetTarget,
   type GenerationInputsDraftController,
@@ -31,41 +33,71 @@ export interface GenerationInputsDraftHandle extends GenerationDraftReading {
   stage(op: GenerationInputDraftOp): void;
 }
 
+const NO_SUBSCRIBE = () => () => undefined;
+const READ_INERT = () => INERT_DRAFT_READING;
+
 export function useGenerationInputsDraft(
   inputIds: readonly string[],
   widgetTargets: readonly GenerationDraftWidgetTarget[] = [],
 ): GenerationInputsDraftHandle {
-  // One draft for the component's lifetime, so a caller whose addressed inputs
-  // change keeps the edits it has already staged — `address` narrows what is
-  // shown instead of throwing the draft away. `useState`'s lazy initializer
-  // rather than a ref: the value is read during render, which is what a ref is
-  // not for.
-  const [controller] = useState<GenerationInputsDraftController>(() =>
-    createGenerationInputsDraft({ inputIds, widgetTargets }),
-  );
+  /**
+   * Owned by an effect, not created in a `useState` initializer or a `useMemo`.
+   *
+   * The controller subscribes to the session and the asset store on creation
+   * and unsubscribes on `dispose`, which makes it an external resource with a
+   * lifecycle — and StrictMode runs setup → cleanup → setup. A draft created
+   * once outside an effect is disposed by that first cleanup and never
+   * replaced: staging silently does nothing and `canCommit` stays false for as
+   * long as the component lives. A discarded `useState` initializer would also
+   * leave its subscriptions behind with nothing left to dispose them. The
+   * create-in-setup / dispose-in-cleanup shape yields a fresh live controller
+   * on the second setup, and the instance lives in state so it reaches the
+   * renderer. Same reasoning as `Player`'s live-frame-graph coordinator.
+   */
+  const [controller, setController] =
+    useState<GenerationInputsDraftController | null>(null);
 
-  useEffect(() => () => controller.dispose(), [controller]);
+  useEffect(() => {
+    const created = createGenerationInputsDraft({ inputIds, widgetTargets });
+    // Own an external resource's lifecycle, not derived state — the setState
+    // publishes the freshly created controller to this component's tree.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setController(created);
+    return () => {
+      created.dispose();
+      setController((current) => (current === created ? null : current));
+    };
+    // Created once for the component's lifetime; a changed request is applied
+    // through `address` below rather than by discarding staged edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Compared by value: callers build these arrays inline, so identity changes
   // on every render while the addressed set usually does not.
   const addressKey = JSON.stringify([inputIds, widgetTargets]);
   useEffect(() => {
-    controller.address({ inputIds, widgetTargets });
+    controller?.address({ inputIds, widgetTargets });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controller, addressKey]);
 
   const reading = useSyncExternalStore(
-    controller.subscribe,
-    controller.getSnapshot,
-    controller.getSnapshot,
+    controller ? controller.subscribe : NO_SUBSCRIBE,
+    controller ? controller.getSnapshot : READ_INERT,
+    controller ? controller.getSnapshot : READ_INERT,
   );
 
   return useMemo(
     () => ({
       ...reading,
-      commit: controller.commit,
-      revert: controller.revert,
-      stage: controller.stage,
+      commit: (label, additionalWrites) =>
+        controller?.commit(label, additionalWrites) ?? {
+          ok: false,
+          code: "unavailable",
+          message: "The staged editor is not ready.",
+          label,
+        },
+      revert: () => controller?.revert(),
+      stage: (op) => controller?.stage(op),
     }),
     [reading, controller],
   );

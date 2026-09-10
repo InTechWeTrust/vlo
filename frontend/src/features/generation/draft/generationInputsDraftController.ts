@@ -114,7 +114,7 @@ interface DraftState {
 
 const EMPTY: DraftState = { workflowRevision: null, base: null, ops: [] };
 
-const INERT: GenerationDraftReading = {
+export const INERT_DRAFT_READING: GenerationDraftReading = {
   inputs: [],
   widgetValues: new Map(),
   hasDraftChanges: false,
@@ -251,6 +251,25 @@ export function createGenerationInputsDraft(
   };
 
   /**
+   * The ops addressing what this draft currently shows.
+   *
+   * Narrowing hides ops rather than deleting them, so this — not `state.ops` —
+   * is what "has changes", conflicts, and the commit are about. Deleting them
+   * would renumber the log, and a staged slot id is built from an op's position
+   * in it: filtering `[attach A, attach B, remove staged:1]` down to B's ops
+   * renumbers `attach B` to index 0, the removal stops matching, and the
+   * attachment the user cleared comes back.
+   */
+  const addressedOps = (
+    current: DraftState,
+  ): readonly GenerationInputDraftOp[] =>
+    current.ops.filter((op) =>
+      op.kind === "setWidget"
+        ? widgetTargetKeys.has(widgetKey(op.nodeId, op.param))
+        : selected.has(op.inputId),
+    );
+
+  /**
    * What the draft disagrees with the panel about, against a given snapshot.
    *
    * One implementation for both the published reading and the re-check inside
@@ -262,12 +281,13 @@ export function createGenerationInputsDraft(
     current: DraftState,
   ): readonly string[] => {
     if (!current.base) return [];
+    const ops = addressedOps(current);
     return [
-      ...findDraftConflicts(current.base.inputs, against.inputs, current.ops),
+      ...findDraftConflicts(current.base.inputs, against.inputs, ops),
       ...findDraftWidgetConflicts(
         current.base.widgets,
         readCommittedWidgets(against, widgetTargetKeys),
-        current.ops,
+        ops,
       ).map(widgetLabel),
     ];
   };
@@ -276,7 +296,7 @@ export function createGenerationInputsDraft(
     const session = generationSessionService.getSnapshot();
     const current = liveState(session);
     if (!session) {
-      return { ...INERT, error };
+      return { ...INERT_DRAFT_READING, error };
     }
     const projected = projectDraftInputs(session, current.ops, resolveAttach);
     const widgetValues = new Map(
@@ -291,7 +311,7 @@ export function createGenerationInputsDraft(
     return {
       inputs: projected.filter((input) => selected.has(input.id)),
       widgetValues,
-      hasDraftChanges: current.ops.length > 0,
+      hasDraftChanges: addressedOps(current).length > 0,
       hasConflict: conflicts.length > 0,
       canCommit: conflicts.length === 0,
       error: error ?? conflictMessage,
@@ -300,7 +320,7 @@ export function createGenerationInputsDraft(
 
   const controller: GenerationInputsDraftController = {
     getSnapshot: () => {
-      if (disposed) return INERT;
+      if (disposed) return INERT_DRAFT_READING;
       if (!reading) reading = read();
       return reading;
     },
@@ -393,18 +413,23 @@ export function createGenerationInputsDraft(
         notify();
         return { ok: false, code: "unavailable", message: error, label };
       }
-      const target = projectDraftInputs(session, current.ops, resolveAttach);
+      // Projected from *every* op so staged slot ids stay put, then narrowed to
+      // what this draft addresses: the compiler writes only the inputs in the
+      // target it is given, so a hidden edit is never committed — and never
+      // renumbered out of existence either.
+      const projected = projectDraftInputs(session, current.ops, resolveAttach);
+      const target = projected.filter((input) => selected.has(input.id));
+      const widgets = new Map(
+        [...projectDraftWidgets(current.ops)].filter(([key]) =>
+          widgetTargetKeys.has(key),
+        ),
+      );
       const result = generationSessionService.transaction(
         label,
         (transaction) => {
           // Diffed against the session as it is *now*, so the writes describe
           // the panel being written rather than the one editing began against.
-          compileDraftCommands(
-            session.inputs,
-            target,
-            transaction,
-            projectDraftWidgets(current.ops),
-          );
+          compileDraftCommands(session.inputs, target, transaction, widgets);
           // Returned, so an `additionalWrites` that turns out to be async is
           // still seen by the session and refused. Dropping it here would let
           // half a transaction commit and report success.
@@ -419,7 +444,15 @@ export function createGenerationInputsDraft(
       // Cleared only now: a failed transaction leaves the panel untouched, so
       // dropping the draft would lose the edit and show a panel that never
       // took it.
-      state = EMPTY;
+      //
+      // And only the ops this commit actually wrote. The target was narrowed to
+      // the addressed inputs, so an op the draft is holding for something it no
+      // longer shows was not committed — clearing it here would discard staged
+      // work on the strength of a write that never touched it.
+      const consumed = new Set(addressedOps(current));
+      const remaining = current.ops.filter((op) => !consumed.has(op));
+      state =
+        remaining.length === 0 ? EMPTY : { ...current, ops: remaining };
       error = null;
       notify();
       return result;
@@ -442,20 +475,10 @@ export function createGenerationInputsDraft(
       }
       selected = nextSelected;
       widgetTargetKeys = nextWidgets;
-      // Ops for something no longer addressed are dropped, not merely hidden.
-      // The reading filters by what is addressed but `commit` compiles every
-      // retained op, so keeping them would let a draft re-pointed from input A
-      // to input B still write A — with A nowhere on screen.
-      const kept = state.ops.filter((op) =>
-        op.kind === "setWidget"
-          ? widgetTargetKeys.has(widgetKey(op.nodeId, op.param))
-          : selected.has(op.inputId),
-      );
-      if (kept.length !== state.ops.length) {
-        state = kept.length === 0 ? EMPTY : { ...state, ops: kept };
-        // Said, because the user staged those edits and can no longer see them.
-        error = "Edits to inputs this editor no longer covers were dropped.";
-      }
+      // The log is left intact. Everything downstream — the reading, the
+      // conflicts, the commit target — is narrowed to what is addressed, so a
+      // hidden edit is neither shown nor written, and re-addressing an input
+      // brings its staged edit back rather than having silently lost it.
       notify();
     },
     dispose: () => {

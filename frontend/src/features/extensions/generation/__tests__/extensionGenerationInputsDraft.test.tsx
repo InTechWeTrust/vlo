@@ -145,6 +145,78 @@ describe("api.generation.createInputsDraft", () => {
     expect(draft.getState().widgetValues.get("9:length")).toEqual({ frames: 96 });
   });
 
+  it("hands over widget values the package cannot mutate", () => {
+    mounted = mountGenerationSession({
+      inputs: [TEXT_INPUT],
+      editableWidgets: [
+        {
+          target: { nodeId: "9", widget: "length" },
+          valueType: "int",
+          value: { frames: 48 },
+          options: null,
+          min: null,
+          max: null,
+          trueValue: null,
+          falseValue: null,
+        },
+      ],
+    });
+    const draft = createScopedInputsDraft(createScope(), {
+      inputIds: ["6:text"],
+      widgetTargets: [{ nodeId: "9", widget: "length" }],
+    });
+    if (!draft) throw new Error("the draft was refused");
+
+    // Copying the map is not enough: a widget value can be an object, and the
+    // staged one is the host's. Mutating what was read would change what
+    // commits, with no `stage` call and nothing notified.
+    const value = draft.getState().widgetValues.get("9:length") as {
+      frames: number;
+    };
+    expect(() => {
+      value.frames = 720;
+    }).toThrow();
+    expect(draft.getState().widgetValues.get("9:length")).toEqual({
+      frames: 48,
+    });
+  });
+
+  it("passes the read-only facade to a forEach callback, not its backing map", () => {
+    mounted = mountGenerationSession({
+      inputs: [TEXT_INPUT],
+      editableWidgets: [
+        {
+          target: { nodeId: "9", widget: "length" },
+          valueType: "int",
+          value: 48,
+          options: null,
+          min: null,
+          max: null,
+          trueValue: null,
+          falseValue: null,
+        },
+      ],
+    });
+    const draft = createScopedInputsDraft(createScope(), {
+      inputIds: ["6:text"],
+      widgetTargets: [{ nodeId: "9", widget: "length" }],
+    });
+    if (!draft) throw new Error("the draft was refused");
+
+    const values = draft.getState().widgetValues;
+    expect(values.size).toBe(1);
+    let visited = 0;
+    // `Map.forEach` hands its callback the backing map as its third argument,
+    // which would pass out the very object the wrapper exists to keep in.
+    values.forEach((_value, _key, map) => {
+      visited += 1;
+      expect(() =>
+        (map as unknown as Map<string, unknown>).set("x", 1),
+      ).toThrow(/read-only/);
+    });
+    expect(visited).toBe(1);
+  });
+
   it("hands over a widget map the package cannot mutate", () => {
     mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
     const controller = openDraft();
