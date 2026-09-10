@@ -80,9 +80,10 @@ export interface GenerationMediaItemSnapshot {
    *
    * A repeatable input's slot ids are derived from position
    * (`buildRepeatableInputSlotId`: `142:images`, then `142:images::repeat::1`),
-   * and the store front-packs the batch on every mutation, so removing or
-   * moving an item **reassigns the slot ids of everything after it**. The id
-   * here names the item only for as long as the batch stands still.
+   * and the store front-packs the batch whenever the *arrangement* changes, so
+   * removing or moving an item **reassigns the slot ids of everything after
+   * it**. An append and an option write renumber nothing. The id here names the
+   * item only for as long as the batch stands still.
    *
    * Within one transaction that is handled for you: the ids you read from a
    * snapshot keep naming the items you meant, and the transaction translates
@@ -223,9 +224,11 @@ export interface GenerationAttachAssetOptions {
  * One atomic batch of panel writes.
  *
  * **Slot ids name the state the transaction opened on.** Media commands are
- * applied in order and each renumbers the batch (see
- * `GenerationMediaItemSnapshot.slotId`), so the id a caller read is translated
- * to the slot that item currently occupies as the sequence advances. Removing
+ * applied in order, and the ones that change the arrangement — a removal, a
+ * move, a positioned attach — renumber the whole batch (see
+ * `GenerationMediaItemSnapshot.slotId`). One of those is enough to invalidate
+ * every id a later command was given, so the id a caller read is translated to
+ * the slot that item currently occupies as the sequence advances. Removing
  * two items therefore means passing the two ids the snapshot showed, not
  * guessing what the first removal renamed the second to.
  *

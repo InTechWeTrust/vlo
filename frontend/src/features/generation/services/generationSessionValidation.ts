@@ -691,9 +691,11 @@ export function validateSetMediaOptionCommand(
  * service advances this working snapshot between them, so every validator
  * stays a pure function of one snapshot.
  *
- * Slot ids are positional: the store front-packs a batch on every mutation, so
- * the item at ordinal *i* occupies slot *i*. Renumbering after each change is
- * what keeps the simulation honest about the ids a later command may address.
+ * Slot ids are positional: the store front-packs a batch whenever its
+ * arrangement changes, so the item at ordinal *i* occupies slot *i*.
+ * Renumbering after a removal, a move, or a positioned attach is what keeps the
+ * simulation honest about the ids a later command may address; an append and an
+ * option write leave the arrangement, and so the ids, alone.
  */
 export function applyMediaCommitToSnapshot(
   snapshot: GenerationSessionSnapshot,

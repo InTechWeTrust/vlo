@@ -655,3 +655,108 @@ describe("a committed draft matches what the editor showed: multi-command", () =
     expect(assetIds(panel)).toEqual([]);
   });
 });
+
+/**
+ * The compiler's whole contract, asserted over sequences nobody chose.
+ *
+ * The fixed examples above each pin one shape of edit; this pins the invariant
+ * they are examples of — whatever the editor shows is what the panel holds
+ * afterwards — across randomly generated op sequences. That is what the
+ * addressing bugs violated, and an example-only suite can only catch the shapes
+ * someone thought to write down.
+ *
+ * Ops are generated against the *projection so far*, exactly as a real surface
+ * stages them: a slot id or ordinal is only offered while it names something.
+ * Seeded, so a failure names the sequence that produced it.
+ */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    // xorshift32: small, deterministic, and good enough to shuffle op choices.
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    state >>>= 0;
+    return state / 0x100000000;
+  };
+}
+
+function generateOps(
+  random: () => number,
+  session: GenerationSessionSnapshot,
+  count: number,
+): readonly GenerationInputDraftOp[] {
+  const ops: GenerationInputDraftOp[] = [];
+  const assetIdPool = ["asset-a", "asset-b", "asset-c", "asset-k"];
+  const pick = <T,>(items: readonly T[]): T =>
+    items[Math.floor(random() * items.length)];
+
+  for (let index = 0; index < count; index += 1) {
+    // Against what the editor currently shows, so every id and ordinal is live.
+    const projected = projectDraftInputs(session, ops, resolveAsset);
+    const media = projected[0].media ?? [];
+    const kinds: GenerationInputDraftOp["kind"][] = ["attachAsset"];
+    if (media.length > 0) kinds.push("removeMedia", "replaceMedia");
+    if (media.length > 1) kinds.push("moveMedia");
+
+    switch (pick(kinds)) {
+      case "attachAsset":
+        ops.push({
+          kind: "attachAsset",
+          inputId: BATCH_KEY.id,
+          assetId: pick(assetIdPool),
+        });
+        break;
+      case "removeMedia":
+        ops.push({
+          kind: "removeMedia",
+          inputId: BATCH_KEY.id,
+          slotId: pick(media).slotId,
+        });
+        break;
+      case "replaceMedia":
+        ops.push({
+          kind: "replaceMedia",
+          inputId: BATCH_KEY.id,
+          assetId: pick(assetIdPool),
+          at: Math.floor(random() * media.length),
+        });
+        break;
+      case "moveMedia":
+        ops.push({
+          kind: "moveMedia",
+          inputId: BATCH_KEY.id,
+          fromOrdinal: Math.floor(random() * media.length),
+          toOrdinal: Math.floor(random() * media.length),
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  return ops;
+}
+
+describe("a committed draft matches what the editor showed: any sequence", () => {
+  it("commits the projection for 200 generated op sequences", () => {
+    const random = seededRandom(0x5eed);
+    const base = [BATCH_OF_THREE];
+
+    for (let trial = 0; trial < 200; trial += 1) {
+      const opening = session(base);
+      const ops = generateOps(random, opening, 1 + Math.floor(random() * 6));
+      const { target, result, panel } = commitDraft(base, ops);
+      const detail = JSON.stringify(ops);
+
+      if (result.ok) {
+        // The invariant the compiler exists to hold.
+        expect(assetIds(panel), detail).toEqual(assetIds(target));
+      } else {
+        // A refusal writes nothing: the panel is exactly as it was.
+        expect(assetIds(panel), detail).toEqual(assetIds(base));
+      }
+      mounted?.unmount();
+      mounted = null;
+    }
+  });
+});

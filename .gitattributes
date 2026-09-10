@@ -156,6 +156,21 @@
 /frontend/src/features/generation/utils/audioSlotAssets.ts extension-surface=adapter
 /frontend/src/features/generation/utils/mediaInputItemOptions.ts extension-surface=adapter
 /frontend/src/features/generation/store/mediaInputActions.ts extension-surface=adapter
+# The staged inputs editor (docs/staged-generation-editor-plan.md). Split so a
+# draft's lifetime can be owned: the controller is what `api.generation
+# .createInputsDraft` hands an activation, and the field renderers are what
+# `runtime.generationUi.InputsDraftFields` draws with. The op vocabulary here is
+# mirrored by `ExtensionGenerationDraftOp`, and the renderers are the panel's
+# own — so a change to any of these changes what an extension stages or sees.
+/frontend/src/features/generation/draft/generationInputsDraft.ts extension-surface=adapter
+/frontend/src/features/generation/draft/generationInputsDraftController.ts extension-surface=adapter
+/frontend/src/features/generation/draft/useGenerationInputsDraft.ts extension-surface=adapter
+/frontend/src/features/generation/components/GenerationInputsDraftFields.tsx extension-surface=adapter
+/frontend/src/features/generation/components/generationInputFields.tsx extension-surface=adapter
+/frontend/src/features/generation/components/generationInputFieldValues.ts extension-surface=adapter
+# The feature's front door: what the extension generation adapter may import at
+# all, the same role `panelUI/index.ts` plays for `runtime.panelUi`.
+/frontend/src/features/generation/index.ts extension-surface=adapter
 # Text-input authorship claims (1C). Owner-neutral: the registry knows a label
 # and a reason, and the panel reads it directly while the adapter adds
 # activation ownership.
@@ -272,6 +287,15 @@
 /frontend/src/features/panelUI/components/assetDropSlotTypes.ts extension-surface=adapter
 /frontend/src/features/panelUI/components/AssetBatchDropSlot.tsx extension-surface=adapter
 /frontend/src/features/panelUI/components/assetBatchDropSlotTypes.ts extension-surface=adapter
+# One decision for a drag's highlight and its drop, shared by both slots. It
+# had drifted between them, so a slot showed a drag it would refuse as a valid
+# target; a staged editor rendered by an extension draws these same slots.
+/frontend/src/features/panelUI/components/assetDropSlotUtils.ts extension-surface=adapter
+# Where an asset drag actually lands. It enforces the slots' own acceptance
+# rules, including the surface namespacing that keeps a panel takeover from
+# stealing the panel's drop targets — dropping that check here silently accepts
+# drags every slot reports as refused.
+/frontend/src/features/timeline/hooks/dnd/useAssetDrag.ts extension-surface=adapter
 /frontend/src/types/TimelineTypes.ts extension-surface=adapter
 
 # Catalogue, checker, and architectural guidance.

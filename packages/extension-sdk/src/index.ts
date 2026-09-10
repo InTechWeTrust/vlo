@@ -3522,9 +3522,9 @@ export interface ExtensionGenerationMediaItem {
    * The address every media write takes — **positional, not an identity**.
    *
    * A repeatable input's slot ids follow position, and the panel front-packs
-   * the batch on every change, so removing or moving an item **renames every
-   * slot after it**. This id names this item only while the batch stands
-   * still.
+   * the batch whenever the arrangement changes, so removing or moving an item
+   * **renames every slot after it**. Appending, or setting an option, renames
+   * nothing. This id names this item only while the batch stands still.
    *
    * Inside a `transaction` that is handled for you: pass the ids you read from
    * the snapshot and they keep naming the items you meant, however the

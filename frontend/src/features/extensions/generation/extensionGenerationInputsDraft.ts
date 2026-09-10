@@ -232,12 +232,29 @@ export function createScopedInputsDraft(
   let publishedFrom: ReturnType<
     GenerationInputsDraftController["getSnapshot"]
   > | null = null;
+  /**
+   * Part of the cache key, because activation ending is not a draft change.
+   *
+   * The scope aborts without the native draft notifying anyone, so a purely
+   * reading-keyed cache keeps serving the pre-abort answer — and a draft a
+   * package retained past deactivation goes on reporting `canCommit: true`
+   * while every write is refused. Flips at most once, so identity stays stable.
+   */
+  let publishedAborted = false;
 
   const published: ExtensionGenerationInputsDraft = {
     getState: () => {
       const reading = native.getSnapshot();
-      if (publishedState && publishedFrom === reading) return publishedState;
+      const aborted = scope.signal.aborted;
+      if (
+        publishedState &&
+        publishedFrom === reading &&
+        publishedAborted === aborted
+      ) {
+        return publishedState;
+      }
       publishedFrom = reading;
+      publishedAborted = aborted;
       publishedState = {
         inputs: projectDraftInputs(reading.inputs),
         // Detached and write-refusing, not the host's own map: sharing it lets
@@ -248,7 +265,7 @@ export function createScopedInputsDraft(
         >,
         hasDraftChanges: reading.hasDraftChanges,
         hasConflict: reading.hasConflict,
-        canCommit: reading.canCommit && !scope.signal.aborted,
+        canCommit: reading.canCommit && !aborted,
         error: reading.error,
       };
       return publishedState;

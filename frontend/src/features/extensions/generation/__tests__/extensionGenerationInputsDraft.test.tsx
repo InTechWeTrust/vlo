@@ -167,6 +167,32 @@ describe("api.generation.createInputsDraft", () => {
     expect(createScopedInputsDraft(scope, { inputIds: ["6:text"] })).toBeNull();
   });
 
+  it("refuses a write from a draft retained past its activation", () => {
+    // The check `runtime.generationUi` could not have supported. A package can
+    // hold a draft it opened, and nothing stops it calling `commit` after
+    // deactivation — so the guard has to be on the write, not only on the open.
+    // Aborted without disposing, which is exactly what a retained reference is.
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
+    const controller = openDraft();
+    controller.stage({ kind: "setText", inputId: "6:text", value: "staged" });
+    expect(controller.getState().hasDraftChanges).toBe(true);
+
+    abort?.abort();
+
+    expect(controller.getState().canCommit).toBe(false);
+    expect(
+      controller.commit("Compose", (transaction) => {
+        transaction.setTextInput("6:text", "after the activation ended");
+      }),
+    ).toMatchObject({ ok: false, code: "unavailable" });
+    expect(mounted.commit).not.toHaveBeenCalled();
+
+    // Staging is refused too, so a retained draft cannot keep accumulating
+    // work that a later host bug might flush.
+    controller.stage({ kind: "setText", inputId: "6:text", value: "more" });
+    expect(controller.getState().inputs[0]?.value).not.toBe("more");
+  });
+
   it("reports a bad write from the port as a failure, not a raw throw", () => {
     mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
     const controller = openDraft();
