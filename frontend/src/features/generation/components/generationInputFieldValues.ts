@@ -119,6 +119,39 @@ export function toPreparingSlotValue(
       };
 }
 
+/**
+ * Whether a filled slot can be opened in the mini editor. Every video value
+ * can: even a plain asset is croppable through a synthetic bake. An audio slot
+ * needs media that is actually in hand — a video dropped on one is editable
+ * only once its track has been pulled out, and a selection only once its audio
+ * has been rendered.
+ */
+export function canEditMediaValue(
+  value: GenerationMediaInputValue | null | undefined,
+  inputType: "image" | "video" | "audio",
+): boolean {
+  if (!value) return false;
+  if (inputType === "video") return true;
+  if (inputType !== "audio") return false;
+
+  if (value.kind === "asset") {
+    if (value.isExtracting) return false;
+    return isAudioSlotVideoAsset(value.asset)
+      ? value.extractedAudioFile != null
+      : true;
+  }
+  // A selection whose render failed still has its clips, and the editor
+  // re-renders from those — so a failed extraction stays recoverable. A trim
+  // has no clips, so it is only openable while its file is in hand.
+  return (
+    value.kind === "timelineSelection" &&
+    value.mediaType === "audio" &&
+    !value.isExtracting &&
+    (value.preparedAudioFile != null ||
+      value.timelineSelection.clips.length > 0)
+  );
+}
+
 /** Media-specific drop allowances beyond the slot's eventual output type. */
 export function acceptAssetForInputType(
   inputType: WorkflowInput["inputType"],

@@ -255,6 +255,7 @@ export function buildMediaInputActions(
                 isExtracting: options?.isExtracting ?? false,
                 extractionRequestId: options?.extractionRequestId ?? 0,
                 preparedAudioFile: options?.preparedAudioFile ?? null,
+                bakedEdit: options?.bakedEdit ?? null,
                 extractionError: options?.extractionError ?? null,
               }
             : {

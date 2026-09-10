@@ -13,6 +13,7 @@ export type {
   EditorRangeMask,
   ResolvedEditorSource,
   MiniEditorEditSpec,
+  MiniEditorFrameConstraint,
   MiniEditorInitialState,
   MiniEditorMediaType,
   MiniEditorOpenArgs,

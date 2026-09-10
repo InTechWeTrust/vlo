@@ -244,6 +244,12 @@ export interface GenerationAudioTimelineSelectionInputValue
   extends BaseGenerationTimelineSelectionInputValue {
   mediaType: "audio";
   preparedAudioFile: File | null;
+  /**
+   * See {@link GenerationVideoTimelineSelectionInputValue.bakedEdit}. An audio
+   * trim bakes the same way: the value that replaces the media points back at
+   * what it was cut from so re-editing reopens the source, not the crop.
+   */
+  bakedEdit?: GenerationBakedEditOrigin | null;
 }
 
 export interface GenerationVideoTimelineSelectionInputValue

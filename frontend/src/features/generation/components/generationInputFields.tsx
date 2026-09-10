@@ -31,6 +31,7 @@ import { generationTextInputClaims } from "../services/GenerationTextInputClaims
 import { useGenerationTextInputClaim } from "../hooks/useGenerationTextInputClaim";
 import {
   acceptAssetForInputType,
+  canEditMediaValue,
   resolveAcceptTypes,
   resolveExternalAcceptTypes,
   toPreparingSlotValue,
@@ -481,7 +482,10 @@ interface MediaInputSectionProps {
   onExternalInputDrop: (inputId: string, file: File) => void | Promise<void>;
   onInputClear: (inputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
-  onEditMedia?: (inputId: string, inputType: "video") => void;
+  onEditMedia?: (
+    inputId: string,
+    inputType: "video" | "audio",
+  ) => void;
   /** Actions to render refused, with the reason. See the staged editor. */
   disabledActions?: AssetDropSlotDisabledActions;
   /**
@@ -523,6 +527,12 @@ function MediaInputSection({
     const base = toSlotValue(value, mediaInputType);
     return preparing ? toPreparingSlotValue(base, mediaInputType) : base;
   }, [mediaInputType, preparing, value]);
+  // Narrowed for the edit callback: only these two have an editor at all.
+  const editableMediaType =
+    mediaInputType === "video" || mediaInputType === "audio"
+      ? mediaInputType
+      : null;
+  const isEditableMedia = canEditMediaValue(value, mediaInputType);
 
   return (
     <PanelSection title={input.label} bgColor={bgColor} defaultOpen={true}>
@@ -541,8 +551,8 @@ function MediaInputSection({
         value={slotValue}
         onClear={() => onInputClear(inputId)}
         onEdit={
-          mediaInputType === "video" && slotValue && !preparing && onEditMedia
-            ? () => onEditMedia(inputId, "video")
+          editableMediaType && isEditableMedia && slotValue && !preparing && onEditMedia
+            ? () => onEditMedia(inputId, editableMediaType)
             : undefined
         }
         onDrop={(asset: Asset) => onInputDrop(inputId, asset)}
@@ -573,7 +583,10 @@ interface BatchMediaInputSectionProps {
   onMoveMediaInput: (sourceInputId: string, targetIndex: number) => void;
   onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
-  onEditMedia?: (inputId: string, inputType: "video") => void;
+  onEditMedia?: (
+    inputId: string,
+    inputType: "video" | "audio",
+  ) => void;
   onToggleItemOption?: (
     inputId: string,
     option: WorkflowInputItemOption,
@@ -609,6 +622,12 @@ function BatchMediaInputSection({
   const itemOptions = input.presentation?.repeatable?.itemOptions;
   const supportsAudioOption =
     mediaInputType === "video" && itemOptions?.includes("audio") === true;
+  // Which *items* offer the pencil is decided per item below; the strip only
+  // needs to know whether this media type has an editor at all.
+  const editableMediaType =
+    mediaInputType === "video" || mediaInputType === "audio"
+      ? mediaInputType
+      : null;
   const slotLabelBase =
     input.label.replace(/\s+inputs?$/i, "").trim() || input.label;
 
@@ -636,7 +655,7 @@ function BatchMediaInputSection({
       collected.push({
         slotId,
         value: slotValue,
-        editable: mediaInputType === "video",
+        editable: canEditMediaValue(value, mediaInputType),
         ...(supportsAudioOption && canValueCarryAudio(value)
           ? {
               options: [
@@ -733,8 +752,8 @@ function BatchMediaInputSection({
         onSelect={(index) => onClickSelect(slotIdAt(index), mediaInputType)}
         onClear={(slotId) => onInputClear(slotId)}
         onEdit={
-          mediaInputType === "video" && onEditMedia
-            ? (slotId) => onEditMedia(slotId, "video")
+          editableMediaType && onEditMedia
+            ? (slotId) => onEditMedia(slotId, editableMediaType)
             : undefined
         }
         onReorder={handleReorder}
@@ -772,7 +791,10 @@ interface MediaInputGroupSectionProps {
   onInputClear: (inputId: string) => void;
   onSwapMediaInputs: (sourceInputId: string, targetInputId: string) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
-  onEditMedia?: (inputId: string, inputType: "video") => void;
+  onEditMedia?: (
+    inputId: string,
+    inputType: "video" | "audio",
+  ) => void;
   disabledActions?: AssetDropSlotDisabledActions;
   acceptAsset?: (asset: Asset) => boolean;
 }
@@ -809,6 +831,10 @@ function MediaInputGroupSection({
         {inputs.map((input) => {
           const inputId = getWorkflowInputId(input);
           const mediaInputType = input.inputType;
+          const editableMediaType =
+            mediaInputType === "video" || mediaInputType === "audio"
+              ? mediaInputType
+              : null;
           const acceptTypes = resolveAcceptTypes(mediaInputType);
           const value = getWorkflowInputValue(mediaInputs, input);
           const preparing = preparingInputIds.has(inputId);
@@ -841,11 +867,12 @@ function MediaInputGroupSection({
                 }
                 onClear={() => onInputClear(inputId)}
                 onEdit={
-                  mediaInputType === "video" &&
+                  editableMediaType &&
+                  canEditMediaValue(value, mediaInputType) &&
                   slotValue &&
                   !preparing &&
                   onEditMedia
-                    ? () => onEditMedia(inputId, "video")
+                    ? () => onEditMedia(inputId, editableMediaType)
                     : undefined
                 }
                 onDrop={(asset: Asset) => onInputDrop(inputId, asset)}

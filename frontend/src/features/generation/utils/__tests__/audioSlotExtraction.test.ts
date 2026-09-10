@@ -18,6 +18,7 @@ import type { GenerationMediaInputValue } from "../../types";
 import {
   NO_ASSET_AUDIO_TRACK_MESSAGE,
   collectStalledAudioExtractions,
+  settleFailedSelectionExtraction,
   collectStalledSelectionExtractions,
   fillAudioSlotWithAsset,
   isAssetSlotExtractionCurrent,
@@ -321,5 +322,75 @@ describe("collectStalledSelectionExtractions", () => {
             } as GenerationMediaInputValue),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("settleFailedSelectionExtraction", () => {
+  const timelineSelection = { start: 0, end: 10, clips: [] } as never;
+  const thumbnailFile = new File(["png"], "thumb.png", { type: "image/png" });
+
+  function buildOptions(mediaType: "video" | "audio", requestId: number) {
+    const setMediaInputTimelineSelection = vi.fn();
+    return {
+      setMediaInputTimelineSelection,
+      options: {
+        inputId: "143:audios",
+        timelineSelection,
+        thumbnailFile,
+        extractionRequestId: requestId,
+        mediaType,
+        fallbackMessage: "Failed to extract audio",
+        setMediaInputTimelineSelection,
+        selectionExtractionRequestIdsRef: { current: { "143:audios": 4 } },
+      } as const,
+    };
+  }
+
+  it("clears the extracting flag and reports why the render failed", () => {
+    // Without this the slot stays busy for good: nothing settles it later, so
+    // it refuses generation and cannot be reopened in the editor.
+    const { options, setMediaInputTimelineSelection } = buildOptions("audio", 4);
+
+    settleFailedSelectionExtraction(options, new Error("codec unsupported"));
+
+    expect(setMediaInputTimelineSelection).toHaveBeenCalledWith(
+      "143:audios",
+      timelineSelection,
+      thumbnailFile,
+      {
+        mediaType: "audio",
+        isExtracting: false,
+        extractionRequestId: 4,
+        preparedAudioFile: null,
+        extractionError: "codec unsupported",
+      },
+    );
+  });
+
+  it("falls back to its own message and clears the video file for video slots", () => {
+    const { options, setMediaInputTimelineSelection } = buildOptions("video", 4);
+
+    settleFailedSelectionExtraction({ ...options }, "not an error");
+
+    expect(setMediaInputTimelineSelection).toHaveBeenCalledWith(
+      "143:audios",
+      timelineSelection,
+      thumbnailFile,
+      expect.objectContaining({
+        mediaType: "video",
+        preparedVideoFile: null,
+        extractionError: "Failed to extract audio",
+      }),
+    );
+  });
+
+  it("drops a failure the slot has already moved on from", () => {
+    // The slot took a newer value while this render was in flight; writing the
+    // failure now would overwrite media the user has since chosen.
+    const { options, setMediaInputTimelineSelection } = buildOptions("audio", 3);
+
+    settleFailedSelectionExtraction(options, new Error("too late"));
+
+    expect(setMediaInputTimelineSelection).not.toHaveBeenCalled();
   });
 });

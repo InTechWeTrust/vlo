@@ -48,7 +48,10 @@ interface GenerationInputsProps {
     active: boolean,
   ) => void;
   onClickSelect: (inputId: string, inputType: "image" | "video" | "audio") => void;
-  onEditMedia?: (inputId: string, inputType: "video") => void;
+  onEditMedia?: (
+    inputId: string,
+    inputType: "video" | "audio",
+  ) => void;
   widgetInputs: WorkflowWidgetInput[];
   sections?: WorkflowSection[];
   workflowId?: string | null;

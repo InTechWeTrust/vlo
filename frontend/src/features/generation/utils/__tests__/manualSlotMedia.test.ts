@@ -6,9 +6,11 @@ const mocks = vi.hoisted(() => ({
   target: { buffer: new Uint8Array([1, 2, 3]) as Uint8Array | null },
   input: {
     getPrimaryAudioTrack: vi.fn(),
+    computeDuration: vi.fn(async () => 0),
     dispose: vi.fn(),
   },
   conversion: {
+    isValid: true,
     execute: vi.fn(async () => undefined),
   },
   renderTimelineSelectionToMp4: vi.fn(),
@@ -48,11 +50,14 @@ import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
   extractAudioFromVideo,
+  probeAudioDurationTicks,
+  trimAudioFile,
 } from "../manualSlotMedia";
 
 describe("manualSlotMedia", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.conversion.isValid = true;
     mocks.audioTrack = { id: "audio" };
     mocks.target.buffer = new Uint8Array([1, 2, 3]);
     mocks.renderTimelineSelectionToMp4.mockResolvedValue(
@@ -122,6 +127,58 @@ describe("manualSlotMedia", () => {
       }),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(mocks.input.dispose).toHaveBeenCalled();
+  });
+
+  it("trims audio to the crop window and delivers it as WAV", async () => {
+    // 96000 ticks to the second: seconds one through two of the source.
+    const result = await trimAudioFile(
+      new File(["audio"], "score.wav"),
+      96_000,
+      192_000,
+    );
+
+    expect(Conversion.init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: mocks.input,
+        trim: { start: 1, end: 2 },
+        video: { discard: true },
+      }),
+    );
+    expect(mocks.conversion.execute).toHaveBeenCalled();
+    expect(result).toMatchObject({ type: "audio/wav" });
+    expect(mocks.input.dispose).toHaveBeenCalled();
+  });
+
+  it("refuses to trim an empty range, a silent source, or an unusable conversion", async () => {
+    const file = new File(["audio"], "score.wav");
+
+    await expect(trimAudioFile(file, 96_000, 96_000)).resolves.toBeNull();
+    expect(Conversion.init).not.toHaveBeenCalled();
+
+    mocks.audioTrack = null;
+    await expect(trimAudioFile(file, 0, 96_000)).resolves.toBeNull();
+
+    mocks.audioTrack = { id: "audio" };
+    mocks.conversion.isValid = false;
+    await expect(trimAudioFile(file, 0, 96_000)).resolves.toBeNull();
+    expect(mocks.conversion.execute).not.toHaveBeenCalled();
+
+    mocks.conversion.isValid = true;
+    mocks.target.buffer = null;
+    await expect(trimAudioFile(file, 0, 96_000)).resolves.toBeNull();
+  });
+
+  it("reads a duration in ticks, treating an unreadable one as zero", async () => {
+    mocks.input.computeDuration.mockResolvedValueOnce(2);
+    await expect(
+      probeAudioDurationTicks(new File(["audio"], "score.wav")),
+    ).resolves.toBe(192_000);
+
+    mocks.input.computeDuration.mockResolvedValueOnce(Number.NaN);
+    await expect(
+      probeAudioDurationTicks(new File(["audio"], "score.wav")),
+    ).resolves.toBe(0);
+    expect(mocks.input.dispose).toHaveBeenCalledTimes(2);
   });
 
   it("renders a selection, injects a valid fallback FPS, and extracts audio", async () => {

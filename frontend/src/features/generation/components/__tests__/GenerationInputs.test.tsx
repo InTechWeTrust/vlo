@@ -386,6 +386,75 @@ describe("GenerationInputs", () => {
     );
   });
 
+  it("offers the mini editor on audio references that are ready to trim", () => {
+    const input = {
+      id: "143:audios",
+      nodeId: "143",
+      classType: "vloMemoryLoadAudioBatch",
+      inputType: "audio" as const,
+      param: "audios",
+      label: "Audio inputs",
+      currentValue: null,
+      origin: "rule" as const,
+      presentation: { repeatable: { max: 3 } },
+    };
+    const onEditMedia = vi.fn();
+
+    render(
+      <GenerationInputs
+        inputs={[input]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{
+          "143:audios": {
+            kind: "asset",
+            asset: {
+              id: "score",
+              hash: "score",
+              name: "score.wav",
+              type: "audio",
+              src: "blob:score",
+              createdAt: 1,
+            },
+          },
+          // A video on an audio slot contributes the track being pulled out of
+          // it, so there is nothing to trim until that finishes.
+          "143:audios::repeat::1": {
+            kind: "asset",
+            asset: {
+              id: "clip",
+              hash: "clip",
+              name: "clip.mp4",
+              type: "video",
+              src: "blob:clip",
+              createdAt: 1,
+              hasAudio: true,
+            },
+            isExtracting: true,
+          },
+        }}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        onEditMedia={onEditMedia}
+        widgetInputs={[]}
+        widgetValues={{}}
+        randomizeToggles={{}}
+        onWidgetChange={vi.fn()}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const editButtons = screen.getAllByRole("button", { name: /^Edit / });
+    expect(editButtons).toHaveLength(1);
+
+    fireEvent.click(editButtons[0]);
+    expect(onEditMedia).toHaveBeenCalledWith("143:audios", "audio");
+  });
+
   it("keeps the built-in inputs section ahead of explicitly ordered options", () => {
     render(
       <GenerationInputs

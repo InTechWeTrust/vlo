@@ -1,4 +1,5 @@
 import type { Asset } from "../../../types/Asset";
+import type { TimelineSelection } from "../../../types/TimelineTypes";
 import type { GenerationMediaInputValue } from "../types";
 import type { GenerationWorkflowState } from "../store/types";
 import { isAudioSlotVideoAsset } from "./audioSlotAssets";
@@ -9,6 +10,8 @@ export const NO_ASSET_AUDIO_TRACK_MESSAGE =
   "No audio track was found in this video";
 
 type SetMediaInputAsset = GenerationWorkflowState["setMediaInputAsset"];
+type SetMediaInputTimelineSelection =
+  GenerationWorkflowState["setMediaInputTimelineSelection"];
 
 /**
  * True while `value` is still the extraction this request started: the same
@@ -79,6 +82,56 @@ export function collectStalledSelectionExtractions(
   }
 
   return stalled;
+}
+
+export interface FailedSelectionExtractionOptions {
+  inputId: string;
+  timelineSelection: TimelineSelection;
+  thumbnailFile: File;
+  extractionRequestId: number;
+  mediaType: "video" | "audio";
+  /** Used when the failure carries no message of its own. */
+  fallbackMessage: string;
+  setMediaInputTimelineSelection: SetMediaInputTimelineSelection;
+  selectionExtractionRequestIdsRef: { current: Record<string, number> };
+}
+
+/**
+ * Writes a thrown selection render back onto its slot as a failure. Nothing
+ * settles a slot once the render that owns it throws, and one left marked
+ * extracting stays busy for good — refusing generation and a second attempt at
+ * editing alike. A failure that no longer belongs to the slot is dropped,
+ * exactly as a successful render would be.
+ */
+export function settleFailedSelectionExtraction(
+  options: FailedSelectionExtractionOptions,
+  error: unknown,
+): void {
+  const { extractionRequestId, inputId } = options;
+  if (
+    options.selectionExtractionRequestIdsRef.current[inputId] !==
+    extractionRequestId
+  ) {
+    return;
+  }
+
+  options.setMediaInputTimelineSelection(
+    inputId,
+    options.timelineSelection,
+    options.thumbnailFile,
+    {
+      mediaType: options.mediaType,
+      isExtracting: false,
+      extractionRequestId,
+      ...(options.mediaType === "audio"
+        ? { preparedAudioFile: null }
+        : { preparedVideoFile: null }),
+      extractionError:
+        error instanceof Error && error.message
+          ? error.message
+          : options.fallbackMessage,
+    },
+  );
 }
 
 interface AudioAssetExtractionOptions {

@@ -479,7 +479,7 @@ export function MiniEditorControls() {
             {formatTicks(playheadTicks)} / {formatTicks(durationTicks)}
           </Typography>
           <Box sx={{ flex: 1 }} />
-          {canSave ? (
+          {canSave && mediaType === "video" ? (
             <Button
               size="small"
               startIcon={<AddIcon />}

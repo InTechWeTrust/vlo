@@ -39,6 +39,9 @@ import {
 import {
   createAudioSelectionPlaceholderFile,
   extractAudioFromSelection,
+  extractAudioFromVideo,
+  probeAudioDurationTicks,
+  trimAudioFile,
 } from "../utils/manualSlotMedia";
 import {
   captureVideoFrameFile,
@@ -48,6 +51,7 @@ import { useMiniEditorStore } from "../../miniEditor";
 import type {
   ResolvedEditorSource,
   MiniEditorEditSpec,
+  MiniEditorFrameConstraint,
   MiniEditorInitialState,
 } from "../../miniEditor";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
@@ -79,6 +83,8 @@ import {
   collectStalledSelectionExtractions,
   fillAudioSlotWithAsset,
   isAssetSlotExtractionCurrent,
+  settleFailedSelectionExtraction,
+  NO_ASSET_AUDIO_TRACK_MESSAGE,
 } from "../utils/audioSlotExtraction";
 import { isAudioSlotVideoAsset } from "../utils/audioSlotAssets";
 import { readIncludeEmbeddedAudio } from "../utils/mediaInputItemOptions";
@@ -151,6 +157,34 @@ function resolveGridConstraint(
   return 1;
 }
 
+/**
+ * The crop grid the mini editor has to obey for a slot: the selection's own
+ * frame rate when it has one, otherwise the workflow's selection rule, and the
+ * project's as the floor. Shared by the video and audio editors so a cropped
+ * reference of either kind lands on the same frames.
+ */
+function resolveEditorFrameConstraint(
+  sourceSelection: TimelineSelection | null,
+  selectionConfig: WorkflowSelectionConfig | undefined,
+): MiniEditorFrameConstraint {
+  const projectFps = Math.max(1, useProjectStore.getState().config.fps);
+  return {
+    fps: sourceSelection
+      ? sourceSelection.fps && sourceSelection.fps > 0
+        ? sourceSelection.fps
+        : projectFps
+      : (resolveSelectionConfigFps(selectionConfig, projectFps) ?? projectFps),
+    frameStep: resolveGridConstraint(
+      sourceSelection?.frameStep,
+      selectionConfig?.frameStep,
+    ),
+    frameOffset: resolveGridConstraint(
+      sourceSelection?.frameOffset,
+      selectionConfig?.frameOffset,
+    ),
+  };
+}
+
 function applySelectionConfigDefaults(
   selection: ReturnType<typeof createTimelineSelection>,
   config: WorkflowSelectionConfig | undefined,
@@ -213,6 +247,47 @@ function endMediaInputPreparation(inputId: string): void {
  */
 const REPLAY_PANEL_HYDRATION_GRACE_MS = 5_000;
 
+const NO_SELECTION_AUDIO_TRACK_MESSAGE =
+  "No audio track was found in the selected timeline range";
+
+/**
+ * The slot's current value and the workflow input backing it, resolved the
+ * same way whichever media editor is being opened.
+ */
+function readSlotValueForEdit(
+  inputId: string,
+  workflowInputById: ReadonlyMap<string, WorkflowInput>,
+): {
+  input: WorkflowInput | undefined;
+  value: GenerationMediaInputValue | null | undefined;
+} {
+  const input = resolveWorkflowInputForSlot(inputId, workflowInputById);
+  const currentMediaInputs = useGenerationStore.getState().mediaInputs;
+  return {
+    input,
+    value: input
+      ? getWorkflowInputSlotValue(
+          currentMediaInputs,
+          input,
+          parseRepeatableInputSlotId(inputId)?.index ?? 0,
+          workflowInputById,
+        )
+      : currentMediaInputs[inputId],
+  };
+}
+
+/** Frame rate an audio selection re-renders at when it carries none itself. */
+function resolveEditAudioExportFps(
+  input: WorkflowInput | undefined,
+): number | undefined {
+  return (
+    resolveSelectionConfigFps(
+      input?.dispatch?.selectionConfig,
+      Math.max(1, useProjectStore.getState().config.fps),
+    ) ?? undefined
+  );
+}
+
 interface AudioSelectionExtractionOptions {
   inputId: string;
   timelineSelection: ReturnType<typeof createTimelineSelection>;
@@ -234,23 +309,40 @@ async function extractAudioTimelineSelection({
   setMediaInputTimelineSelection,
   selectionExtractionRequestIdsRef,
 }: AudioSelectionExtractionOptions): Promise<void> {
-  const preparedAudioFile = await extractAudioFromSelection(timelineSelection, {
-    exportFps,
-  });
-  if (
-    selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId
-  ) {
-    return;
+  const isCurrent = () =>
+    selectionExtractionRequestIdsRef.current[inputId] === extractionRequestId;
+
+  let preparedAudioFile: File | null;
+  try {
+    preparedAudioFile = await extractAudioFromSelection(timelineSelection, {
+      exportFps,
+    });
+  } catch (error) {
+    settleFailedSelectionExtraction(
+      {
+        inputId,
+        timelineSelection,
+        thumbnailFile,
+        extractionRequestId,
+        mediaType: "audio",
+        fallbackMessage:
+          "Failed to extract audio from the selected timeline range",
+        setMediaInputTimelineSelection,
+        selectionExtractionRequestIdsRef,
+      },
+      error,
+    );
+    throw error;
   }
+
+  if (!isCurrent()) return;
   setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
     mediaType: "audio",
     isExtracting: false,
     extractionRequestId,
     preparedAudioFile,
     extractionError:
-      preparedAudioFile === null
-        ? "No audio track was found in the selected timeline range"
-        : null,
+      preparedAudioFile === null ? NO_SELECTION_AUDIO_TRACK_MESSAGE : null,
   });
 }
 
@@ -281,53 +373,66 @@ async function extractVideoTimelineSelection({
   setMediaInputTimelineSelection,
   selectionExtractionRequestIdsRef,
 }: VideoSelectionExtractionOptions): Promise<void> {
-  const nodeMasks =
-    mode === "manual"
-      ? []
-      : derivedMaskMappings.filter(
-          (mapping) =>
-            mapping.sourceInputId === inputId ||
-            (!mapping.sourceInputId && mapping.sourceNodeId === inputNodeId),
-        );
+  const isCurrent = () =>
+    selectionExtractionRequestIdsRef.current[inputId] === extractionRequestId;
 
-  if (nodeMasks.length > 0) {
-    const cachedVisualMasks = nodeMasks.filter(
-      (mask) => mask.purpose !== "audio_timing",
-    );
-    const { video, masks } = await renderTimelineSelectionToMp4WithDerivedMasks(
-      timelineSelection,
-      cachedVisualMasks,
-    );
-    if (
-      selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId
-    ) {
+  try {
+    const nodeMasks =
+      mode === "manual"
+        ? []
+        : derivedMaskMappings.filter(
+            (mapping) =>
+              mapping.sourceInputId === inputId ||
+              (!mapping.sourceInputId && mapping.sourceNodeId === inputNodeId),
+          );
+
+    if (nodeMasks.length > 0) {
+      const cachedVisualMasks = nodeMasks.filter(
+        (mask) => mask.purpose !== "audio_timing",
+      );
+      const { video, masks } =
+        await renderTimelineSelectionToMp4WithDerivedMasks(
+          timelineSelection,
+          cachedVisualMasks,
+        );
+      if (!isCurrent()) return;
+      setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
+        mediaType: "video",
+        isExtracting: false,
+        extractionRequestId,
+        preparedVideoFile: video,
+        preparedMaskFile: pickPrimaryPreparedMaskFile(cachedVisualMasks, masks),
+        preparedDerivedMaskSignature:
+          buildDerivedMaskRenderSignature(cachedVisualMasks),
+      });
       return;
     }
+
+    const preparedVideoFile =
+      await renderTimelineSelectionToMp4(timelineSelection);
+    if (!isCurrent()) return;
     setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
       mediaType: "video",
       isExtracting: false,
       extractionRequestId,
-      preparedVideoFile: video,
-      preparedMaskFile: pickPrimaryPreparedMaskFile(cachedVisualMasks, masks),
-      preparedDerivedMaskSignature:
-        buildDerivedMaskRenderSignature(cachedVisualMasks),
+      preparedVideoFile,
     });
-    return;
+  } catch (error) {
+    settleFailedSelectionExtraction(
+      {
+        inputId,
+        timelineSelection,
+        thumbnailFile,
+        extractionRequestId,
+        mediaType: "video",
+        fallbackMessage: "Failed to render the selected timeline range",
+        setMediaInputTimelineSelection,
+        selectionExtractionRequestIdsRef,
+      },
+      error,
+    );
+    throw error;
   }
-
-  const preparedVideoFile =
-    await renderTimelineSelectionToMp4(timelineSelection);
-  if (
-    selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId
-  ) {
-    return;
-  }
-  setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
-    mediaType: "video",
-    isExtracting: false,
-    extractionRequestId,
-    preparedVideoFile,
-  });
 }
 
 export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
@@ -1716,19 +1821,213 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     ],
   );
 
+  /**
+   * Trims an audio slot in the mini editor. Same two shapes the video editor
+   * works in: a real timeline selection is rebuilt and re-extracted through the
+   * normal path, while media with no backing timeline is trimmed into a baked
+   * value that remembers what it was cut from, so a second edit composes on the
+   * source instead of cropping the crop.
+   */
+  const handleEditAudioMedia = useCallback(
+    (inputId: string) => {
+      const { input, value } = readSlotValueForEdit(inputId, workflowInputById);
+      if (!value) return;
+
+      if (usePlayerStore.getState().isPlaying) {
+        usePlayerStore.getState().setIsPlaying(false);
+      }
+
+      let sourceSelection: TimelineSelection | null = null;
+      let bakeOriginAssetId: string | null = null;
+      let editorInitial: MiniEditorInitialState | undefined;
+      let prepare: () => Promise<ResolvedEditorSource>;
+
+      // Duration first: the editor owns the object URL once it has one, and a
+      // probe that throws before then would leak it.
+      const prepareFromFile =
+        (file: File, assetId?: string) =>
+        async (): Promise<ResolvedEditorSource> => {
+          const durationTicks = await probeAudioDurationTicks(file);
+          return {
+            ...(assetId ? { assetId } : {}),
+            sourceUrl: URL.createObjectURL(file),
+            sourceFile: file,
+            durationTicks,
+            mediaType: "audio",
+          };
+        };
+
+      // A video on an audio slot contributes its track and never itself, so
+      // the editor opens on the audio pulled out of it.
+      const prepareFromAsset =
+        (asset: Asset) => async (): Promise<ResolvedEditorSource> => {
+          const file = await resolveAssetFileForGeneration(asset);
+          const audioFile = isAudioSlotVideoAsset(asset)
+            ? await extractAudioFromVideo(file)
+            : file;
+          if (!audioFile) throw new Error(NO_ASSET_AUDIO_TRACK_MESSAGE);
+          return prepareFromFile(audioFile, asset.id)();
+        };
+
+      if (value.kind === "asset") {
+        bakeOriginAssetId = value.asset.id;
+        if (isAudioSlotVideoAsset(value.asset)) {
+          // The track was pulled out when the video was dropped; opening the
+          // editor must not decode it a second time.
+          const extractedAudioFile = value.extractedAudioFile;
+          if (!extractedAudioFile) return;
+          prepare = prepareFromFile(extractedAudioFile, value.asset.id);
+        } else {
+          prepare = prepareFromAsset(value.asset);
+        }
+      } else if (
+        value.kind === "timelineSelection" &&
+        value.mediaType === "audio" &&
+        value.timelineSelection.bakedSource
+      ) {
+        // Re-edit of a trim: reopen what it was trimmed from with the edit
+        // restored, so this save replaces that crop rather than nesting inside
+        // it.
+        const originAsset = value.bakedEdit?.assetId
+          ? getAssets().find(
+              (candidate) => candidate.id === value.bakedEdit?.assetId,
+            )
+          : undefined;
+        editorInitial = value.bakedEdit?.spec;
+        if (originAsset) {
+          bakeOriginAssetId = originAsset.id;
+          prepare = prepareFromAsset(originAsset);
+        } else {
+          // The source asset is gone. The trim itself becomes the source, and
+          // the stored spec no longer describes it.
+          const trimmedFile = value.preparedAudioFile;
+          if (!trimmedFile) return;
+          editorInitial = undefined;
+          prepare = prepareFromFile(trimmedFile);
+        }
+      } else if (
+        value.kind === "timelineSelection" &&
+        value.mediaType === "audio"
+      ) {
+        const selection = value.timelineSelection;
+        sourceSelection = selection;
+        // The rendered audio spans exactly the selection, so the editor's crop
+        // ticks are already selection-relative — what the rebuild expects.
+        const preparedAudioFile = value.preparedAudioFile;
+        prepare = async () => {
+          const file =
+            preparedAudioFile ??
+            (await extractAudioFromSelection(selection, {
+              exportFps: resolveEditAudioExportFps(input),
+            }));
+          if (!file) throw new Error(NO_SELECTION_AUDIO_TRACK_MESSAGE);
+          const durationTicks =
+            typeof selection.end === "number"
+              ? Math.max(0, selection.end - selection.start)
+              : await probeAudioDurationTicks(file);
+          return {
+            sourceUrl: URL.createObjectURL(file),
+            sourceFile: file,
+            durationTicks,
+            mediaType: "audio",
+          };
+        };
+      } else {
+        return;
+      }
+
+      const onSave = async (
+        spec: MiniEditorEditSpec,
+        source: ResolvedEditorSource,
+      ) => {
+        const thumbnailFile = createAudioSelectionPlaceholderFile();
+        const extractionRequestId =
+          (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
+        selectionExtractionRequestIdsRef.current[inputId] = extractionRequestId;
+
+        // Timeline-selection inputs: narrow the real selection and re-extract
+        // it, so the audio still comes off the timeline with every clip, level
+        // and transform the original selection carried.
+        if (sourceSelection) {
+          const editedSelection = buildEditedTimelineSelection(sourceSelection, {
+            ...spec,
+            // Range masks are a visual matte; an audio slot never has any.
+            ranges: [],
+          });
+          setMediaInputTimelineSelection(
+            inputId,
+            editedSelection,
+            thumbnailFile,
+            {
+              mediaType: "audio",
+              isExtracting: true,
+              extractionRequestId,
+            },
+          );
+          await extractAudioTimelineSelection({
+            inputId,
+            timelineSelection: editedSelection,
+            thumbnailFile,
+            extractionRequestId,
+            exportFps: resolveEditAudioExportFps(input),
+            setMediaInputTimelineSelection,
+            selectionExtractionRequestIdsRef,
+          });
+          return;
+        }
+
+        // Plain media: trim the file itself. Failing here throws rather than
+        // writing an empty value back — the editor stays open with the error
+        // and the slot keeps the media it had.
+        const trimmedFile = await trimAudioFile(
+          source.sourceFile,
+          spec.cropStartTicks,
+          spec.cropEndTicks,
+        );
+        if (!trimmedFile) {
+          throw new Error("The selected range could not be trimmed.");
+        }
+        setMediaInputTimelineSelection(
+          inputId,
+          {
+            start: 0,
+            end: Math.max(1, spec.cropEndTicks - spec.cropStartTicks),
+            clips: [],
+            bakedSource: true,
+          },
+          thumbnailFile,
+          {
+            mediaType: "audio",
+            isExtracting: false,
+            extractionRequestId,
+            preparedAudioFile: trimmedFile,
+            bakedEdit: { assetId: bakeOriginAssetId, spec },
+          },
+        );
+      };
+
+      void useMiniEditorStore.getState().open({
+        openerId: "generation-panel",
+        title: input?.label ? `Edit: ${input.label}` : "Edit audio",
+        prepare,
+        onSave,
+        initial: editorInitial,
+        frameConstraint: resolveEditorFrameConstraint(
+          sourceSelection,
+          input?.dispatch?.selectionConfig,
+        ),
+      });
+    },
+    [setMediaInputTimelineSelection, workflowInputById],
+  );
+
   const handleEditMedia = useCallback(
-    (inputId: string, inputType: "video") => {
-      if (inputType !== "video") return;
-      const input = resolveWorkflowInputForSlot(inputId, workflowInputById);
-      const currentMediaInputs = useGenerationStore.getState().mediaInputs;
-      const value = input
-        ? getWorkflowInputSlotValue(
-            currentMediaInputs,
-            input,
-            parseRepeatableInputSlotId(inputId)?.index ?? 0,
-            workflowInputById,
-          )
-        : currentMediaInputs[inputId];
+    (inputId: string, inputType: "video" | "audio") => {
+      if (inputType === "audio") {
+        handleEditAudioMedia(inputId);
+        return;
+      }
+      const { input, value } = readSlotValueForEdit(inputId, workflowInputById);
       if (!value) return;
 
       if (usePlayerStore.getState().isPlaying) {
@@ -1943,42 +2242,22 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         );
       };
 
-      // Inherit the workflow's frame-step constraint so the crop is stepped:
-      // from the selection itself when present, else the input's selection rule.
-      const projectFps = Math.max(1, useProjectStore.getState().config.fps);
-      const selectionConfig =
-        input?.dispatch && "selectionConfig" in input.dispatch
-          ? input.dispatch.selectionConfig
-          : undefined;
-      const constraintFps = sourceSelection
-        ? sourceSelection.fps && sourceSelection.fps > 0
-          ? sourceSelection.fps
-          : projectFps
-        : (resolveSelectionConfigFps(selectionConfig, projectFps) ?? projectFps);
-      const constraintFrameStep = resolveGridConstraint(
-        sourceSelection?.frameStep,
-        selectionConfig?.frameStep,
-      );
-      const constraintFrameOffset = resolveGridConstraint(
-        sourceSelection?.frameOffset,
-        selectionConfig?.frameOffset,
-      );
-
       void useMiniEditorStore.getState().open({
         openerId: "generation-panel",
         title: input?.label ? `Edit: ${input.label}` : "Edit video",
         prepare,
         onSave,
         initial: editorInitial,
-        frameConstraint: {
-          fps: constraintFps,
-          frameStep: constraintFrameStep,
-          frameOffset: constraintFrameOffset,
-        },
+        // Inherit the workflow's frame-step constraint so the crop is stepped.
+        frameConstraint: resolveEditorFrameConstraint(
+          sourceSelection,
+          input?.dispatch?.selectionConfig,
+        ),
       });
     },
     [
       derivedMaskMappings,
+      handleEditAudioMedia,
       mode,
       setMediaInputTimelineSelection,
       workflowInputById,

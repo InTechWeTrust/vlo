@@ -8,6 +8,7 @@ import {
   WavOutputFormat,
 } from "mediabunny";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
+import { mediaSecondsToTick, tickToMediaSeconds } from "../../../core/time";
 import { renderTimelineSelectionToMp4 } from "./inputSelection";
 import { throwIfAborted } from "../pipeline/utils/abort";
 
@@ -32,9 +33,15 @@ export function createAudioSelectionPlaceholderFile(): File {
   );
 }
 
-export async function extractAudioFromVideo(
+/**
+ * The one audio conversion this feature runs: whole file or a window of it,
+ * always out as WAV. Null rather than a throw for "there was nothing to
+ * convert" — no audio track, a conversion this browser cannot run, or an empty
+ * result — which is how every caller reads a missing soundtrack.
+ */
+async function convertAudioToWav(
   file: File,
-  options: { signal?: AbortSignal } = {},
+  options: { trim?: { start: number; end: number }; signal?: AbortSignal },
 ): Promise<File | null> {
   throwIfAborted(options.signal);
   const input = new Input({
@@ -56,8 +63,10 @@ export async function extractAudioFromVideo(
     const conversion = await Conversion.init({
       input,
       output,
+      ...(options.trim ? { trim: options.trim } : {}),
       video: { discard: true },
     });
+    if (!conversion.isValid) return null;
     await conversion.execute();
     throwIfAborted(options.signal);
 
@@ -69,6 +78,45 @@ export async function extractAudioFromVideo(
   } finally {
     input.dispose();
   }
+}
+
+/** Pulls a video's whole soundtrack out as WAV. */
+export async function extractAudioFromVideo(
+  file: File,
+  options: { signal?: AbortSignal } = {},
+): Promise<File | null> {
+  return convertAudioToWav(file, { signal: options.signal });
+}
+
+/** Reads an audio file's duration without decoding the whole track. */
+export async function probeAudioDurationTicks(file: File): Promise<number> {
+  const input = new Input({
+    source: new BlobSource(file),
+    formats: ALL_FORMATS,
+  });
+
+  try {
+    const seconds = await input.computeDuration();
+    return Number.isFinite(seconds) && seconds > 0
+      ? mediaSecondsToTick(seconds)
+      : 0;
+  } finally {
+    input.dispose();
+  }
+}
+
+/** Cuts `file` down to `[startTicks, endTicks)`. */
+export async function trimAudioFile(
+  file: File,
+  startTicks: number,
+  endTicks: number,
+  options: { signal?: AbortSignal } = {},
+): Promise<File | null> {
+  throwIfAborted(options.signal);
+  const start = tickToMediaSeconds(startTicks);
+  const end = tickToMediaSeconds(endTicks);
+  if (!(end > start)) return null;
+  return convertAudioToWav(file, { trim: { start, end }, signal: options.signal });
 }
 
 export async function extractAudioFromSelection(

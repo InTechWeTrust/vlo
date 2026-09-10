@@ -1500,3 +1500,70 @@ describe("useGenerationStore workflow rules", () => {
     });
   });
 });
+
+describe("audio timeline selection values", () => {
+  const audioInput: WorkflowInput = {
+    id: "143:audios",
+    nodeId: "143",
+    classType: "vloMemoryLoadAudioBatch",
+    inputType: "audio",
+    param: "audios",
+    label: "Audio inputs",
+    currentValue: null,
+    origin: "rule",
+  };
+
+  it("keeps the origin of a trimmed audio value", () => {
+    // Without this the mini editor cannot tell a trim from a plain selection,
+    // and re-editing one would crop the already-trimmed file.
+    const spec = { cropStartTicks: 96_000, cropEndTicks: 192_000, ranges: [] };
+    useGenerationStore.setState({
+      workflowInputs: [audioInput],
+      mediaInputs: {},
+    });
+
+    useGenerationStore
+      .getState()
+      .setMediaInputTimelineSelection(
+        "143:audios",
+        { start: 0, end: 96_000, clips: [], bakedSource: true } as never,
+        new File(["thumb"], "thumb.txt"),
+        {
+          mediaType: "audio",
+          isExtracting: false,
+          preparedAudioFile: new File(["wav"], "trimmed.wav"),
+          bakedEdit: { assetId: "score", spec },
+        },
+      );
+
+    const value = useGenerationStore.getState().mediaInputs["143:audios"];
+    expect(
+      value?.kind === "timelineSelection" && value.mediaType === "audio"
+        ? value.bakedEdit
+        : null,
+    ).toEqual({ assetId: "score", spec });
+  });
+
+  it("leaves a plain audio selection with no origin to reopen", () => {
+    useGenerationStore.setState({
+      workflowInputs: [audioInput],
+      mediaInputs: {},
+    });
+
+    useGenerationStore
+      .getState()
+      .setMediaInputTimelineSelection(
+        "143:audios",
+        { start: 0, end: 96_000, clips: [] } as never,
+        new File(["thumb"], "thumb.txt"),
+        { mediaType: "audio", isExtracting: false },
+      );
+
+    const value = useGenerationStore.getState().mediaInputs["143:audios"];
+    expect(
+      value?.kind === "timelineSelection" && value.mediaType === "audio"
+        ? value.bakedEdit
+        : undefined,
+    ).toBeNull();
+  });
+});
