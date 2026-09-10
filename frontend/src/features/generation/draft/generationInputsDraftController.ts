@@ -29,8 +29,28 @@ export interface GenerationInputsDraftRequest {
   readonly widgetTargets?: readonly GenerationDraftWidgetTarget[];
 }
 
+/**
+ * Whether this draft can be edited at all, and if not, why.
+ *
+ * Separate from `canCommit`, `hasDraftChanges` and `hasConflict`, which all
+ * describe a *working* draft. Those answer "what is in it"; this answers
+ * "is there one". Without it `unavailable` and `disposed` are indistinguishable
+ * — both read as an empty draft that refuses to commit for no stated reason,
+ * which is how a renderer ends up drawing a blank panel with nothing to say.
+ *
+ * - `ready` — a session is mounted and this draft is live.
+ * - `unavailable` — no generation session; the panel is not mounted. Transient,
+ *   and it resolves itself when one arrives.
+ * - `disposed` — this controller is finished and will never read anything
+ *   again. Terminal, and always a caller bug: whoever owns it kept it past its
+ *   own lifetime.
+ */
+export type GenerationDraftStatus = "ready" | "unavailable" | "disposed";
+
 /** Everything a renderer or a package reads, as one immutable value. */
 export interface GenerationDraftReading {
+  /** Whether the draft is live, waiting for a session, or finished. */
+  readonly status: GenerationDraftStatus;
   /** The addressed inputs as they would be after every staged edit. */
   readonly inputs: readonly GenerationInputSnapshot[];
   /**
@@ -114,14 +134,35 @@ interface DraftState {
 
 const EMPTY: DraftState = { workflowRevision: null, base: null, ops: [] };
 
-export const INERT_DRAFT_READING: GenerationDraftReading = {
+/**
+ * The reading of a draft that cannot be edited, in either terminal-ness.
+ *
+ * Exported as `INERT_DRAFT_READING` for the `unavailable` case, which is what
+ * a component holds before the panel mounts. The `disposed` case is a distinct
+ * value rather than a flag on this one, so the two can never be compared equal
+ * by identity — `useSyncExternalStore` compares snapshots that way, and a
+ * dispose that returned the same object would not re-render the component it
+ * needs to inform.
+ */
+const inertReading = (
+  status: Exclude<GenerationDraftStatus, "ready">,
+): GenerationDraftReading => ({
+  status,
   inputs: [],
   widgetValues: new Map(),
   hasDraftChanges: false,
   hasConflict: false,
   canCommit: false,
   error: null,
-};
+});
+
+/** No session mounted. Transient; a session arriving replaces it. */
+export const INERT_DRAFT_READING: GenerationDraftReading =
+  inertReading("unavailable");
+
+/** Finished. Terminal, and only ever seen through a controller kept too long. */
+export const DISPOSED_DRAFT_READING: GenerationDraftReading =
+  inertReading("disposed");
 
 /**
  * The panel's committed values for the requested widget targets.
@@ -309,6 +350,7 @@ export function createGenerationInputsDraft(
     const conflictMessage =
       conflicts.length > 0 ? describeConflicts(conflicts) : null;
     return {
+      status: "ready",
       inputs: projected.filter((input) => selected.has(input.id)),
       widgetValues,
       hasDraftChanges: addressedOps(current).length > 0,
@@ -320,7 +362,7 @@ export function createGenerationInputsDraft(
 
   const controller: GenerationInputsDraftController = {
     getSnapshot: () => {
-      if (disposed) return INERT_DRAFT_READING;
+      if (disposed) return DISPOSED_DRAFT_READING;
       if (!reading) reading = read();
       return reading;
     },
@@ -486,10 +528,22 @@ export function createGenerationInputsDraft(
       disposed = true;
       unsubscribeSession();
       unsubscribeAssets();
-      listeners.clear();
       state = EMPTY;
       error = null;
       reading = null;
+      /**
+       * Told, not just dropped.
+       *
+       * Disposal changes what `getSnapshot` answers — `ready` becomes
+       * `disposed` — and a subscriber that is never notified goes on rendering
+       * the last live reading until something unrelated re-renders it. Clearing
+       * the listeners without this is what makes a disposed draft look like a
+       * working one, and the whole point of `status` is that a renderer can say
+       * so. Notified *before* the set is cleared, and from a copy, so a listener
+       * unsubscribing in response cannot mutate what is being iterated.
+       */
+      for (const listener of [...listeners]) listener();
+      listeners.clear();
     },
   };
   return controller;

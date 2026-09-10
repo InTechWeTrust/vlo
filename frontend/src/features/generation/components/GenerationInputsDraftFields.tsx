@@ -353,9 +353,35 @@ export function GenerationInputsDraftFields({
     return values;
   }, [controller.widgetValues]);
 
+  /**
+   * A draft that cannot be edited says so, rather than rendering as nothing.
+   *
+   * These two look identical without `status` — an empty field list and a
+   * `canCommit: false` with no error — and an empty `<Box>` is exactly what a
+   * caller sees when their draft has quietly died under them. `disposed` is
+   * always a bug in the owner, so it reads as one; `unavailable` is ordinary
+   * and transient, so it reads as waiting.
+   */
+  if (controller.status !== "ready") {
+    return (
+      <Box
+        data-testid="generation-inputs-draft"
+        data-draft-status={controller.status}
+        sx={{ display: "flex", flexDirection: "column" }}
+      >
+        <Alert severity={controller.status === "disposed" ? "error" : "info"}>
+          {controller.status === "disposed"
+            ? "This staged editor was closed and is no longer connected to the generation panel. Whatever opened it is still showing it — reopen the panel to start a new one."
+            : "The generation panel is not open, so there are no inputs to edit yet."}
+        </Alert>
+      </Box>
+    );
+  }
+
   return (
     <Box
       data-testid="generation-inputs-draft"
+      data-draft-status={controller.status}
       sx={{ display: "flex", flexDirection: "column" }}
     >
       {controller.error ? (

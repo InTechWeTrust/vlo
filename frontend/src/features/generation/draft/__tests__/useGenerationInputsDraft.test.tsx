@@ -233,6 +233,53 @@ describe("createGenerationInputsDraft addressing", () => {
     draft.dispose();
   });
 
+  it("distinguishes waiting for a panel from being finished", () => {
+    // Both read as an empty draft that will not commit. Without `status` the
+    // two are the same value, so a renderer cannot tell "the panel is not open
+    // yet" from "whoever owns me disposed me and is still drawing me" — and
+    // draws nothing, with no error, for both.
+    const draft = createGenerationInputsDraft({ inputIds: ["6:text"] });
+    expect(draft.getSnapshot().status).toBe("unavailable");
+
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
+    expect(draft.getSnapshot().status).toBe("ready");
+
+    draft.dispose();
+    expect(draft.getSnapshot().status).toBe("disposed");
+    // Terminal: a session that is still mounted does not revive it.
+    expect(draft.getSnapshot().status).toBe("disposed");
+  });
+
+  it("notifies subscribers that it was disposed", () => {
+    // Disposal changes what `getSnapshot` answers, so it is a change like any
+    // other. Clearing the listeners without telling them leaves a subscriber
+    // rendering the last live reading until something unrelated re-renders it
+    // — which is the same blank-panel symptom `status` exists to explain.
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
+    const draft = createGenerationInputsDraft({ inputIds: ["6:text"] });
+    const seen: string[] = [];
+    draft.subscribe(() => seen.push(draft.getSnapshot().status));
+
+    draft.dispose();
+    expect(seen).toEqual(["disposed"]);
+
+    // And only once: a second dispose is a no-op, not another notification.
+    draft.dispose();
+    expect(seen).toEqual(["disposed"]);
+  });
+
+  it("gives the disposed reading its own identity", () => {
+    // `useSyncExternalStore` compares snapshots by identity, so if disposal
+    // returned the same object as the unavailable reading, a component that
+    // had been waiting for a panel would never re-render to show the change.
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
+    const draft = createGenerationInputsDraft({ inputIds: ["6:text"] });
+    const live = draft.getSnapshot();
+    draft.dispose();
+    expect(draft.getSnapshot()).not.toBe(live);
+    expect(draft.getSnapshot()).toBe(draft.getSnapshot());
+  });
+
   it("refuses to stage without a mounted panel", () => {
     // A `null` workflow revision is indistinguishable from "nothing staged
     // yet", so an op recorded now would sit invisible and then apply itself to

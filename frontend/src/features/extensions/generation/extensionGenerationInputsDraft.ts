@@ -234,6 +234,27 @@ function publicResult(
   };
 }
 
+/**
+ * What every draft reads once its activation has ended.
+ *
+ * Shared and frozen: the reading carries nothing activation-specific, and one
+ * value means a package holding two dead drafts cannot tell them apart by
+ * identity — which is correct, because there is nothing left to distinguish.
+ */
+const DISPOSED_PUBLISHED_STATE: ReturnType<
+  ExtensionGenerationInputsDraft["getState"]
+> = Object.freeze({
+  status: "disposed" as const,
+  inputs: Object.freeze([]) as ReturnType<
+    ExtensionGenerationInputsDraft["getState"]
+  >["inputs"],
+  widgetValues: readOnlyMap(new Map()) as ReadonlyMap<string, never>,
+  hasDraftChanges: false,
+  hasConflict: false,
+  canCommit: false,
+  error: null,
+});
+
 export function createScopedInputsDraft(
   scope: ExtensionApiScope,
   request: ExtensionGenerationInputsDraftRequest,
@@ -263,30 +284,32 @@ export function createScopedInputsDraft(
   let publishedFrom: ReturnType<
     GenerationInputsDraftController["getSnapshot"]
   > | null = null;
-  /**
-   * Part of the cache key, because activation ending is not a draft change.
-   *
-   * The scope aborts without the native draft notifying anyone, so a purely
-   * reading-keyed cache keeps serving the pre-abort answer — and a draft a
-   * package retained past deactivation goes on reporting `canCommit: true`
-   * while every write is refused. Flips at most once, so identity stays stable.
-   */
-  let publishedAborted = false;
-
   const published: ExtensionGenerationInputsDraft = {
     getState: () => {
+      /**
+       * Terminal the moment the activation ends, in **every** field.
+       *
+       * An early return, not a `status` computed alongside the rest: the scope
+       * aborts before the owned resources are disposed, so during that window
+       * the native controller is still subscribed and still reading a live
+       * session. Deriving only `status` from `aborted` published a reading that
+       * called itself `disposed` while carrying non-empty `inputs` that went on
+       * changing whenever the panel republished — which is precisely the thing
+       * `status` was added to make impossible to observe.
+       *
+       * One frozen value, so identity is stable for `useSyncExternalStore` and
+       * a package cannot mutate what it read. The native controller is disposed
+       * moments later through `scope.own`; this only guarantees that nobody can
+       * see it in between.
+       */
+      if (scope.signal.aborted) return DISPOSED_PUBLISHED_STATE;
       const reading = native.getSnapshot();
-      const aborted = scope.signal.aborted;
-      if (
-        publishedState &&
-        publishedFrom === reading &&
-        publishedAborted === aborted
-      ) {
+      if (publishedState && publishedFrom === reading) {
         return publishedState;
       }
       publishedFrom = reading;
-      publishedAborted = aborted;
       publishedState = {
+        status: reading.status,
         inputs: projectDraftInputs(reading.inputs),
         // Detached and write-refusing, not the host's own map: sharing it lets
         // a package change what the renderer displays without staging anything.
@@ -296,7 +319,7 @@ export function createScopedInputsDraft(
         >,
         hasDraftChanges: reading.hasDraftChanges,
         hasConflict: reading.hasConflict,
-        canCommit: reading.canCommit && !aborted,
+        canCommit: reading.canCommit,
         error: reading.error,
       };
       return publishedState;

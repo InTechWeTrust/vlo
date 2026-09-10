@@ -595,11 +595,21 @@ return h(
 - `createInputsDraft` returns `null` once your activation has ended.
 - Call your hooks **before** any early return. A workflow that stops being
   supported while your view is mounted must not change the hook count.
-- An empty editor with no error is the disposed-draft symptom above, not a
-  targeting mistake. Read the controller the fields were handed: `inputs: []`
-  *and* `widgetValues` empty *and* `error: null` together is the inert reading
-  of a dead draft. A genuinely mis-addressed draft still resolves whichever
-  half did match.
+- **Check `getState().status` before anything else.** `ready` means a panel is
+  mounted and the draft is live; `unavailable` means no panel is open, which is
+  transient; `disposed` means it is finished and will never read again. `inputs`
+  is empty and `canCommit` is `false` in both non-`ready` states, so a package
+  that skips `status` cannot tell "not yet" from "dead" and draws an empty
+  editor for both. `InputsDraftFields` renders an explanation for each rather
+  than an empty box.
+- A `disposed` status on a draft you are still rendering is always a bug on
+  your side — almost always the render-time creation above. Open a new draft;
+  this one does not recover.
+- Treat a missing seam as broken, not as a degraded mode. `?.` on
+  `api.runtime.generationUi` keeps a render from throwing, but *report* the
+  miss instead of silently rendering without it: your manifest's SDK range
+  claims the seam exists, so its absence means the installed build is stale.
+  Reserve silent fallbacks for cases where you genuinely support both shapes.
 - `getState().inputs` is the staged projection, described exactly as the session
   describes a live input; `widgetValues` is keyed `nodeId:param`.
 - `hasDraftChanges` is "I hold edits"; `hasConflict` is "the panel moved under

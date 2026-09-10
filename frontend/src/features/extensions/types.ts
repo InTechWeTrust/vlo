@@ -110,6 +110,7 @@ export type {
   ExtensionGenerationInputRepeatable,
   ExtensionGenerationDraftFieldsProps,
   ExtensionGenerationDraftOp,
+  ExtensionGenerationDraftStatus,
   ExtensionGenerationInputsDraft,
   ExtensionGenerationInputsDraftRequest,
   ExtensionGenerationInputsDraftState,

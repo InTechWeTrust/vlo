@@ -239,6 +239,61 @@ describe("api.generation.createInputsDraft", () => {
     expect(createScopedInputsDraft(scope, { inputIds: ["6:text"] })).toBeNull();
   });
 
+  it("reads terminal in every field once aborted, before cleanup runs", () => {
+    /**
+     * Abort and owned-resource disposal are two steps, and the reading has to
+     * be terminal from the first one.
+     *
+     * The scope aborts before `scope.own`'s disposers run, so in between the
+     * native controller is still subscribed to a live session. Deriving only
+     * `status` from the abort published a reading that said `disposed` while
+     * carrying real inputs — and went on changing when the panel republished.
+     * `status` exists to make a dead draft legible, so every other field has to
+     * agree with it.
+     */
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
+    const controller = openDraft();
+    controller.stage({ kind: "setText", inputId: "6:text", value: "staged" });
+    expect(controller.getState().status).toBe("ready");
+    expect(controller.getState().inputs).not.toHaveLength(0);
+
+    // Aborted only — the native controller is deliberately left undisposed,
+    // which is exactly the window `scope.own` has not closed yet.
+    abort?.abort();
+
+    const afterAbort = controller.getState();
+    expect(afterAbort.status).toBe("disposed");
+    expect(afterAbort.inputs).toEqual([]);
+    expect(afterAbort.widgetValues.size).toBe(0);
+    expect(afterAbort.hasDraftChanges).toBe(false);
+    expect(afterAbort.hasConflict).toBe(false);
+    expect(afterAbort.canCommit).toBe(false);
+    expect(afterAbort.error).toBeNull();
+
+    // And terminal means it stops moving: republishing the panel underneath a
+    // dead draft must not change what it reads.
+    mounted.publish({
+      inputs: [{ ...TEXT_INPUT, value: "republished" } as never],
+    });
+    expect(controller.getState()).toBe(afterAbort);
+  });
+
+  it("reads terminal after the owned resources are disposed too", () => {
+    // The other order: cleanup has run. Both paths answer the same value, so a
+    // package cannot tell how its draft died — only that it did.
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
+    const controller = openDraft();
+    expect(controller.getState().status).toBe("ready");
+
+    controller.dispose();
+    expect(controller.getState().status).toBe("disposed");
+    expect(controller.getState().inputs).toEqual([]);
+
+    abort?.abort();
+    expect(controller.getState().status).toBe("disposed");
+    expect(controller.getState().inputs).toEqual([]);
+  });
+
   it("refuses a write from a draft retained past its activation", () => {
     // The check `runtime.generationUi` could not have supported. A package can
     // hold a draft it opened, and nothing stops it calling `commit` after

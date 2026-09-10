@@ -2657,7 +2657,30 @@ export interface ExtensionGenerationInputsDraftRequest {
 }
 
 /** A draft's current reading, projected exactly as a live session is. */
+/**
+ * Whether a draft can be edited at all, and if not, why.
+ *
+ * Check this before reading anything else: `inputs` is empty and `canCommit`
+ * is `false` in both non-`ready` states, so a package that skips it draws an
+ * empty editor with nothing to say.
+ *
+ * - `ready` — a generation panel is mounted and this draft is live.
+ * - `unavailable` — no panel is open. Transient; a session arriving fixes it.
+ * - `disposed` — the draft is finished, because you disposed it or your
+ *   activation ended. Terminal, and a bug on your side if you are still
+ *   rendering it: open a new draft rather than waiting for this one to recover.
+ *   The commonest cause is opening a draft during render (a `useMemo`, a
+ *   `useState` initializer) — StrictMode's setup → cleanup → setup then
+ *   disposes it and the memo never re-runs. Open it in an effect instead.
+ */
+export type ExtensionGenerationDraftStatus =
+  | "ready"
+  | "unavailable"
+  | "disposed";
+
 export interface ExtensionGenerationInputsDraftState {
+  /** Whether the draft is live, waiting for a panel, or finished. */
+  readonly status: ExtensionGenerationDraftStatus;
   readonly inputs: readonly ExtensionGenerationInputSnapshot[];
   /** The addressed widgets, keyed `nodeId:param`, staged values included. */
   readonly widgetValues: ReadonlyMap<string, JsonValue>;
