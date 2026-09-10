@@ -19,6 +19,7 @@ import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
 import { GenerationPanelSectionHost } from "./GenerationPanelSectionHost";
 import { ExtensionUiSlot, anchorSegment } from "../../extensions/ui/publicApi";
 import {
+  PANEL_SURFACE_ID,
   MemoizedBatchMediaInputSection,
   MemoizedMediaInputGroupSection,
   MemoizedMediaInputSection,
@@ -709,6 +710,7 @@ export const GenerationInputs = memo(function GenerationInputs({
     if (block.kind === "mediaGroup") {
       return (
         <MemoizedMediaInputGroupSection
+          surfaceId={PANEL_SURFACE_ID}
           key={key ?? `media-group:${block.id}`}
           title={block.title}
           inputs={block.inputs}
@@ -727,6 +729,7 @@ export const GenerationInputs = memo(function GenerationInputs({
     if (block.kind === "batchMedia") {
       return (
         <MemoizedBatchMediaInputSection
+          surfaceId={PANEL_SURFACE_ID}
           key={key ?? `batch-media:${getWorkflowInputId(block.input)}`}
           input={block.input}
           bgColor={bgColor}
@@ -752,6 +755,7 @@ export const GenerationInputs = memo(function GenerationInputs({
     const inputId = getWorkflowInputId(input);
     return (
       <MemoizedMediaInputSection
+        surfaceId={PANEL_SURFACE_ID}
         key={key ?? inputId}
         input={input}
         bgColor={bgColor}

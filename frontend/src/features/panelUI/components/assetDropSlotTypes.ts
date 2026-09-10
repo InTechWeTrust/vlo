@@ -15,8 +15,28 @@ export interface AssetDropSlotValue {
 
 export interface AssetDropSlotReorderData {
   type: "media-input";
+  /**
+   * Which rendered surface the drag started on.
+   *
+   * Two surfaces can show the same input at once — a panel takeover does not
+   * unmount the panel behind it — so the logical id alone cannot say whether a
+   * drag came from *this* copy of a slot. Injected by the slot, which knows its
+   * own surface; callers supply `inputId` and nothing else.
+   */
+  surfaceId: string;
   inputId: string;
 }
+
+/**
+ * The half of {@link AssetDropSlotReorderData} a caller supplies.
+ *
+ * `surfaceId` is stamped on by the slot, which is the only thing that knows
+ * which copy of itself is being dragged.
+ */
+export type AssetDropSlotReorderOrigin = Omit<
+  AssetDropSlotReorderData,
+  "surfaceId"
+>;
 
 /**
  * An action a slot can offer beyond dropping a library asset.
@@ -40,7 +60,14 @@ export type AssetDropSlotAction =
    * host is holding open — the same condition the session reports as
    * `input_busy`.
    */
-  | "clear";
+  | "clear"
+  /**
+   * Dropping onto an *occupied* position, which overwrites what is there.
+   * Refused separately from a drop on a free one: overwriting repacks a batch
+   * (remove, attach, reorder) while appending writes one free slot and leaves
+   * the rest alone, so a busy batch can still take new items.
+   */
+  | "replace";
 
 /** Actions this context refuses, each mapped to the reason shown to the user. */
 export type AssetDropSlotDisabledActions = Partial<
@@ -48,6 +75,17 @@ export type AssetDropSlotDisabledActions = Partial<
 >;
 
 export interface AssetDropSlotProps {
+  /**
+   * The rendered surface this slot belongs to — `"panel"` for the generation
+   * panel, a per-draft id for a staged editor.
+   *
+   * Required, deliberately. It namespaces the slot's drag registrations, and
+   * two surfaces showing the same input register the same ids without it: the
+   * second registration displaces the first, and unmounting the second removes
+   * the entry outright, leaving the first mounted and unable to receive drops.
+   * A default would reintroduce that the moment someone forgot.
+   */
+  surfaceId: string;
   /** Unique identifier for this slot */
   id: string;
   /** Which asset types this slot accepts */
@@ -81,7 +119,7 @@ export interface AssetDropSlotProps {
   /** Label shown above the slot */
   label?: string;
   /** Makes a filled slot draggable for media-input reordering */
-  reorderData?: AssetDropSlotReorderData | null;
+  reorderData?: AssetDropSlotReorderOrigin | null;
   /** Called when a media-input slot is dropped onto this slot */
   onReorderDrop?: (data: AssetDropSlotReorderData) => void;
   /**

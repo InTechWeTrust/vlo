@@ -1,4 +1,5 @@
 import type { AssetType } from "../../../types/Asset";
+import type { AssetDropSlotReorderData } from "./assetDropSlotTypes";
 
 const IMAGE_EXTENSIONS = new Set([
   ".png",
@@ -104,4 +105,26 @@ export function getFirstAcceptedFile(
   }
 
   return null;
+}
+
+/**
+ * Will this slot take the media item currently being dragged?
+ *
+ * One decision, shared by the highlight and the drop. They were inlined
+ * separately in the single slot and the batch strip and drifted apart: the
+ * batch consulted neither the caller's `accept` rule nor its own refusal, so a
+ * drag it would turn away lit up blue and then did nothing. A slot that would
+ * refuse a drag has to *look* like it will.
+ *
+ * `hasHandler` covers a slot that does not participate in reordering at all,
+ * and `refused` a slot that has the affordance but declines it here.
+ */
+export function acceptsReorderDrag(options: {
+  readonly refused: boolean;
+  readonly hasHandler: boolean;
+  readonly accept: ((data: AssetDropSlotReorderData) => boolean) | undefined;
+  readonly from: AssetDropSlotReorderData;
+}): boolean {
+  if (options.refused || !options.hasHandler) return false;
+  return options.accept?.(options.from) !== false;
 }

@@ -70,6 +70,7 @@ describe("AssetDropSlot", () => {
     const onSelect = vi.fn();
     render(
       <AssetDropSlot
+        surfaceId="test-surface"
         id="source"
         accept={["image", "video"]}
         value={null}
@@ -92,6 +93,7 @@ describe("AssetDropSlot", () => {
   it("renders image, audio, and missing-preview filled states", () => {
     const { rerender } = render(
       <AssetDropSlot
+        surfaceId="test-surface"
         id="source"
         accept={["image"]}
         value={makeAsset({ thumbnail: "blob:thumb" })}
@@ -104,6 +106,7 @@ describe("AssetDropSlot", () => {
 
     rerender(
       <AssetDropSlot
+        surfaceId="test-surface"
         id="source"
         accept={["audio"]}
         value={makeAsset({ type: "audio", name: "sound.wav" })}
@@ -114,6 +117,7 @@ describe("AssetDropSlot", () => {
 
     rerender(
       <AssetDropSlot
+        surfaceId="test-surface"
         id="source"
         accept={["video"]}
         value={makeAsset({ type: "video", name: "movie.mp4" })}
@@ -128,6 +132,7 @@ describe("AssetDropSlot", () => {
     const onSelect = vi.fn();
     render(
       <AssetDropSlot
+        surfaceId="test-surface"
         id="source"
         accept={["image"]}
         value={makeAsset()}
@@ -152,6 +157,7 @@ describe("AssetDropSlot", () => {
     const video = new File(["video"], "video.mp4", { type: "video/mp4" });
     const { container } = render(
       <AssetDropSlot
+        surfaceId="test-surface"
         id="source"
         accept={["image"]}
         value={null}
@@ -198,6 +204,7 @@ describe("AssetDropSlot", () => {
     const onExternalDrop = vi.fn();
     const { container, rerender } = render(
       <AssetDropSlot
+        surfaceId="test-surface"
         id="source"
         accept={["image"]}
         value={null}
@@ -220,6 +227,7 @@ describe("AssetDropSlot", () => {
     };
     rerender(
       <AssetDropSlot
+        surfaceId="test-surface"
         id="source"
         accept={["image"]}
         value={makeAsset()}

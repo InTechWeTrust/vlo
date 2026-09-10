@@ -31,7 +31,8 @@ import type { WorkflowInput } from "../../types";
  * See docs/staged-generation-editor-plan.md §2.3 and §3.3.
  */
 const INPUT_ID = "141:image";
-const DROPPABLE_ID = `asset-slot-${INPUT_ID}`;
+/** The panel's own registration, namespaced by its surface. */
+const DROPPABLE_ID = `asset-slot-panel:${INPUT_ID}`;
 
 const PANEL_INPUT: WorkflowInput = {
   id: INPUT_ID,
@@ -140,7 +141,7 @@ describe("staged editor drag identity", () => {
     view.unmount();
   });
 
-  it.fails("gives the panel and the staged editor separate drag identities", () => {
+  it("gives the panel and the staged editor separate drag identities", () => {
     mountPanelAndSession();
     const view = render(<Editors takeoverOpen={true} />);
     // Two surfaces are showing the same input, so there must be two slots to
@@ -152,19 +153,17 @@ describe("staged editor drag identity", () => {
   });
 
   /**
-   * Known broken: both surfaces register the same droppable id, so the staged
-   * editor's registration displaces the panel's. dnd-kit key-guards
-   * *unregister*, so the panel's own cleanup is a no-op while the draft owns
-   * the entry — and when the draft unmounts, its key matches and the entry is
-   * deleted outright. The panel is left mounted, visible, and unable to
-   * receive drops: `useDroppable`'s effect deps are `[id]`, which never
-   * changes, so it never re-registers.
+   * The regression this namespacing exists for.
    *
-   * Fix: docs/staged-generation-editor-plan.md §3.3, Phase 4 — give each
-   * rendered surface its own dnd namespace while keeping the workflow input id
-   * for the acceptance rules that legitimately need it.
+   * Both surfaces used to register the same droppable id, so the staged
+   * editor's registration displaced the panel's. dnd-kit key-guards
+   * *unregister*, so the panel's own cleanup was a no-op while the draft owned
+   * the entry — and when the draft unmounted, its key matched and the entry was
+   * deleted outright, leaving the panel mounted, visible, and unable to receive
+   * drops. `useDroppable`'s effect deps are `[id]`, which never changes, so it
+   * never re-registered.
    */
-  it.fails("keeps the panel's slot registered after a takeover closes", () => {
+  it("keeps the panel's slot registered after a takeover closes", () => {
     mountPanelAndSession();
     const view = render(<Editors takeoverOpen={false} />);
     expect(registeredIds()).toContain(DROPPABLE_ID);

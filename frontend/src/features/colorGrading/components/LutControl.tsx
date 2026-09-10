@@ -256,6 +256,7 @@ export function LutControl({
       ) : null}
       <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.5 }}>
         <AssetDropSlot
+          surfaceId="color-grading"
           id="color-grade-lut"
           accept={["lut"]}
           label="Creative LUT (.cube)"

@@ -23,6 +23,7 @@ export type {
   AssetDropSlotDisabledActions,
   AssetDropSlotProps,
   AssetDropSlotReorderData,
+  AssetDropSlotReorderOrigin,
   AssetDropSlotValue,
 } from "./components/assetDropSlotTypes";
 export { AssetBatchDropSlot } from "./components/AssetBatchDropSlot";

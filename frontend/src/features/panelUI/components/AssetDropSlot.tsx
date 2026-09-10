@@ -9,8 +9,12 @@ import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/Edit";
 import type { Asset, AssetType } from "../../../types/Asset";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
-import type { AssetDropSlotProps } from "./assetDropSlotTypes";
+import type {
+  AssetDropSlotProps,
+  AssetDropSlotReorderData,
+} from "./assetDropSlotTypes";
 import {
+  acceptsReorderDrag,
   getExternalFileDragHighlight,
   getFirstAcceptedFile,
   hasDraggedFiles,
@@ -89,6 +93,7 @@ function formatAcceptLabel(accept: AssetType[]): string {
 }
 
 function AssetDropSlotComponent({
+  surfaceId,
   id,
   accept,
   acceptAsset,
@@ -126,15 +131,31 @@ function AssetDropSlotComponent({
   >(null);
   const externalDragDepthRef = React.useRef(0);
 
+  /**
+   * The caller's rule, narrowed to drags that started on this surface.
+   *
+   * Wrapped here rather than left to the caller: a surface is this component's
+   * own business, and the predicate reaches the drop handler through the
+   * droppable data, so it has to carry the check with it.
+   */
+  const acceptReorderHere = React.useCallback(
+    (data: AssetDropSlotReorderData) =>
+      data.surfaceId === surfaceId && acceptReorderFrom?.(data) !== false,
+    [surfaceId, acceptReorderFrom],
+  );
+
+  // Namespaced by surface: two surfaces showing the same input would otherwise
+  // register the same dnd id, and dnd-kit keeps one entry per id.
   const { setNodeRef: setDroppableNodeRef, isOver } = useDroppable({
-    id: `asset-slot-${id}`,
+    id: `asset-slot-${surfaceId}:${id}`,
     data: {
       type: "asset-slot",
       accept,
       acceptAsset,
       onDrop,
       onReorderDrop: disabledActions?.reorder ? undefined : onReorderDrop,
-      acceptReorderFrom,
+      acceptReorderFrom: acceptReorderHere,
+      surfaceId,
     },
   });
   const {
@@ -143,8 +164,10 @@ function AssetDropSlotComponent({
     transform,
     isDragging,
   } = useDraggable({
-    id: `asset-slot-item-${id}`,
-    data: reorderData ?? undefined,
+    id: `asset-slot-item-${surfaceId}:${id}`,
+    // The surface is stamped here rather than asked of the caller: the slot is
+    // the only thing that knows which copy of itself is being dragged.
+    data: reorderData ? { ...reorderData, surfaceId } : undefined,
     disabled: !isReorderable,
   });
   const setNodeRef = React.useCallback(
@@ -167,18 +190,28 @@ function AssetDropSlotComponent({
         ? "compatible"
         : "incompatible";
   }
+  // One predicate for the highlight and the drop. Anything the slot would turn
+  // away has to *look* turned away: leaving a rejected drag neutral reads as
+  // "nothing here", and the user finds out it was refused by dropping it.
+  // Hovering an item over its own slot stays neutral — that is a no-op, not a
+  // refusal.
   if (
     isOver &&
     active?.data.current?.type === "media-input" &&
-    !disabledActions?.reorder &&
-    typeof onReorderDrop === "function" &&
-    acceptReorderFrom?.({
-      type: "media-input",
-      inputId: String(active.data.current.inputId),
-    }) !== false &&
     active.data.current.inputId !== id
   ) {
-    highlight = "compatible";
+    highlight = acceptsReorderDrag({
+      refused: Boolean(disabledActions?.reorder),
+      hasHandler: typeof onReorderDrop === "function",
+      accept: acceptReorderHere,
+      from: {
+        type: "media-input",
+        surfaceId: String(active.data.current.surfaceId),
+        inputId: String(active.data.current.inputId),
+      },
+    })
+      ? "compatible"
+      : "incompatible";
   }
   if (externalHighlight) {
     highlight = externalHighlight;

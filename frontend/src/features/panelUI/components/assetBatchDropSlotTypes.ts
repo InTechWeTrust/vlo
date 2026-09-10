@@ -44,6 +44,15 @@ export interface AssetBatchSlotItem {
  * reordering and per-item options layered on top.
  */
 export interface AssetBatchDropSlotProps {
+  /**
+   * The rendered surface this strip belongs to — `"panel"` for the generation
+   * panel, a per-draft id for a staged editor.
+   *
+   * Required for the same reason `AssetDropSlotProps.surfaceId` is, and it
+   * matters more here: a strip registers one dnd id per position, so a
+   * collision takes the whole batch's drops with it.
+   */
+  surfaceId: string;
   /** Unique identifier for the strip; item ids come from the items. */
   id: string;
   /** Which asset types every position accepts. */

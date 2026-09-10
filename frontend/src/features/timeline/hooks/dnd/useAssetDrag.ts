@@ -115,6 +115,14 @@ export const useAssetDrag = () => {
           activeData?.type === "media-input" &&
           typeof overData.onReorderDrop === "function"
         ) {
+          // The slot's own acceptance rules decide, not just the highlight.
+          // These were previously consulted for the highlight only, so a drag
+          // the tile showed as incompatible — from another input, or from a
+          // second surface rendering the same input — still landed.
+          const acceptReorderFrom = overData.acceptReorderFrom as
+            | ((data: typeof activeData) => boolean)
+            | undefined;
+          if (acceptReorderFrom?.(activeData) === false) return;
           overData.onReorderDrop(activeData);
         }
         return;

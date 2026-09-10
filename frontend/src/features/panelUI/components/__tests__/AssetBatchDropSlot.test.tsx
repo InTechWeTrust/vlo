@@ -40,10 +40,14 @@ function makeItems(count: number): AssetBatchSlotItem[] {
   }));
 }
 
+/** Namespaces the strip's dnd ids, as every rendered surface must. */
+const SURFACE = "test-surface";
+
 function renderStrip(
   overrides: Partial<React.ComponentProps<typeof AssetBatchDropSlot>> = {},
 ) {
   const props = {
+    surfaceId: SURFACE,
     id: "142:files",
     accept: ["video" as const],
     items: makeItems(2),
@@ -86,10 +90,10 @@ describe("AssetBatchDropSlot", () => {
 
     // The add tile targets the first free position; existing tiles replace.
     const addDroppable = dnd.droppables.find(
-      (droppable) => droppable.id === "asset-slot-142:files-add",
+      (droppable) => droppable.id === `asset-slot-${SURFACE}:142:files-add`,
     );
     const firstDroppable = dnd.droppables.find(
-      (droppable) => droppable.id === "asset-slot-142:files::repeat::0",
+      (droppable) => droppable.id === `asset-slot-${SURFACE}:142:files::repeat::0`,
     );
     const asset = { id: "a" } as never;
     (addDroppable!.data.onDrop as (asset: never) => void)(asset);
@@ -106,16 +110,73 @@ describe("AssetBatchDropSlot", () => {
     renderStrip({ onReorder });
 
     const secondDroppable = dnd.droppables.find(
-      (droppable) => droppable.id === "asset-slot-142:files::repeat::1",
+      (droppable) => droppable.id === `asset-slot-${SURFACE}:142:files::repeat::1`,
     );
     (
       secondDroppable!.data.onReorderDrop as (data: {
         type: "media-input";
+        surfaceId: string;
         inputId: string;
       }) => void
-    )({ type: "media-input", inputId: "142:files::repeat::0" });
+    )({
+      type: "media-input",
+      surfaceId: SURFACE,
+      inputId: "142:files::repeat::0",
+    });
 
     expect(onReorder).toHaveBeenCalledWith("142:files::repeat::0", 1);
+  });
+
+  it("turns a drop away from an occupied tile when replacement is refused", () => {
+    // Overwriting a filled tile is remove + attach + reorder, which the
+    // generation session refuses while a batch holds slots open. Appending
+    // onto a free tile writes one slot and leaves the rest alone, so the add
+    // tile still takes drops.
+    const onDrop = vi.fn();
+    renderStrip({ onDrop, disabledActions: { replace: "Busy" } });
+
+    const filled = dnd.droppables.find(
+      (droppable) =>
+        droppable.id === `asset-slot-${SURFACE}:142:files::repeat::0`,
+    );
+    expect(filled!.data.onDrop).toBeUndefined();
+
+    const addTile = dnd.droppables.find(
+      (droppable) => droppable.id === `asset-slot-${SURFACE}:142:files-add`,
+    );
+    const asset = { id: "clip-9", type: "video", name: "clip-9.mp4" };
+    (addTile!.data.onDrop as (dropped: never) => void)(asset as never);
+    expect(onDrop).toHaveBeenCalledWith(2, asset);
+  });
+
+  it("keeps a drag from another surface out of its reorder targets", () => {
+    renderStrip({ onReorder: vi.fn() });
+
+    const filled = dnd.droppables.find(
+      (droppable) =>
+        droppable.id === `asset-slot-${SURFACE}:142:files::repeat::0`,
+    );
+    const acceptReorderFrom = filled!.data.acceptReorderFrom as (data: {
+      type: "media-input";
+      surfaceId: string;
+      inputId: string;
+    }) => boolean;
+
+    expect(
+      acceptReorderFrom({
+        type: "media-input",
+        surfaceId: SURFACE,
+        inputId: "142:files::repeat::1",
+      }),
+    ).toBe(true);
+    // The same input, dragged on a second surface rendering the same strip.
+    expect(
+      acceptReorderFrom({
+        type: "media-input",
+        surfaceId: "another-surface",
+        inputId: "142:files::repeat::1",
+      }),
+    ).toBe(false);
   });
 
   it("toggles a per-item option without clearing or selecting the item", () => {

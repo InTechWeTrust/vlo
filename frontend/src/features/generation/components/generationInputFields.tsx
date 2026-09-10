@@ -38,6 +38,14 @@ import {
   type MediaWorkflowInput,
 } from "./generationInputFieldValues";
 
+/**
+ * The generation panel's own surface id.
+ *
+ * The panel is the one surface that is always mounted, so it owns the stable
+ * name; a staged editor derives its own from whoever opened it.
+ */
+export const PANEL_SURFACE_ID = "panel";
+
 function shouldUseNumericWidgetInput(
   widget: WorkflowWidgetInput,
   value: unknown,
@@ -459,6 +467,13 @@ function TextInputSection({
 export const MemoizedTextInputSection = memo(TextInputSection);
 
 interface MediaInputSectionProps {
+  /**
+   * The surface these fields are drawn on — `"panel"` for the generation
+   * panel, a per-draft id for a staged editor. Namespaces the slots' drag
+   * registrations so two surfaces showing the same input do not collide.
+   */
+  surfaceId: string;
+
   input: MediaWorkflowInput;
   bgColor: string;
   value: GenerationMediaInputValue | null | undefined;
@@ -479,6 +494,7 @@ interface MediaInputSectionProps {
 }
 
 function MediaInputSection({
+  surfaceId,
   input,
   bgColor,
   value,
@@ -516,6 +532,7 @@ function MediaInputSection({
         </Typography>
       ) : null}
       <AssetDropSlot
+        surfaceId={surfaceId}
         disabledActions={disabledActions}
         id={inputId}
         accept={acceptTypes}
@@ -539,6 +556,13 @@ function MediaInputSection({
 export const MemoizedMediaInputSection = memo(MediaInputSection);
 
 interface BatchMediaInputSectionProps {
+  /**
+   * The surface these fields are drawn on — `"panel"` for the generation
+   * panel, a per-draft id for a staged editor. Namespaces the slots' drag
+   * registrations so two surfaces showing the same input do not collide.
+   */
+  surfaceId: string;
+
   input: MediaWorkflowInput;
   bgColor: string;
   mediaInputs: Record<string, GenerationMediaInputValue | null>;
@@ -565,6 +589,7 @@ interface BatchMediaInputSectionProps {
  * the node will receive them, and offers a `+` while it is below its ceiling.
  */
 function BatchMediaInputSection({
+  surfaceId,
   input,
   bgColor,
   mediaInputs,
@@ -692,6 +717,7 @@ function BatchMediaInputSection({
         </Typography>
       ) : null}
       <AssetBatchDropSlot
+        surfaceId={surfaceId}
         disabledActions={disabledActions}
         id={getWorkflowInputId(input)}
         accept={resolveAcceptTypes(mediaInputType)}
@@ -730,6 +756,13 @@ function BatchMediaInputSection({
 export const MemoizedBatchMediaInputSection = memo(BatchMediaInputSection);
 
 interface MediaInputGroupSectionProps {
+  /**
+   * The surface these fields are drawn on — `"panel"` for the generation
+   * panel, a per-draft id for a staged editor. Namespaces the slots' drag
+   * registrations so two surfaces showing the same input do not collide.
+   */
+  surfaceId: string;
+
   title: string;
   inputs: MediaWorkflowInput[];
   bgColor: string;
@@ -745,6 +778,7 @@ interface MediaInputGroupSectionProps {
 }
 
 function MediaInputGroupSection({
+  surfaceId,
   title,
   inputs,
   bgColor,
@@ -786,6 +820,7 @@ function MediaInputGroupSection({
           return (
             <Box key={inputId} sx={{ display: "flex", flexDirection: "column" }}>
               <AssetDropSlot
+                surfaceId={surfaceId}
                 disabledActions={disabledActions}
                 id={inputId}
                 label={input.label}

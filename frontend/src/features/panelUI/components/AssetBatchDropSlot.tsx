@@ -22,6 +22,7 @@ import type {
   AssetDropSlotReorderData,
 } from "./assetDropSlotTypes";
 import {
+  acceptsReorderDrag,
   getExternalFileDragHighlight,
   getFirstAcceptedFile,
   hasDraggedFiles,
@@ -146,6 +147,7 @@ function resolveAssetHighlight(
 }
 
 interface BatchTileProps {
+  surfaceId: string;
   /** Position in delivery order; the add tile sits at `items.length`. */
   index: number;
   /** `null` renders the trailing add tile. */
@@ -176,6 +178,7 @@ interface BatchTileProps {
 }
 
 function BatchTile({
+  surfaceId,
   index,
   item,
   label,
@@ -199,8 +202,9 @@ function BatchTile({
   const crossInputRefused = disabledActions?.crossInputReorder;
   const acceptReorderFrom = React.useCallback(
     (data: AssetDropSlotReorderData) =>
-      !crossInputRefused || ownSlotIds.includes(data.inputId),
-    [crossInputRefused, ownSlotIds],
+      data.surfaceId === surfaceId &&
+      (!crossInputRefused || ownSlotIds.includes(data.inputId)),
+    [crossInputRefused, ownSlotIds, surfaceId],
   );
   const externalRefused = disabledActions?.externalDrop;
   const clearRefused = disabledActions?.clear;
@@ -214,21 +218,34 @@ function BatchTile({
     (asset: Asset) => onDrop?.(index, asset),
     [index, onDrop],
   );
+  /**
+   * A drop on a *filled* tile overwrites it, which is a different write from
+   * appending onto a free one — so it can be refused on its own. Expressed by
+   * refusing the drag rather than by a tooltip: a drop target has no button to
+   * grey out, and accepting the drag only to do nothing is the affordance this
+   * component exists to avoid.
+   */
+  const replaceRefused = Boolean(item) && Boolean(disabledActions?.replace);
+  const acceptAssetHere = React.useMemo(
+    () => (replaceRefused ? () => false : acceptAsset),
+    [replaceRefused, acceptAsset],
+  );
   const handleReorderDrop = React.useCallback(
     (data: AssetDropSlotReorderData) => onReorder?.(data.inputId, index),
     [index, onReorder],
   );
 
   const { setNodeRef: setDroppableNodeRef, isOver } = useDroppable({
-    id: `asset-slot-${slotKey}`,
+    id: `asset-slot-${surfaceId}:${slotKey}`,
     data: {
       type: "asset-slot",
-      accept,
-      acceptAsset,
-      onDrop: onDrop ? handleAssetDrop : undefined,
+      accept: replaceRefused ? [] : accept,
+      acceptAsset: acceptAssetHere,
+      onDrop: onDrop && !replaceRefused ? handleAssetDrop : undefined,
       onReorderDrop:
         onReorder && !reorderRefused ? handleReorderDrop : undefined,
       acceptReorderFrom,
+      surfaceId,
     },
   });
   const {
@@ -237,9 +254,13 @@ function BatchTile({
     transform,
     isDragging,
   } = useDraggable({
-    id: `asset-batch-item-${slotKey}`,
+    id: `asset-batch-item-${surfaceId}:${slotKey}`,
     data: item
-      ? ({ type: "media-input", inputId: item.slotId } satisfies AssetDropSlotReorderData)
+      ? ({
+          type: "media-input",
+          surfaceId,
+          inputId: item.slotId,
+        } satisfies AssetDropSlotReorderData)
       : undefined,
     disabled: !item || !onReorder || Boolean(reorderRefused),
   });
@@ -254,19 +275,36 @@ function BatchTile({
   const { active } = useDndContext();
   let highlight: DragHighlight = null;
   if (isOver && active?.data.current?.type === "asset") {
-    highlight = resolveAssetHighlight(
-      active.data.current.asset as Asset | undefined,
-      accept,
-      acceptAsset,
-    );
+    highlight = replaceRefused
+      ? "incompatible"
+      : resolveAssetHighlight(
+          active.data.current.asset as Asset | undefined,
+          accept,
+          acceptAsset,
+        );
   }
+  // The same predicate the drop consults, so a drag the tile would refuse
+  // looks refused. `acceptReorderFrom` carries the surface *and* the
+  // cross-input rule; `reorderRefused` is checked too, because a refused
+  // reorder leaves `onReorderDrop` undefined and the drop silently does
+  // nothing. Hovering an item over its own tile stays neutral.
   if (
     isOver &&
     active?.data.current?.type === "media-input" &&
-    onReorder &&
     active.data.current.inputId !== item?.slotId
   ) {
-    highlight = "compatible";
+    highlight = acceptsReorderDrag({
+      refused: Boolean(reorderRefused),
+      hasHandler: Boolean(onReorder),
+      accept: acceptReorderFrom,
+      from: {
+        type: "media-input",
+        surfaceId: String(active.data.current.surfaceId),
+        inputId: String(active.data.current.inputId),
+      },
+    })
+      ? "compatible"
+      : "incompatible";
   }
   if (externalHighlight) {
     highlight = externalHighlight;
@@ -462,6 +500,7 @@ function formatAcceptLabel(accept: AssetType[]): string {
 }
 
 function AssetBatchDropSlotComponent({
+  surfaceId,
   id,
   accept,
   acceptAsset,
@@ -534,6 +573,7 @@ function AssetBatchDropSlotComponent({
         {visibleItems.map((item, index) => (
           <BatchTile
             key={item.slotId}
+            surfaceId={surfaceId}
             index={index}
             item={item}
             label={resolveLabel(index)}
@@ -555,6 +595,7 @@ function AssetBatchDropSlotComponent({
         {hasAddTile && (
           <BatchTile
             key="add"
+            surfaceId={surfaceId}
             index={visibleItems.length}
             item={null}
             label={resolveLabel(visibleItems.length)}

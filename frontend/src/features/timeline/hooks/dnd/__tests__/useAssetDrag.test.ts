@@ -55,6 +55,41 @@ describe("useAssetDrag", () => {
     });
     expect(mockHandleEnd).not.toHaveBeenCalled();
   });
+  it("refuses a media-input drop the target slot does not accept", () => {
+    // `acceptReorderFrom` used to be consulted for the highlight only, so a
+    // drag the tile showed as incompatible — from another input, or from a
+    // second surface rendering the same one — still landed.
+    const onReorderDrop = vi.fn();
+    const { result } = renderHook(() => useAssetDrag());
+
+    act(() => {
+      result.current.handleAssetDragEnd({
+        active: {
+          data: {
+            current: {
+              type: "media-input",
+              surfaceId: "draft-1",
+              inputId: "62:image",
+            },
+          },
+        },
+        over: {
+          data: {
+            current: {
+              type: "asset-slot",
+              surfaceId: "panel",
+              onReorderDrop,
+              acceptReorderFrom: (data: { surfaceId: string }) =>
+                data.surfaceId === "panel",
+            },
+          },
+        },
+      } as unknown as DragEndEvent);
+    });
+
+    expect(onReorderDrop).not.toHaveBeenCalled();
+  });
+
   it("lets a slot admit an asset its accept list rejects, via acceptAsset", () => {
     const onDrop = vi.fn();
     const videoAsset = {

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Alert, Box } from "@mui/material";
 import type { Asset } from "../../../types/Asset";
 import { resolveAssetType } from "../../../shared/utils/assetTypeDetection";
@@ -45,6 +45,8 @@ import {
  * a reason rather than hidden: a slot that silently loses an affordance looks
  * broken, and a no-op callback looks enabled.
  */
+let draftSurfaceSeq = 0;
+
 export interface GenerationInputsDraftFieldsProps {
   /**
    * The draft to render. Supplied rather than created here: the draft's
@@ -52,6 +54,19 @@ export interface GenerationInputsDraftFieldsProps {
    * not be pointed at a draft an extension activation holds.
    */
   readonly controller: GenerationInputsDraftHandle;
+  /**
+   * Namespaces this editor's drag registrations. Defaults to a fresh id per
+   * mounted editor, which is what keeps a staged editor from colliding with the
+   * panel behind it — a takeover hides the panel but leaves it mounted, and
+   * both draw the same inputs into one `DndContext`.
+   *
+   * Pass one only with a reason — pinning it across remounts, say. Two
+   * renderers mounted at once under the *same* id collide exactly as the panel
+   * and a takeover used to, so a constant is worse than the default. Not part
+   * of the extension surface for that reason: the host can guarantee
+   * uniqueness per mount, and a package passing a constant cannot.
+   */
+  readonly surfaceId?: string;
 }
 
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
@@ -89,6 +104,10 @@ function refusalsFor(
     clear: BUSY_BATCH_REASON,
     reorder: BUSY_BATCH_REASON,
     crossInputReorder: BUSY_BATCH_REASON,
+    // Overwriting a filled tile is remove + attach + reorder, which the
+    // session refuses while slots are held open. Appending onto a free tile
+    // still works, so only the occupied ones turn the drag away.
+    replace: BUSY_BATCH_REASON,
   };
 }
 
@@ -147,7 +166,10 @@ function stageableAsset(
 
 export function GenerationInputsDraftFields({
   controller,
+  surfaceId,
 }: GenerationInputsDraftFieldsProps) {
+  const [fallbackSurfaceId] = useState(() => `draft-${(draftSurfaceSeq += 1)}`);
+  const surface = surfaceId ?? fallbackSurfaceId;
   const { inputs, stage: apply } = controller;
   const assets = useAssetStore((state) => state.assets);
   /**
@@ -351,6 +373,7 @@ export function GenerationInputsDraftFields({
           }
           return (
             <MemoizedMediaInputGroupSection
+              surfaceId={surface}
               key={`group:${block.id}`}
               title={block.title}
               inputs={block.entries.map((entry) => entry.input)}
@@ -412,6 +435,7 @@ export function GenerationInputsDraftFields({
           };
           return (
             <MemoizedBatchMediaInputSection
+              surfaceId={surface}
               key={snapshot.id}
               input={input}
               bgColor={bgColor}
@@ -461,6 +485,7 @@ export function GenerationInputsDraftFields({
 
         return (
           <MemoizedMediaInputSection
+              surfaceId={surface}
             key={snapshot.id}
             input={input}
             bgColor={bgColor}
