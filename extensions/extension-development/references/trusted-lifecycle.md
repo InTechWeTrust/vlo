@@ -103,6 +103,17 @@ Duplicate React breaks hooks/context and duplicate Pixi produces objects the hos
 cannot safely recognise. Use matching packages only as development dependencies for
 type-only narrowing when necessary.
 
+The host React runs under `React.StrictMode`, which mounts every component
+setup → cleanup → setup. So a host resource your *component* opens — anything
+you must later `dispose`, such as `api.generation.createInputsDraft` — belongs
+in an effect that opens it in setup and disposes it in cleanup, with the handle
+in state. Open one in a `useMemo` or a `useState` initializer and the first
+cleanup disposes it while the memo declines to re-run, leaving a live-looking
+handle onto a dead resource. Resources registered in `activate()` are unaffected:
+StrictMode remounts components, not activations. See
+`references/ui-and-generation.md` for the draft case, which is the one this
+bites in practice.
+
 Use `context.api.trusted.host` for other live composition roots. The lookup mechanism
 is supported, while entry IDs and returned shapes are version-coupled. Session
 entries retain identity; availability entries may disappear or be replaced after a

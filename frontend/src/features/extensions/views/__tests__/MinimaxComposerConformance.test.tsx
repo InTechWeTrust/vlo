@@ -179,6 +179,29 @@ function createGenerationHarness(options: {
 
   const staged: { current: readonly unknown[] } = { current: [] };
   const stagedWidgets = new Map<string, unknown>();
+  /**
+   * What the composer asked a draft to address, and the handles it was given.
+   *
+   * Recorded because the *names* on this seam are the contract: the composer
+   * opens through `api.generation.createInputsDraft` and draws through
+   * `runtime.generationUi.InputsDraftFields`, and a package still calling an
+   * earlier spelling gets `undefined` and silently falls back to a
+   * prompt-only body — no error, no empty state, just no keyframe fields.
+   */
+  const draftRequests: {
+    inputIds: readonly string[];
+    widgetTargets?: readonly { nodeId: string; widget: string }[];
+  }[] = [];
+  const openedDrafts: { disposed: boolean }[] = [];
+  /** `INERT_DRAFT_READING`, as the host answers from a disposed draft. */
+  const INERT_READING = Object.freeze({
+    inputs: [],
+    widgetValues: new Map() as ReadonlyMap<string, unknown>,
+    hasDraftChanges: false,
+    hasConflict: false,
+    canCommit: false,
+    error: null,
+  });
 
   const generation = {
     /**
@@ -189,7 +212,13 @@ function createGenerationHarness(options: {
      * reading comes from `stage`/`stageWidget`, and `commit` goes through the
      * same transaction, so a refusal set on the harness is honoured here too.
      */
-    createInputsDraft: (request: { inputIds: readonly string[] }) => {
+    createInputsDraft: (request: {
+      inputIds: readonly string[];
+      widgetTargets?: readonly { nodeId: string; widget: string }[];
+    }) => {
+      draftRequests.push(request);
+      const opened = { disposed: false };
+      openedDrafts.push(opened);
       // Cached against the harness revision, because `getState` feeds
       // `useSyncExternalStore`: a fresh object per call is an infinite render
       // loop. The real draft caches for the same reason.
@@ -197,6 +226,10 @@ function createGenerationHarness(options: {
       let cachedRevision = -1;
       return {
       getState: () => {
+        // Inert once disposed, exactly as the host controller is. Without this
+        // a disposed draft goes on answering with live values, and a package
+        // that leaked one — the StrictMode trap below — looks perfectly fine.
+        if (opened.disposed) return INERT_READING;
         if (cachedRevision !== revision) {
           cachedRevision = revision;
           cached = {
@@ -221,7 +254,9 @@ function createGenerationHarness(options: {
       revert: () => undefined,
       commit: (label: string, writes?: (tx: unknown) => void) =>
         generation.transaction(label, writes as never),
-      dispose: () => undefined,
+      dispose: () => {
+        opened.disposed = true;
+      },
       };
     },
     getSession: read,
@@ -274,6 +309,16 @@ function createGenerationHarness(options: {
   return {
     commits,
     generation,
+    /** Every `createInputsDraft` request, in the order they were made. */
+    get draftRequests() {
+      return draftRequests as readonly (typeof draftRequests)[number][];
+    },
+    /** One entry per opened draft, saying whether it was disposed. */
+    get openedDrafts() {
+      return openedDrafts as readonly { disposed: boolean }[];
+    },
+    /** Controllers handed to the host's fields component, in render order. */
+    fieldControllers: [] as unknown[],
     /** Inputs as a staged editor would show them, overriding the session's. */
     get stagedInputs() {
       return staged.current as readonly { id: string }[];
@@ -315,6 +360,15 @@ function mountComposer(
   createComposerView: (deps: never) => unknown,
   session: unknown,
   harness: ReturnType<typeof createGenerationHarness>,
+  /**
+   * Mount inside `React.StrictMode`, as the app does (`app/main.tsx`).
+   *
+   * Off by default so the section tests stay readable, but one test below
+   * turns it on: StrictMode's setup → cleanup → setup is what tells a draft
+   * held correctly apart from one that was disposed and never replaced, and
+   * every other assertion here passes either way.
+   */
+  strict = false,
 ): ReturnType<typeof render> {
   const api = {
     generation: harness.generation,
@@ -333,7 +387,17 @@ function mountComposer(
       // features/generation/draft/__tests__/*, and
       // features/extensions/generation/__tests__/extensionGenerationInputsDraft.
       generationUi: {
-        InputsDraftFields: () => null,
+        // Renders a marker rather than nothing, so a test can tell "the
+        // composer drew the staged fields" apart from "the composer fell back
+        // to a prompt-only body" — which is what an unrecognised seam name
+        // produces, and which is otherwise indistinguishable on screen.
+        InputsDraftFields: ({ controller }: { controller: unknown }) => {
+          harness.fieldControllers.push(controller);
+          return React.createElement("div", {
+            "data-testid": "staged-fields",
+            "data-controller": controller ? "bound" : "missing",
+          });
+        },
       },
     },
   };
@@ -346,12 +410,13 @@ function mountComposer(
     region: string;
     active: boolean;
   }>;
+  const element = React.createElement(View, {
+    viewId: "v",
+    region: "editor-overlay",
+    active: true,
+  });
   return render(
-    React.createElement(View, {
-      viewId: "v",
-      region: "editor-overlay",
-      active: true,
-    }),
+    strict ? React.createElement(React.StrictMode, null, element) : element,
   );
 }
 
@@ -1362,6 +1427,114 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     // showing the panel's box inside it would be two places to write one value.
     expect(keyframeInputIds(inputs)).not.toContain("136:prompt");
     expect(referenceInputIds(inputs)).not.toContain("136:prompt");
+  });
+
+  /**
+   * The seam itself, mounted — not the pure function that decides what to ask
+   * for.
+   *
+   * Everything above tests what the composer *would* address; nothing tested
+   * that it reaches the host to address it. Those are different failures: when
+   * the host renamed this seam, `keyframeInputIds` kept returning the right
+   * ids and every section test kept passing, while the built package called a
+   * name that no longer existed and quietly rendered a prompt-only body. An
+   * optional-chained lookup has no failure mode louder than absence, so the
+   * mounted wiring needs a test of its own.
+   */
+  it("opens a draft for the keyframes and draws the host's fields over it", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+      keyframes: [
+        { label: "Start frame", filled: true },
+        { label: "End frame", filled: false },
+      ],
+      length: 124,
+    });
+    const { unmount } = mountComposer(
+      createComposerView as never,
+      createComposerSession(),
+      harness,
+    );
+
+    // Opened once, addressing the keyframes and the duration the instruction
+    // line cites — not the prompt box, which the composer is itself.
+    expect(harness.draftRequests).toHaveLength(1);
+    expect(harness.draftRequests[0].inputIds).toEqual([
+      "141:image",
+      "142:image",
+    ]);
+    expect(harness.draftRequests[0].widgetTargets).toEqual([
+      { nodeId: "100", widget: "length" },
+    ]);
+
+    // And drawn: the host's own fields, over the handle this activation owns.
+    const fields = screen.getByTestId("staged-fields");
+    expect(fields.getAttribute("data-controller")).toBe("bound");
+
+    // The draft writes to the panel, so it belongs to the mount that opened it.
+    expect(harness.openedDrafts[0].disposed).toBe(false);
+    act(() => {
+      unmount();
+    });
+    expect(harness.openedDrafts[0].disposed).toBe(true);
+  });
+
+  /**
+   * The draft has to survive StrictMode's double mount.
+   *
+   * A draft subscribes to the session on creation and unsubscribes on
+   * `dispose`, so it is an external resource with a lifecycle. Opened in a
+   * `useMemo`, StrictMode's setup → cleanup → setup disposes it and the memo
+   * never re-runs, so the view keeps a dead handle: `getState` answers the
+   * inert reading, the fields render empty, nothing stages, and — because the
+   * inert reading's `error` is `null` — nothing anywhere says so. That is
+   * exactly how this shipped, and only the app's own StrictMode surfaced it.
+   */
+  it("keeps a live draft through StrictMode's double mount", async () => {
+    const { createComposerView, createComposerSession } = await loadPackage();
+    const harness = createGenerationHarness({
+      prompt: "",
+      classTypes: ["MiniMaxH3ImageToVideo"],
+      keyframes: [
+        { label: "Start frame", filled: true },
+        { label: "End frame", filled: false },
+      ],
+      length: 124,
+    });
+    mountComposer(
+      createComposerView as never,
+      createComposerSession(),
+      harness,
+      true,
+    );
+
+    // StrictMode disposes the first draft; a correctly held one is replaced.
+    const live = harness.openedDrafts.filter((draft) => !draft.disposed);
+    expect(live).toHaveLength(1);
+
+    // Staged *after* mounting, so the reading below can only be non-empty if
+    // the draft the view kept is still subscribed. An inert one answers `[]`
+    // to everything, which is indistinguishable from "nothing staged yet".
+    act(() => {
+      harness.stage([{ id: "141:image" }]);
+    });
+
+    // And the one the fields were handed is that live draft, not the corpse:
+    // a live draft nobody renders over is no better than a dead one. Read
+    // through `getState`, because that is all the renderer ever sees — a
+    // disposed draft answers the inert reading and looks like an empty panel.
+    const handed = harness.fieldControllers.at(-1) as {
+      getState(): { readonly inputs: readonly { id: string }[] };
+    };
+    expect(handed.getState().inputs.map((entry) => entry.id)).toEqual([
+      "141:image",
+    ]);
+    expect(harness.draftRequests.at(-1)?.inputIds).toEqual([
+      "141:image",
+      "142:image",
+    ]);
   });
 
   it("picks the prompt input rather than the first text input", async () => {

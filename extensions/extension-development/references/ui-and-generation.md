@@ -536,17 +536,40 @@ The split matters: the draft **writes to the panel**, so it needs an owner that
 can be disposed, which is why it comes from `api` and not as a component. The
 renderer writes nothing of its own, so it lives on `runtime`.
 
+**Open it inside an effect and keep it in state.** A draft subscribes to the
+session when it is created and unsubscribes on `dispose`, which makes it an
+external resource with a lifecycle — and the app runs under `React.StrictMode`,
+which mounts every component setup → cleanup → setup. A draft opened in a
+`useMemo` (or a `useState` initializer) is disposed by that first cleanup and
+never replaced, because the memo does not re-run. The symptom is silent and
+looks nothing like a lifecycle bug: `getState()` returns the inert reading for
+the life of the view, so the fields render an empty box, `stage` does nothing,
+`canCommit` stays `false` — and `error` is `null`, so nothing anywhere reports
+a problem. The host's own `useGenerationInputsDraft` is written this way for
+the same reason.
+
 ```ts
-const draft = hooks.useMemo(
-  () =>
-    api.generation.createInputsDraft({
-      inputIds: [promptInputId, startFrameInputId],
-      // Optional: node widgets to edit alongside them.
-      widgetTargets: [{ nodeId: "9", widget: "length" }],
-    }),
-  [],
+// Held in state, because that is what publishes the live draft to the render.
+const [draft, setDraft] = hooks.useState<ExtensionGenerationInputsDraft | null>(
+  null,
 );
-hooks.useEffect(() => () => draft?.dispose(), [draft]);
+// Keyed by what it addresses: there is no `retarget`, so a changed address
+// means a new draft. A constant key opens one draft for the view's lifetime.
+const addressKey = `${promptInputId},${startFrameInputId}|9:length`;
+hooks.useEffect(() => {
+  const opened = api.generation.createInputsDraft({
+    inputIds: [promptInputId, startFrameInputId],
+    // Optional: node widgets to edit alongside them.
+    widgetTargets: [{ nodeId: "9", widget: "length" }],
+  });
+  setDraft(opened);
+  return () => {
+    opened?.dispose();
+    // Only if it is still the current one — the next setup may already have
+    // published its replacement.
+    setDraft((current) => (current === opened ? null : current));
+  };
+}, [addressKey]);
 // `getState` is identity-stable between changes, so it drives a store hook.
 hooks.useSyncExternalStore(
   (onChange) => draft?.subscribe(onChange) ?? (() => undefined),
@@ -572,6 +595,11 @@ return h(
 - `createInputsDraft` returns `null` once your activation has ended.
 - Call your hooks **before** any early return. A workflow that stops being
   supported while your view is mounted must not change the hook count.
+- An empty editor with no error is the disposed-draft symptom above, not a
+  targeting mistake. Read the controller the fields were handed: `inputs: []`
+  *and* `widgetValues` empty *and* `error: null` together is the inert reading
+  of a dead draft. A genuinely mis-addressed draft still resolves whichever
+  half did match.
 - `getState().inputs` is the staged projection, described exactly as the session
   describes a live input; `widgetValues` is keyed `nodeId:param`.
 - `hasDraftChanges` is "I hold edits"; `hasConflict` is "the panel moved under
