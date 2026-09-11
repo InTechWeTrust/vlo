@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from minimax_h3_profiles import assert_profiles_agree_apart_from_weights
 from services.workflow_rules.schema import ResolvedWorkflowRules
 
 
@@ -21,12 +22,12 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def test_minimax_h3_inpaint_workflow_is_packaged_in_both_modes():
-    default_workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
-    high_vram_workflow = _load_json(WORKFLOW_DIRS[1] / WORKFLOW_NAME)
     default_rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
     high_vram_rules = _load_json(WORKFLOW_DIRS[1] / RULES_NAME)
 
-    assert high_vram_workflow == default_workflow
+    # The high-VRAM profile swaps in the pruned bf16 weights; the graph itself
+    # and the rules are shared.
+    assert_profiles_agree_apart_from_weights(WORKFLOW_NAME)
     assert high_vram_rules == default_rules
     ResolvedWorkflowRules.model_validate(default_rules)
 
