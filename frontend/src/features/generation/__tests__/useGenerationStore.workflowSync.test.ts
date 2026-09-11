@@ -104,6 +104,147 @@ describe("useGenerationStore workflow editor sync", () => {
     });
   });
 
+  it("ignores pushed editor graphs while a selected workflow is loading", async () => {
+    let finishLoad!: (graph: Record<string, unknown>) => void;
+    vi.spyOn(comfyApi, "getWorkflowContent").mockImplementation(
+      () => new Promise((resolve) => {
+        finishLoad = resolve;
+      }),
+    );
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wf.json",
+      has_sidecar: true,
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+
+    const loading = useGenerationStore.getState().loadWorkflow("wf.json");
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      null,
+      { nodes: [{ id: 99, type: "LoadImage" }] },
+      [],
+      "old.json",
+    );
+    expect(useGenerationStore.getState().selectedWorkflowId).toBe("wf.json");
+    expect(useGenerationStore.getState().isWorkflowLoading).toBe(true);
+    expect(comfyApi.resolveWorkflowRules).not.toHaveBeenCalled();
+
+    finishLoad({ nodes: [{ id: 1, type: "LoadImage" }] });
+    await loading;
+    expect(useGenerationStore.getState().rulesWorkflowSourceId).toBe("wf.json");
+  });
+
+  it("does not let an older editor response overwrite a newer graph and rules", async () => {
+    const oldRules = createDefaultWorkflowRules();
+    const newRules = createDefaultWorkflowRules({
+      nodes: { "1": { ignore: true } },
+    });
+    let finishOldRead!: (
+      response: Awaited<ReturnType<typeof comfyApi.resolveWorkflowRules>>,
+    ) => void;
+    vi.mocked(comfyApi.resolveWorkflowRules)
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        finishOldRead = resolve;
+      }))
+      .mockResolvedValueOnce({
+        workflow_id: "wf.json",
+        has_sidecar: true,
+        rules: newRules,
+        warnings: [],
+      });
+    useGenerationStore.setState({ selectedWorkflowId: "wf.json" });
+    const oldRead = useGenerationStore.getState().registerWorkflowFromEditor(
+      null,
+      { nodes: [{ id: 1, type: "LoadImage" }] },
+      [],
+      "wf.json",
+    );
+    const latestGraph = { nodes: [{ id: 1, type: "LoadImage", title: "Updated" }] };
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      null, latestGraph, [], "wf.json",
+    );
+    finishOldRead({
+      workflow_id: "wf.json",
+      has_sidecar: false,
+      rules: oldRules,
+      warnings: [],
+    });
+    await oldRead;
+
+    expect(useGenerationStore.getState().syncedGraphData).toEqual(latestGraph);
+    expect(useGenerationStore.getState().rulesWorkflowSourceId).toBe("wf.json");
+    expect(useGenerationStore.getState().activeWorkflowRules?.nodes).toEqual(
+      newRules.nodes,
+    );
+  });
+
+  it("invalidates pending editor rules when the same workflow is reloaded", async () => {
+    let finishRead!: (
+      response: Awaited<ReturnType<typeof comfyApi.resolveWorkflowRules>>,
+    ) => void;
+    vi.mocked(comfyApi.resolveWorkflowRules).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+    );
+    useGenerationStore.setState({ selectedWorkflowId: "wf.json" });
+    const reading = useGenerationStore.getState().registerWorkflowFromEditor(
+      null,
+      { nodes: [{ id: 99, type: "LoadImage" }] },
+      [],
+      "wf.json",
+    );
+    const graph = { nodes: [{ id: 1, type: "LoadImage" }] };
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue(graph);
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "wf.json",
+      has_sidecar: true,
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+    await useGenerationStore.getState().loadWorkflow("wf.json");
+    finishRead({
+      workflow_id: "",
+      has_sidecar: false,
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+    await reading;
+
+    expect(useGenerationStore.getState().syncedGraphData).toEqual(graph);
+    expect(useGenerationStore.getState().rulesWorkflowSourceId).toBe("wf.json");
+  });
+
+  it.each([true, false])(
+    "rediscovers a lost rules source only when a sidecar exists (%s)",
+    async (hasSidecar) => {
+      const graph = { nodes: [{ id: 1, type: "LoadImage" }] };
+      useGenerationStore.setState({
+        selectedWorkflowId: "wf.json",
+        syncedGraphData: graph,
+      });
+      vi.mocked(comfyApi.resolveWorkflowRules).mockResolvedValue({
+        workflow_id: "wf.json",
+        has_sidecar: hasSidecar,
+        rules: createDefaultWorkflowRules(),
+        warnings: [],
+      });
+
+      await useGenerationStore.getState().registerWorkflowFromEditor(
+        null, graph, [], "wf (1).json",
+      );
+
+      expect(comfyApi.resolveWorkflowRules).toHaveBeenCalledWith({
+        workflow: null,
+        graphData: graph,
+        workflowId: "wf.json",
+      });
+      expect(useGenerationStore.getState().rulesWorkflowSourceId).toBe(
+        hasSidecar ? "wf.json" : null,
+      );
+    },
+  );
+
   it("keeps a stable workflow id when syncing editor changes", async () => {
     useGenerationStore.setState({
       selectedWorkflowId: "wf.json",
@@ -1242,7 +1383,7 @@ describe("useGenerationStore workflow editor sync", () => {
     ]);
   });
 
-  it("applies destructive rule replacement after a second confirming read of the same loss", async () => {
+  it("prunes confirmed missing nodes without losing the sidecar needed to restore them", async () => {
     const fullRules = createDefaultWorkflowRules({
       pipeline: [
         {
@@ -1262,6 +1403,7 @@ describe("useGenerationStore workflow editor sync", () => {
 
     vi.spyOn(comfyApi, "resolveWorkflowRules").mockResolvedValue({
       workflow_id: "ltx_inpaint.json",
+      has_sidecar: true,
       rules: fullRules,
       warnings: [],
     });
@@ -1281,6 +1423,8 @@ describe("useGenerationStore workflow editor sync", () => {
       },
     });
 
+    const fullGraph = useGenerationStore.getState().syncedGraphData;
+    if (!fullGraph) throw new Error("Expected the full workflow graph");
     const partialGraph = {
       nodes: [
         { id: 771, type: "VLOMemoryLoadVideo" },
@@ -1319,6 +1463,20 @@ describe("useGenerationStore workflow editor sync", () => {
     expect(state.activeWorkflowRules?.pipeline ?? []).toEqual([]);
     // Node 771 now surfaces as an input because the rule is gone.
     expect(state.workflowInputs.map((input) => input.nodeId)).toContain("771");
+    expect(state.rulesWorkflowSourceId).toBe("ltx_inpaint.json");
+
+    // A subsequent complete snapshot must recover without reselecting the workflow.
+    await useGenerationStore.getState().registerWorkflowFromEditor(
+      null, fullGraph, partialInputs, "ltx_inpaint.json",
+    );
+    expect(comfyApi.resolveWorkflowRules).toHaveBeenLastCalledWith({
+      workflow: null,
+      graphData: fullGraph,
+      workflowId: "ltx_inpaint.json",
+    });
+    expect(useGenerationStore.getState().activeWorkflowRules?.pipeline).toEqual(
+      fullRules.pipeline,
+    );
   });
 
   it("resets the suspect-rule-loss counter on a non-suspect editor read", async () => {

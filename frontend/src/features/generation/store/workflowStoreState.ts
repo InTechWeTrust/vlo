@@ -346,6 +346,9 @@ export function buildWorkflowStoreState(
   options: WorkflowStoreStateOptions,
 ): GenerationWorkflowState {
   const bridgeLoadRetryCounts = new Map<string, number>();
+  // Rules resolution is asynchronous. A newer graph, reload, or project reset
+  // must invalidate old editor responses even when the filename stays the same.
+  let editorSyncGeneration = 0;
 
   return {
     syncedWorkflow: null,
@@ -460,6 +463,7 @@ export function buildWorkflowStoreState(
       // incoming one after the switch.
       openPanelRestoreSession();
       options.getNextWorkflowLoadRequestId();
+      editorSyncGeneration += 1;
 
       set((state) => ({
         pendingPanelSnapshot: null,
@@ -542,6 +546,7 @@ export function buildWorkflowStoreState(
     },
 
     unregisterEditor: () => {
+      editorSyncGeneration += 1;
       iframeBridge.bindIframe(null);
       set({
         editorRef: null,
@@ -576,6 +581,7 @@ export function buildWorkflowStoreState(
     clearWorkflowLoadError: () => set({ workflowLoadError: null }),
     clearWorkflowSelection: () => {
       options.getNextWorkflowLoadRequestId();
+      editorSyncGeneration += 1;
       bridgeLoadRetryCounts.clear();
       set({
         selectedWorkflowId: null,
@@ -622,6 +628,7 @@ export function buildWorkflowStoreState(
       if (state.selectedWorkflowId === null && !state.editorOpen) {
         return;
       }
+      editorSyncGeneration += 1;
       const markReady =
         (options?.markReady ?? true) && state.selectedWorkflowId !== null;
       const bridgeIdentity = options?.bridgeIdentity ?? null;
@@ -712,9 +719,15 @@ export function buildWorkflowStoreState(
     ) => {
       const state = get();
       const { availableWorkflows, selectedWorkflowId, tempWorkflow } = state;
-      if (selectedWorkflowId === null && !state.editorOpen) {
+      // Injection itself emits graph changes, including transitional snapshots.
+      // loadWorkflow owns both graph and rules until that injection completes.
+      if (
+        state.isWorkflowLoading ||
+        (selectedWorkflowId === null && !state.editorOpen)
+      ) {
         return;
       }
+      const syncGeneration = ++editorSyncGeneration;
       const currentWorkflowContext = [graphData, workflow];
       const previousWorkflowMatches = haveSubstantialWorkflowOverlap(
         [
@@ -741,12 +754,10 @@ export function buildWorkflowStoreState(
         candidateRulesSourceId !== null &&
         (
           hasRulelessWorkflowIdentity ||
+          previousWorkflowMatches ||
           (
             !areWorkflowRulesEffectivelyEmpty(prunedCachedRules) &&
-            (
-              previousWorkflowMatches ||
-              hasNodeLinkedWorkflowRules(prunedCachedRules)
-            )
+            hasNodeLinkedWorkflowRules(prunedCachedRules)
           )
         );
       let resolvedRules = hasCompatibleRules
@@ -758,25 +769,42 @@ export function buildWorkflowStoreState(
       let resolvedRulesWarnings = hasCompatibleRules
         ? state.activeRulesWarnings
         : [];
+      // A transient failed rules fetch can leave a persisted workflow without
+      // a cached source. Query its sidecar again instead of remaining ruleless
+      // until the user reselects the workflow. Do not reuse an incompatible
+      // source when another graph has replaced the selected editor tab.
+      const requestedRulesSourceId =
+        resolvedRulesSourceId ??
+        (candidateRulesSourceId === null &&
+        (previousWorkflowMatches ||
+          areWorkflowRulesEffectivelyEmpty(state.activeWorkflowRules))
+          ? resolveWorkflowPersistenceId(selectedWorkflowId, filename)
+          : null);
 
       try {
         const resolved = await comfyApi.resolveWorkflowRules({
           workflow,
           graphData,
-          workflowId: resolvedRulesSourceId,
+          workflowId: requestedRulesSourceId,
         });
         resolvedRules = pruneWorkflowRulesForWorkflows(
           currentWorkflowContext,
           resolved.rules,
         );
         resolvedRulesWarnings = resolved.warnings ?? [];
-        if (
+        if (resolved.has_sidecar === true) {
+          // Availability is a property of the sidecar, not of how many of its
+          // rules survive pruning against a possibly incomplete graph.
+          resolvedRulesSourceId = requestedRulesSourceId;
+        } else if (resolved.has_sidecar === false) {
+          resolvedRulesSourceId = null;
+        } else if (
           !hasRulelessWorkflowIdentity &&
+          !previousWorkflowMatches &&
           resolvedRulesSourceId &&
           (
             areWorkflowRulesEffectivelyEmpty(resolvedRules) ||
-            (!previousWorkflowMatches &&
-              !hasNodeLinkedWorkflowRules(resolvedRules))
+            !hasNodeLinkedWorkflowRules(resolvedRules)
           )
         ) {
           resolvedRulesSourceId = null;
@@ -790,6 +818,8 @@ export function buildWorkflowStoreState(
 
       const currentState = get();
       if (
+        syncGeneration !== editorSyncGeneration ||
+        currentState.isWorkflowLoading ||
         currentState.selectedWorkflowId !== selectedWorkflowId ||
         (selectedWorkflowId === null && !currentState.editorOpen)
       ) {
@@ -1030,6 +1060,7 @@ export function buildWorkflowStoreState(
     },
 
     loadWorkflow: async (workflowId: string) => {
+      editorSyncGeneration += 1;
       const isWorkflowChange = get().selectedWorkflowId !== workflowId;
       if (isWorkflowChange) {
         bridgeLoadRetryCounts.clear();
@@ -1067,6 +1098,7 @@ export function buildWorkflowStoreState(
           });
         }
         setTimeout(() => {
+          if (isStale()) return;
           const state = get();
           if (state.selectedWorkflowId !== workflowId) return;
           if (!state.editorRef) return;
@@ -1333,6 +1365,7 @@ export function buildWorkflowStoreState(
     },
 
     loadWorkflowFromAssetMetadata: async (asset) => {
+      editorSyncGeneration += 1;
       let assetWithMetadata = asset;
       try {
         const { ensureAssetMetadataLoaded } = await import("../../userAssets");
