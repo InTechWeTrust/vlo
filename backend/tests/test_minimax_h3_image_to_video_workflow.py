@@ -147,9 +147,9 @@ def test_minimax_h3_image_to_video_rules_expose_length_and_aspect_ratio():
 
     length_widget = rules["nodes"]["136"]["widgets"]["length"]
     # H3 requires 17k+5 frames, so 22 frames is the closest valid point to 1s
-    # and 600 frames is exactly 25s at 24fps.
+    # and 719 frames is the last one under 30s at 24fps (29.96s).
     assert length_widget["min"] == 22
-    assert length_widget["max"] == 600
+    assert length_widget["max"] == 719
     assert length_widget["step"] == 17
     assert (length_widget["max"] - length_widget["min"]) % length_widget["step"] == 0
     assert length_widget["display_unit"]["scale"] == 1 / 24

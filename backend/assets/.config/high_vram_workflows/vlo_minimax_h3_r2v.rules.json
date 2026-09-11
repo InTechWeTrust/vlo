@@ -28,6 +28,24 @@
     }
   ],
   "nodes": {
+    "124": {
+      "widgets": {
+        "steps": {
+          "label": "Steps",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "default": 20,
+          "section_id": "video_generation",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 2
+        }
+      }
+    },
     "129": {
       "widgets": {
         "noise_seed": {
