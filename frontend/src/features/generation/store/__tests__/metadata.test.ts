@@ -593,7 +593,7 @@ describe("generation metadata replay helpers", () => {
 
     expect(metadata.inputs[0].timelineSelection).not.toBe(frameSelection);
     expect(metadata.inputs[1].timelineSelection).not.toBe(audioSelection);
-    expect(metadata.inputs[0].timelineSelection.clips[0]).not.toBe(sharedClip);
-    expect(metadata.inputs[1].timelineSelection.clips[0]).not.toBe(sharedClip);
+    expect(metadata.inputs[0].timelineSelection?.clips[0]).not.toBe(sharedClip);
+    expect(metadata.inputs[1].timelineSelection?.clips[0]).not.toBe(sharedClip);
   });
 });

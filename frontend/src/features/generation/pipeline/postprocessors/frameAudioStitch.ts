@@ -17,16 +17,14 @@ async function deriveFallbackAudioFromGenerationMetadata(
 
   for (const input of metadata.inputs) {
     if (input.kind === "timelineSelection") {
+      // Stripped on the abridged index copy; only the hydrated metadata can be
+      // re-rendered for audio.
+      const selection = input.timelineSelection;
+      if (!selection) continue;
       try {
-        const extracted = await extractAudioFromSelection(
-          input.timelineSelection,
-          {
-            exportFps: resolveSelectionMetadataFps(
-              input.timelineSelection,
-              projectFps,
-            ),
-          },
-        );
+        const extracted = await extractAudioFromSelection(selection, {
+          exportFps: resolveSelectionMetadataFps(selection, projectFps),
+        });
         if (extracted) return extracted;
       } catch {
         // Try the next provenance source.

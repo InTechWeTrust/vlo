@@ -41,7 +41,7 @@ export async function resolvePostprocessStitchFps(
 
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
   for (const input of metadata.inputs) {
-    if (input.kind !== "timelineSelection") continue;
+    if (input.kind !== "timelineSelection" || !input.timelineSelection) continue;
     const selectionFps = toPositiveFps(input.timelineSelection.fps);
     if (selectionFps !== null) return selectionFps;
   }

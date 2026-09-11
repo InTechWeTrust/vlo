@@ -293,6 +293,12 @@ export async function restoreMediaInputsFromMetadata(
       continue;
     }
 
+    // Stripped on the abridged index copy; replay hydrates the sidecar first,
+    // so an absent body here means there is nothing to restore for this slot.
+    if (!input.timelineSelection) {
+      continue;
+    }
+
     const timelineSelection = normalizeDetachedTimelineSelection(
       input.timelineSelection,
     );

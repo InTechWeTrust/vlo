@@ -22,7 +22,15 @@ export type GeneratedCreationInput =
       nodeId: string;
       inputId?: string;
       kind: "timelineSelection";
-      timelineSelection: TimelineSelection;
+      /**
+       * Absent on the abridged copy the asset index keeps: a selection embeds
+       * whole clips and tracks, so the body lives in the metadata sidecar and
+       * {@link GeneratedCreationInput.timelineSelectionStart} stands in for
+       * synchronous callers that run before hydration.
+       */
+      timelineSelection?: TimelineSelection;
+      /** Set only on the abridged index copy: the stripped selection's start tick. */
+      timelineSelectionStart?: number;
       /** Per-item audio inclusion for a batch reference video. */
       includeEmbeddedAudio?: boolean;
     }
@@ -144,7 +152,10 @@ export type CreationMetadata =
   | GeneratedCreationMetadata
   | {
       source: "extracted";
-      timelineSelection: TimelineSelection;
+      /** Absent on the abridged index copy; see {@link timelineSelectionStart}. */
+      timelineSelection?: TimelineSelection;
+      /** Set only on the abridged index copy: the stripped selection's start tick. */
+      timelineSelectionStart?: number;
       extractedAudioClip?: ExtractedAudioClipMetadata;
     }
   | {
@@ -163,6 +174,8 @@ export type CreationMetadata =
       compositeAssetId?: string;
       compositeClipId?: string;
       timelineSelection?: TimelineSelection;
+      /** Set only on the abridged index copy: the stripped selection's start tick. */
+      timelineSelectionStart?: number;
       contentHash?: string;
       /** Complete render-contract cache key for freshness validation. */
       bakeKey?: string;

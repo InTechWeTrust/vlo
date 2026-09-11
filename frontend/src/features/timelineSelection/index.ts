@@ -33,7 +33,10 @@ export {
   resolveSelectionRenderResolution,
   type SelectionResolutionSources,
 } from "./utils/selectionRenderResolution";
-export { getTimelineSelectionFromAsset } from "./utils/assetSelection";
+export {
+  getTimelineSelectionFromAsset,
+  getTimelineSelectionStartFromAsset,
+} from "./utils/assetSelection";
 export {
   selectionToCompositeContent,
   renamespaceCompositeContentTracks,

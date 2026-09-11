@@ -5,7 +5,11 @@ import {
   type Draft,
   type Patch,
 } from "../../../lib/immerLite";
-import type { Asset, CreationMetadata } from "../../../types/Asset";
+import type {
+  Asset,
+  CreationMetadata,
+  GeneratedCreationInput,
+} from "../../../types/Asset";
 import type { TimelineTrack } from "../../../types/TimelineTypes";
 import type { JsonValue } from "@vlo/extension-sdk";
 import {
@@ -399,7 +403,7 @@ function shouldSplitCreationMetadata(
     return false;
   }
 
-  if (metadata.source === "composite") {
+  if (metadata.source === "composite" || metadata.source === "extracted") {
     return Boolean(metadata.timelineSelection);
   }
 
@@ -414,8 +418,31 @@ function shouldSplitCreationMetadata(
         generated.comfyuiPrompt ||
         generated.comfyuiWorkflow,
     ) ||
+    // A selection input embeds whole clips and tracks, so it outweighs the rest
+    // of the index entry many times over even when the total stays under the
+    // byte threshold.
+    generated.inputs.some(
+      (input) => input.kind === "timelineSelection" && input.timelineSelection,
+    ) ||
     stringifyByteLength(metadata) > HEAVY_ASSET_METADATA_INLINE_THRESHOLD_BYTES
   );
+}
+
+/**
+ * Replaces a selection input's body with its start tick. The index only needs
+ * to answer "is there a selection, and where does it start" — `AssetCard` and
+ * the generation panel gate "Send to Timeline" on exactly that — while the
+ * selection itself is read back from the sidecar on demand.
+ */
+function toLightweightCreationInput(
+  input: GeneratedCreationInput,
+): GeneratedCreationInput {
+  if (input.kind !== "timelineSelection" || !input.timelineSelection) {
+    return input;
+  }
+
+  const { timelineSelection, ...rest } = input;
+  return { ...rest, timelineSelectionStart: timelineSelection.start };
 }
 
 function toLightweightCreationMetadata(
@@ -430,7 +457,20 @@ function toLightweightCreationMetadata(
       ...(metadata.compositeClipId
         ? { compositeClipId: metadata.compositeClipId }
         : {}),
+      ...(metadata.timelineSelection
+        ? { timelineSelectionStart: metadata.timelineSelection.start }
+        : {}),
       ...(metadata.contentHash ? { contentHash: metadata.contentHash } : {}),
+    };
+  }
+
+  if (metadata.source === "extracted") {
+    const { timelineSelection, ...rest } = metadata;
+    return {
+      ...rest,
+      ...(timelineSelection
+        ? { timelineSelectionStart: timelineSelection.start }
+        : {}),
     };
   }
 
@@ -449,6 +489,7 @@ function toLightweightCreationMetadata(
   delete lightweight.replayState;
   delete lightweight.comfyuiPrompt;
   delete lightweight.comfyuiWorkflow;
+  lightweight.inputs = metadata.inputs.map(toLightweightCreationInput);
   if (hasReplayPayload) {
     lightweight.replayPayloadInSidecar = true;
   }
@@ -510,8 +551,20 @@ export function prepareAssetForPersistence(
     createdAt: asset.createdAt,
   };
 
+  // An asset loaded from disk but never hydrated carries whatever the index
+  // held, which for a project written before selections were stripped is the
+  // full metadata. Compacting that copy is safe and is how older projects shed
+  // their duplication; writing the sidecar from it is not, because a hydrated
+  // sidecar is the only place the stripped payload survives.
+  const isUnhydrated = Boolean(asset.metadataRef) && asset.metadataLoaded === false;
+
   if (shouldSplitCreationMetadata(asset.creationMetadata)) {
     entry.creationMetadata = toLightweightCreationMetadata(asset.creationMetadata);
+    if (isUnhydrated) {
+      entry.metadataRef = asset.metadataRef;
+      return { entry };
+    }
+
     entry.metadataRef = assetMetadataRef(asset.id);
     return {
       entry,

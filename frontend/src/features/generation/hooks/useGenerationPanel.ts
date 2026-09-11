@@ -10,7 +10,7 @@ import {
   createPointTimelineSelection,
   createTimelineSelection,
   getDefaultSelectionEnd,
-  getTimelineSelectionFromAsset,
+  getTimelineSelectionStartFromAsset,
   useTimelineSelectionStore,
 } from "../../timelineSelection";
 import { useGenerationStore } from "../useGenerationStore";
@@ -2417,15 +2417,15 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
   const sendableAssets = useMemo(() => {
     return importedAssets.filter(
-      (asset) => getTimelineSelectionFromAsset(asset) !== null,
+      (asset) => getTimelineSelectionStartFromAsset(asset) !== null,
     );
   }, [importedAssets]);
 
   const handleSendToTimeline = useCallback(() => {
     for (const asset of sendableAssets) {
-      const selection = getTimelineSelectionFromAsset(asset);
-      if (selection) {
-        insertAssetAtTime(asset, selection.start);
+      const start = getTimelineSelectionStartFromAsset(asset);
+      if (start !== null) {
+        insertAssetAtTime(asset, start);
       }
     }
   }, [sendableAssets]);

@@ -6,6 +6,7 @@ import {
 } from "../services/ProjectPersistenceService";
 import { fileSystemService } from "../services/FileSystemService";
 import {
+  ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
   COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
   TIMELINE_DOCUMENT_SCHEMA_VERSION,
@@ -15,6 +16,7 @@ import {
   ADJUSTMENT_DEPTH_ALL,
   ADJUSTMENT_RETIMING_RIPPLE,
 } from "../../../types/TimelineTypes";
+import type { CreationMetadata } from "../../../types/Asset";
 
 vi.mock("../services/FileSystemService", () => ({
   fileSystemService: {
@@ -388,6 +390,7 @@ describe("ProjectPersistenceService", () => {
     expect(persistedProxy.creationMetadata).toEqual({
       source: "composite",
       compositeClipId: "clip-composite-1",
+      timelineSelectionStart: 0,
       contentHash: "content-hash-1",
     });
     expect(persistedProxy.metadataRef).toBe("asset-metadata/proxy-1.json");
@@ -400,6 +403,100 @@ describe("ProjectPersistenceService", () => {
       end: 100,
       clips: [],
     });
+  });
+
+  it("compacts a legacy index entry on the next unrelated asset edit", async () => {
+    // The shape a pre-strip project left on disk: the full selection inline in
+    // the index AND in the sidecar. Renaming the asset is enough to shed the
+    // index copy, which is how existing projects shrink without a migration.
+    const selection = {
+      start: 42,
+      end: 142,
+      clips: [
+        {
+          id: "legacy-clip",
+          trackId: "track-1",
+          type: "video" as const,
+          name: "Legacy",
+          assetId: "asset-1",
+          sourceDuration: 100,
+          transformedDuration: 100,
+          transformedOffset: 0,
+          timelineDuration: 100,
+          croppedSourceDuration: 100,
+          offset: 0,
+          start: 0,
+          transformations: [],
+        },
+      ],
+    };
+    const fullMetadata: CreationMetadata = {
+      source: "generated",
+      workflowName: "Workflow",
+      inputs: [
+        { nodeId: "3", kind: "timelineSelection", timelineSelection: selection },
+      ],
+      comfyuiWorkflow: { nodes: [] },
+    };
+
+    files.set(
+      ".vloproject/assets.json",
+      JSON.stringify({
+        ...assetIndex,
+        assets: {
+          "legacy-1": {
+            id: "legacy-1",
+            hash: "hash-legacy",
+            name: "legacy.mp4",
+            type: "video",
+            src: "legacy.mp4",
+            createdAt: 1,
+            creationMetadata: fullMetadata,
+            metadataRef: "asset-metadata/legacy-1.json",
+          },
+        },
+      }),
+    );
+    files.set(
+      ".vloproject/asset-metadata/legacy-1.json",
+      JSON.stringify({
+        documentType: "vlo.assetMetadata",
+        schemaVersion: ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
+        assetId: "legacy-1",
+        updated_at: 1,
+        creationMetadata: fullMetadata,
+      }),
+    );
+
+    await projectPersistenceService.persistAssetEntry({
+      id: "legacy-1",
+      hash: "hash-legacy",
+      name: "renamed.mp4",
+      type: "video",
+      src: "legacy.mp4",
+      createdAt: 1,
+      metadataRef: "asset-metadata/legacy-1.json",
+      metadataLoaded: false,
+      creationMetadata: fullMetadata,
+    });
+
+    const persisted = JSON.parse(files.get(".vloproject/assets.json") ?? "{}");
+    const entry = persisted.assets["legacy-1"];
+    expect(entry.name).toBe("renamed.mp4");
+    expect(entry.creationMetadata.inputs).toEqual([
+      { nodeId: "3", kind: "timelineSelection", timelineSelectionStart: 42 },
+    ]);
+    expect(JSON.stringify(entry)).not.toContain("legacy-clip");
+    expect(entry.metadataRef).toBe("asset-metadata/legacy-1.json");
+
+    // The sidecar is the payload's only remaining home, so it must be intact.
+    const sidecar = JSON.parse(
+      files.get(".vloproject/asset-metadata/legacy-1.json") ?? "{}",
+    );
+    expect(sidecar.creationMetadata.inputs[0].timelineSelection).toEqual(
+      selection,
+    );
+    expect(sidecar.creationMetadata.comfyuiWorkflow).toEqual({ nodes: [] });
   });
 
   it("rejects an invalid v3 manifest without overwriting files", async () => {
@@ -965,6 +1062,157 @@ describe("ProjectPersistenceService", () => {
       creationMetadata: { source: "composite" },
     });
     expect(lightweightComposite.sidecarMetadata).toBeUndefined();
+  });
+
+  it("strips selection bodies out of the asset index", () => {
+    const selection = {
+      start: 42,
+      end: 142,
+      clips: Array.from({ length: 8 }, (_, index) => ({
+        id: `clip-${index}`,
+        trackId: "track-1",
+        type: "video" as const,
+        name: `Clip ${index}`,
+        assetId: "asset-1",
+        sourceDuration: 100,
+        transformedDuration: 100,
+        transformedOffset: 0,
+        timelineDuration: 100,
+        croppedSourceDuration: 100,
+        offset: 0,
+        start: index * 100,
+        transformations: [],
+      })),
+    };
+
+    const generated = prepareAssetForPersistence({
+      id: "generated-selection",
+      hash: "hash",
+      name: "Generated",
+      type: "video",
+      src: "generated.mp4",
+      createdAt: 1,
+      creationMetadata: {
+        source: "generated",
+        workflowName: "Workflow",
+        inputs: [
+          { nodeId: "3", kind: "timelineSelection", timelineSelection: selection },
+          { nodeId: "4", kind: "draggedAsset", parentAssetId: "asset-2" },
+        ],
+      },
+    });
+
+    // The selection body is the single largest thing in a generated entry, so
+    // the index keeps only its start and defers the rest to the sidecar.
+    expect(generated.entry.creationMetadata).toMatchObject({
+      source: "generated",
+      inputs: [
+        { nodeId: "3", kind: "timelineSelection", timelineSelectionStart: 42 },
+        { nodeId: "4", kind: "draggedAsset", parentAssetId: "asset-2" },
+      ],
+    });
+    expect(JSON.stringify(generated.entry)).not.toContain("clip-0");
+    expect(generated.sidecarMetadata).toMatchObject({
+      inputs: [
+        { nodeId: "3", timelineSelection: selection },
+        { nodeId: "4", kind: "draggedAsset" },
+      ],
+    });
+    expect(generated.entry.metadataRef).toBe(
+      "asset-metadata/generated-selection.json",
+    );
+
+    const extracted = prepareAssetForPersistence({
+      id: "extracted-selection",
+      hash: "hash",
+      name: "Extracted",
+      type: "audio",
+      src: "extracted.wav",
+      createdAt: 1,
+      creationMetadata: {
+        source: "extracted",
+        timelineSelection: selection,
+        extractedAudioClip: {
+          sourceAssetId: "asset-1",
+          sourceClipType: "video",
+          timelineDuration: 100,
+          croppedSourceDuration: 100,
+          offset: 0,
+          transformedOffset: 0,
+          transformations: [],
+        },
+      },
+    });
+
+    expect(extracted.entry.creationMetadata).toMatchObject({
+      source: "extracted",
+      timelineSelectionStart: 42,
+      extractedAudioClip: { sourceAssetId: "asset-1" },
+    });
+    expect(JSON.stringify(extracted.entry)).not.toContain("clip-0");
+    expect(extracted.sidecarMetadata).toMatchObject({
+      timelineSelection: selection,
+    });
+  });
+
+  it("compacts an unhydrated asset's index copy without touching its sidecar", () => {
+    // A project written before selections were stripped holds the full body in
+    // both places. Re-persisting for an unrelated edit (a rename, a favourite)
+    // has to shed the index copy, which is how such projects shrink — but the
+    // sidecar is the only surviving home for the payload, so it stays as-is.
+    const unhydrated = prepareAssetForPersistence({
+      id: "generated-selection",
+      hash: "hash",
+      name: "Generated",
+      type: "video",
+      src: "generated.mp4",
+      createdAt: 1,
+      metadataRef: "asset-metadata/generated-selection.json",
+      metadataLoaded: false,
+      creationMetadata: {
+        source: "generated",
+        workflowName: "Workflow",
+        inputs: [
+          {
+            nodeId: "3",
+            kind: "timelineSelection",
+            timelineSelection: {
+              start: 42,
+              end: 142,
+              clips: [
+                {
+                  id: "legacy-clip",
+                  trackId: "track-1",
+                  type: "video",
+                  name: "Legacy",
+                  assetId: "asset-1",
+                  sourceDuration: 100,
+                  transformedDuration: 100,
+                  transformedOffset: 0,
+                  timelineDuration: 100,
+                  croppedSourceDuration: 100,
+                  offset: 0,
+                  start: 0,
+                  transformations: [],
+                },
+              ],
+            },
+          },
+        ],
+        replayPayloadInSidecar: true,
+      },
+    });
+
+    expect(unhydrated.entry.creationMetadata).toMatchObject({
+      inputs: [
+        { nodeId: "3", kind: "timelineSelection", timelineSelectionStart: 42 },
+      ],
+    });
+    expect(JSON.stringify(unhydrated.entry)).not.toContain("legacy-clip");
+    expect(unhydrated.sidecarMetadata).toBeUndefined();
+    expect(unhydrated.entry.metadataRef).toBe(
+      "asset-metadata/generated-selection.json",
+    );
   });
 
   it("updates cached manifest and timeline documents", async () => {

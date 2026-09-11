@@ -19,7 +19,7 @@ import {
   insertAssetAtTime,
   useTimelineClipCountForAsset,
 } from "../../timeline";
-import { getTimelineSelectionFromAsset } from "../../timelineSelection";
+import { getTimelineSelectionStartFromAsset } from "../../timelineSelection";
 import { useAssetStore } from "../useAssetStore";
 import { deleteAssetWithConfirmation } from "../utils/deleteAssetWithConfirmation";
 import { canRegenerateAsset, regenerateAsset } from "../assetRegenerator";
@@ -206,7 +206,7 @@ function AssetCardContent({
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
   const updateAsset = useAssetStore((state) => state.updateAsset);
   const timelineClipCount = useTimelineClipCountForAsset(asset.id);
-  const timelineSelection = getTimelineSelectionFromAsset(asset);
+  const timelineSelectionStart = getTimelineSelectionStartFromAsset(asset);
   const canRegenerate = canRegenerateAsset(asset);
   const canDeleteAll = Boolean(asset.familyId && onDeleteAll);
   const canShowFamily = Boolean(asset.familyId && onShowFamily);
@@ -240,12 +240,12 @@ function AssetCardContent({
 
   const handleSendToTimeline = useCallback(() => {
     handleCloseMenu();
-    if (!timelineSelection) {
+    if (timelineSelectionStart === null) {
       return;
     }
 
-    insertAssetAtTime(asset, timelineSelection.start);
-  }, [asset, handleCloseMenu, timelineSelection]);
+    insertAssetAtTime(asset, timelineSelectionStart);
+  }, [asset, handleCloseMenu, timelineSelectionStart]);
 
   const handleRegenerate = useCallback(async () => {
     handleCloseMenu();
@@ -311,7 +311,7 @@ function AssetCardContent({
           } satisfies HostMenuItemDescriptor,
         ]
       : []),
-    ...(timelineSelection
+    ...(timelineSelectionStart !== null
       ? [
           {
             kind: "action",
