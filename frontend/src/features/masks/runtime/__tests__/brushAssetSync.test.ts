@@ -30,7 +30,10 @@ const {
   mockDeleteAsset: vi.fn(),
 }));
 
-vi.mock("../brushBufferRegistry", () => ({
+// Only the stateful registry functions are stubbed — `isBrushBufferExplicitlyEmpty`
+// is a pure predicate and stays real so these tests exercise the actual rule.
+vi.mock("../brushBufferRegistry", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../brushBufferRegistry")>()),
   disposeBrushBuffer: mockDisposeBrushBuffer,
   extractBrushPng: mockExtractBrushPng,
   getBrushBufferRevision: mockGetBrushBufferRevision,
@@ -155,6 +158,73 @@ describe("brushAssetSync", () => {
     expect(updatedMask?.brushPaintedBounds).toBeUndefined();
     expect(mockDeleteAsset).toHaveBeenCalledWith("brush-asset-1");
     expect(mockAddLocalAsset).not.toHaveBeenCalled();
+  });
+
+  it("persists an explicit clear even when the GPU readback fails", async () => {
+    // Regression: the readback ran outside the try/catch, so a throw both
+    // surfaced as an unhandled rejection on the `void` lifecycle callers and
+    // abandoned the commit — leaving the stale asset id and bounds persisted,
+    // so the cleared mask came back on the next buffer rebuild or reload.
+    // A cleared buffer already records its emptiness; there is nothing to read.
+    const persistedBounds = { x: 10, y: 12, width: 50, height: 60 };
+    const brushMask = createBrushMaskClip("brush-asset-1", persistedBounds);
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [createTrack("track_1")],
+      clips: [createParentClip(brushMask.id), brushMask],
+    });
+
+    mockIsBrushBufferDirty.mockReturnValue(true);
+    // The state `clearBrushBuffer` leaves behind: dirty, with no bounds.
+    mockGetBrushBuffer.mockReturnValue({ dirty: true, paintedBounds: null });
+    mockRecalculateBrushPaintedBounds.mockRejectedValue(
+      new Error("extract failed"),
+    );
+
+    await expect(flushBrushMaskCommit(brushMask.id)).resolves.toBeUndefined();
+
+    expect(mockRecalculateBrushPaintedBounds).not.toHaveBeenCalled();
+    const updatedMask = useTimelineStore
+      .getState()
+      .clips.find((clip): clip is MaskTimelineClip => clip.id === brushMask.id);
+    expect(updatedMask?.brushMaskAssetId).toBeUndefined();
+    expect(updatedMask?.brushPaintedBounds).toBeUndefined();
+    expect(mockDeleteAsset).toHaveBeenCalledWith("brush-asset-1");
+    expect(mockMarkBrushBufferClean).toHaveBeenCalledWith(brushMask.id, null);
+  });
+
+  it("keeps a painted buffer dirty when the GPU readback throws", async () => {
+    // A readback failure on a painted buffer must abort rather than guess at a
+    // footprint — but it must not reject, and it must leave the buffer dirty so
+    // a later flush retries.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const persistedBounds = { x: 0, y: 0, width: 80, height: 80 };
+    const brushMask = createBrushMaskClip("brush-asset-1", persistedBounds);
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [createTrack("track_1")],
+      clips: [createParentClip(brushMask.id), brushMask],
+    });
+
+    mockIsBrushBufferDirty.mockReturnValue(true);
+    mockGetBrushBuffer.mockReturnValue({
+      dirty: true,
+      paintedBounds: persistedBounds,
+    });
+    mockRecalculateBrushPaintedBounds.mockRejectedValue(
+      new Error("extract failed"),
+    );
+
+    await expect(flushBrushMaskCommit(brushMask.id)).resolves.toBeUndefined();
+
+    const updatedMask = useTimelineStore
+      .getState()
+      .clips.find((clip): clip is MaskTimelineClip => clip.id === brushMask.id);
+    expect(updatedMask?.brushMaskAssetId).toBe("brush-asset-1");
+    expect(updatedMask?.brushPaintedBounds).toEqual(persistedBounds);
+    expect(mockMarkBrushBufferClean).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("does not create an orphan asset when flushing a deleted brush mask", async () => {

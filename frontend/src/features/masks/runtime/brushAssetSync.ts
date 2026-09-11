@@ -18,6 +18,7 @@ import {
   getBrushBuffer,
   getBrushBufferRevision,
   isBrushBufferDirty,
+  isBrushBufferExplicitlyEmpty,
   isBrushBufferRevision,
   markBrushBufferClean,
   recalculateBrushPaintedBounds,
@@ -155,17 +156,31 @@ export async function flushBrushMaskCommit(maskClipId: string): Promise<void> {
       return;
     }
     const previousAssetId = maskClip?.brushMaskAssetId;
-    const paintedBounds =
-      (await recalculateBrushPaintedBounds(maskClipId)) ??
-      getBrushBuffer(maskClipId)?.paintedBounds ??
-      null;
-    if (!isStillCurrent()) return;
-    const hasPaintedBounds =
-      !!paintedBounds &&
-      paintedBounds.width > 0 &&
-      paintedBounds.height > 0;
 
     try {
+      // An explicitly cleared buffer already *records* its emptiness, so there
+      // is nothing to measure. Reading the GPU back to re-derive "nothing is
+      // painted" can only fail — and a failure here used to escape this block
+      // entirely, surfacing as an unhandled rejection on the `void` lifecycle
+      // callers and leaving the stale asset id and bounds persisted, so the
+      // cleared mask reappeared on the next buffer rebuild or project load.
+      //
+      // A readback failure on a *painted* buffer still aborts the commit: the
+      // buffer stays dirty and a later flush retries, which is far better than
+      // guessing at a footprint and persisting the wrong one.
+      const paintedBounds = isBrushBufferExplicitlyEmpty(
+        getBrushBuffer(maskClipId),
+      )
+        ? null
+        : ((await recalculateBrushPaintedBounds(maskClipId)) ??
+          getBrushBuffer(maskClipId)?.paintedBounds ??
+          null);
+      if (!isStillCurrent()) return;
+      const hasPaintedBounds =
+        !!paintedBounds &&
+        paintedBounds.width > 0 &&
+        paintedBounds.height > 0;
+
       const committedAssetId = await commitBrushMaskAsset(
         parsed.clipId,
         maskClipId,
