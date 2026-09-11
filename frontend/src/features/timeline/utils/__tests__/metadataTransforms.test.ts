@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import { useProjectStore } from "../../../project/useProjectStore";
+import { computeMaskCrop } from "../../../generation/processing";
+import { applyTransformStack } from "../../../transformations/applyTransformations";
 import { TICKS_PER_SECOND } from "../../constants";
 import { createClipFromAsset } from "../clipFactory";
 import { deriveClipTransformsFromAsset } from "../metadataTransforms";
@@ -85,7 +87,7 @@ describe("metadataTransforms", () => {
     });
 
     const transforms = deriveClipTransformsFromAsset(asset, {
-      fallbackContainerSize: { width: 1920, height: 1080 },
+      logicalContainerSize: { width: 1920, height: 1080 },
     });
 
     expect(transforms).toEqual([
@@ -106,6 +108,69 @@ describe("metadataTransforms", () => {
       }),
     ]);
   });
+
+  it.each([360, 720, 1080, 2160])(
+    "realigns a circle patch captured at %ip after workflow resizing",
+    (captureHeight) => {
+      const captureWidth = (captureHeight * 16) / 9;
+      const circleX = captureWidth / 4;
+      const circleY = captureHeight / 3;
+      const radius = captureHeight / 10;
+      const crop = computeMaskCrop(
+        [circleX - radius, circleY - radius, circleX + radius, circleY + radius],
+        captureWidth,
+        captureHeight,
+        16 / 9,
+        0.1,
+      );
+      expect(crop).not.toBeNull();
+      const [x1, y1, x2, y2] = crop!;
+      const clip = createClipFromAsset(
+        createAsset({
+          creationMetadata: {
+            source: "generated",
+            workflowName: "MiniMax inpaint FLF2VA",
+            inputs: [],
+            maskCropMetadata: {
+              mode: "cropped",
+              crop_position: [x1, y1],
+              crop_size: [x2 - x1, y2 - y1],
+              container_size: [captureWidth, captureHeight],
+              scale:
+                Math.hypot(x2 - x1, y2 - y1) /
+                Math.hypot(captureWidth, captureHeight),
+            },
+          },
+        }),
+      );
+
+      // ComfyUI stretches the cropped patch to the requested output size.
+      // Check its actual timeline layout, including the renderer's base fit.
+      const output = { width: 1280, height: 720 };
+      const { state } = applyTransformStack(
+        clip.transformations,
+        {
+          container: { width: 1920, height: 1080 },
+          content: output,
+        },
+        0,
+        { notifyLiveParams: false },
+      );
+      const patchLeft = state.x - (output.width * state.scaleX) / 2;
+      const patchTop = state.y - (output.height * state.scaleY) / 2;
+      const mappedCircleX =
+        patchLeft +
+        ((circleX - x1) / (x2 - x1)) * output.width * state.scaleX;
+      const mappedCircleY =
+        patchTop +
+        ((circleY - y1) / (y2 - y1)) * output.height * state.scaleY;
+
+      expect(mappedCircleX).toBeCloseTo(480, 2);
+      expect(mappedCircleY).toBeCloseTo(360, 2);
+      expect(patchLeft).toBeCloseTo((x1 / captureWidth) * 1920, 2);
+      expect(patchTop).toBeCloseTo((y1 / captureHeight) * 1080, 2);
+    },
+  );
 
   it("returns no transforms when no crop-derived placement exists", () => {
     const asset = createAsset({

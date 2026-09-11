@@ -96,11 +96,11 @@ export async function processIframeTimelineSelection(
     );
   }
 
-  // Render (and later crop) at the project's own render dimensions, matching
+  // Render (and later crop) at the selection's render dimensions, matching
   // the backend which crops the uploaded input `before_upload` at native dims.
   // Strided resizing is a separate, later step (below), so the crop is taken
-  // from full-fidelity project pixels and the mask-crop metadata is emitted in
-  // project (== logical) space — keeping timeline placement correct.
+  // from selection pixels. Crop metadata retains that pixel coordinate space;
+  // timeline insertion maps it back to the project's logical stage.
   const rendered = await deps.renderWithMask(timelineSelection, "binary", {
     signal: options.signal,
     sourceVideoTreatment: "preserve_transparency",

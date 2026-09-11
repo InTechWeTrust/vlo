@@ -35,7 +35,7 @@ export const createClipFromAsset = (asset: Asset): BaseClip => {
   const transformations =
     metadataClipState?.transformations ??
     deriveClipTransformsFromAsset(asset, {
-      fallbackContainerSize: getProjectDimensions(aspectRatio),
+      logicalContainerSize: getProjectDimensions(aspectRatio),
     });
 
   return {

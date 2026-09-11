@@ -12,7 +12,8 @@ interface Size {
 }
 
 export interface DeriveClipTransformsOptions {
-  fallbackContainerSize?: Size;
+  /** Timeline coordinate space; also the fallback for legacy crop metadata. */
+  logicalContainerSize?: Size;
 }
 
 export interface DerivedExtractedAudioClipState {
@@ -99,15 +100,19 @@ function deriveGeneratedMaskCropTransforms(
 
   const cropGeometry = resolveCropGeometry(
     metadata.maskCropMetadata,
-    options.fallbackContainerSize,
+    options.logicalContainerSize,
   );
   if (!cropGeometry) return [];
 
   const { containerSize, cropSize, cropPosition } = cropGeometry;
+  const logicalSize = options.logicalContainerSize ?? containerSize;
   const cropCenterX = cropPosition.x + cropSize.width / 2;
   const cropCenterY = cropPosition.y + cropSize.height / 2;
-  const deltaX = cropCenterX - containerSize.width / 2;
-  const deltaY = cropCenterY - containerSize.height / 2;
+  // Crop metadata uses selection-render pixels, while position transforms use
+  // the project's fixed-height logical stage. Selection/output resolution can
+  // differ from that stage even when the aspect ratio is identical.
+  const deltaX = (cropCenterX / containerSize.width - 0.5) * logicalSize.width;
+  const deltaY = (cropCenterY / containerSize.height - 0.5) * logicalSize.height;
   const scaleX = cropSize.width / containerSize.width;
   const scaleY = cropSize.height / containerSize.height;
 
