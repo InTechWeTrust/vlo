@@ -1,5 +1,8 @@
 import { tickToMediaSeconds } from "../../../core/time";
 import { captureVideoFrameFile } from "../../../core/media";
+import type { Asset } from "../../../types/Asset";
+import { addLocalAsset, getAssets } from "../../userAssets/api";
+import { resolveExistingAssetForExternalDrop } from "./externalDropAsset";
 import {
   useMiniEditorStore,
   type ResolvedEditorSource,
@@ -9,7 +12,7 @@ interface DroppedVideoFrameExtractionOptions {
   inputId: string;
   title: string;
   prepare: () => Promise<ResolvedEditorSource>;
-  setMediaInputFrame: (inputId: string, file: File) => void;
+  setMediaInputAsset: (inputId: string, asset: Asset) => void;
 }
 
 /**
@@ -20,7 +23,7 @@ export async function openDroppedVideoFrameExtraction({
   inputId,
   title,
   prepare,
-  setMediaInputFrame,
+  setMediaInputAsset,
 }: DroppedVideoFrameExtractionOptions): Promise<void> {
   const openerId = `generation-image-drop:${inputId}`;
   const onExtractFrame = async (
@@ -39,8 +42,35 @@ export async function openDroppedVideoFrameExtraction({
     ) {
       return;
     }
-    setMediaInputFrame(inputId, frame);
-    current.close();
+    // A bare frame File has no replay identity. Persist the captured pixels
+    // through normal asset ingestion before making the slot ready to submit.
+    const ingestedAsset = await addLocalAsset(
+      frame,
+      source.assetId
+        ? {
+            source: "asset_excerpt",
+            parentAssetId: source.assetId,
+            kind: "frame",
+            startTicks: playheadTicks,
+            endTicks: playheadTicks,
+          }
+        : { source: "uploaded" },
+    );
+    const asset =
+      ingestedAsset ??
+      (await resolveExistingAssetForExternalDrop(frame, getAssets()));
+    if (!asset) {
+      throw new Error("Could not save the extracted frame for regeneration.");
+    }
+    const latest = useMiniEditorStore.getState();
+    if (
+      latest._internal.openerId !== openerId ||
+      latest._internal.onExtractFrame !== onExtractFrame
+    ) {
+      return;
+    }
+    setMediaInputAsset(inputId, asset);
+    latest.close();
   };
 
   await useMiniEditorStore.getState().open({

@@ -20,6 +20,38 @@ function makeInput(overrides: Partial<WorkflowInput>): WorkflowInput {
 }
 
 describe("workflowInputCarryover", () => {
+  it.each([false, true])(
+    "moves video-backed audio to another workflow only when prepared (%s)",
+    (prepared) => {
+      const previous = makeInput({
+        nodeId: "85",
+        inputType: "audio",
+        classType: "LoadAudio",
+        param: "audio",
+        label: "Audio",
+      });
+      const next = { ...previous, nodeId: "95" };
+      const value = {
+        kind: "asset" as const,
+        asset: {
+          id: "video",
+          hash: "video-hash",
+          name: "video.mp4",
+          type: "video" as const,
+          src: "video.mp4",
+          createdAt: 0,
+        },
+        isExtracting: !prepared,
+        extractedAudioFile: prepared
+          ? new File(["audio"], "audio.wav", { type: "audio/wav" })
+          : null,
+      };
+      expect(carryOverMediaInputs(
+        [previous], { "85:audio": value }, [next],
+      )).toEqual(prepared ? { "95:audio": value } : {});
+    },
+  );
+
   it("carries prompt values across workflow switches by semantic label", () => {
     const previousInputs: WorkflowInput[] = [
       makeInput({

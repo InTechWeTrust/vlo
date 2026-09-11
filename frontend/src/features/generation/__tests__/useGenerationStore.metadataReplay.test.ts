@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   renderTimelineSelectionToMp4WithDerivedMasks: vi.fn(),
   pickPrimaryPreparedMaskFile: vi.fn(),
   extractAudioFromSelection: vi.fn(),
+  extractAudioFromVideo: vi.fn(),
   createAudioSelectionPlaceholderFile: vi.fn(),
   injectWorkflowAndRead: vi.fn(),
 }));
@@ -25,7 +26,14 @@ vi.mock("../utils/inputSelection", () => ({
 
 vi.mock("../utils/manualSlotMedia", () => ({
   extractAudioFromSelection: mocks.extractAudioFromSelection,
+  extractAudioFromVideo: mocks.extractAudioFromVideo,
   createAudioSelectionPlaceholderFile: mocks.createAudioSelectionPlaceholderFile,
+}));
+
+vi.mock("../utils/mediaInputAssets", () => ({
+  resolveAssetFileForGeneration: vi.fn(async () =>
+    new File(["video"], "selection.mp4", { type: "video/mp4" }),
+  ),
 }));
 
 vi.mock("../services/workflowSyncController", () => ({
@@ -60,6 +68,7 @@ describe("useGenerationStore metadata replay", () => {
     mocks.renderTimelineSelectionToMp4WithDerivedMasks.mockReset();
     mocks.pickPrimaryPreparedMaskFile.mockReset();
     mocks.extractAudioFromSelection.mockReset();
+    mocks.extractAudioFromVideo.mockReset();
     mocks.createAudioSelectionPlaceholderFile.mockReset();
     mocks.injectWorkflowAndRead.mockReset();
 
@@ -841,6 +850,99 @@ describe("useGenerationStore metadata replay", () => {
       isExtracting: false,
     });
   });
+
+  it.each([false, true])(
+    "keeps both saved audio references after workflow sync (extraction complete: %s)",
+    async (completeExtraction) => {
+      // Reduced from Vlo_Promo's vlo_minimax_inpaint_00004-audio_5.mp4:
+      // the first audio reference is a video, the second is an audio asset.
+      const video: Asset = {
+        id: "f9866698-b17e-4695-b7ae-499ccf353111",
+        hash: "video-hash",
+        name: "selection-1789048477993.mp4",
+        src: "selection-1789048477993.mp4",
+        type: "video",
+        hasAudio: true,
+        createdAt: 0,
+      };
+      const audio: Asset = {
+        id: "41b7bb74-6279-41f5-9a49-21fca88268f6",
+        hash: "audio-hash",
+        name: "vlo_minimax_inpaint_00009-audio-audio.m4a",
+        src: "vlo_minimax_inpaint_00009-audio-audio.m4a",
+        type: "audio",
+        createdAt: 0,
+      };
+      const generated: Asset = {
+        ...video,
+        id: "generated-audio-batch",
+        creationMetadata: {
+          source: "generated",
+          workflowName: "MiniMax",
+          inputs: [video, audio].map((asset, index) => ({
+            nodeId: "85",
+            inputId: index === 0 ? "85:audios" : "85:audios::repeat::1",
+            kind: "draggedAsset",
+            parentAssetId: asset.id,
+          })),
+          replayState: {
+            version: 2,
+            workflowInputs: [{
+              id: "85:audios",
+              nodeId: "85",
+              classType: "vloMemoryLoadAudioBatch",
+              inputType: "audio",
+              param: "audios",
+              label: "Audio inputs",
+              origin: "rule",
+              repeatableMax: 3,
+            }],
+          },
+          comfyuiPrompt: {
+            "85": {
+              class_type: "vloMemoryLoadAudioBatch",
+              inputs: { audios: { __value__: [] } },
+            },
+          },
+        },
+      };
+      const extracted = new File(["audio"], "extracted.wav", { type: "audio/wav" });
+      let finishExtraction: (file: File) => void = () => {};
+      mocks.extractAudioFromVideo.mockReturnValue(new Promise<File>((resolve) => {
+        finishExtraction = resolve;
+      }));
+      useAssetStore.setState({ assets: [video, audio, generated] });
+      vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([]);
+
+      await useGenerationStore.getState().loadWorkflowFromAssetMetadata(generated);
+      if (completeExtraction) {
+        finishExtraction(extracted);
+        await vi.waitFor(() => {
+          expect(useGenerationStore.getState().mediaInputs["85:audios"])
+            .toMatchObject({ extractedAudioFile: extracted });
+        });
+      }
+      const restored = useGenerationStore.getState();
+      expect(Object.keys(restored.mediaInputs).sort()).toEqual([
+        "85:audios", "85:audios::repeat::1",
+      ]);
+
+      restored.syncWorkflow(
+        restored.syncedWorkflow!,
+        restored.syncedGraphData!,
+        restored.workflowInputs,
+      );
+
+      expect(useGenerationStore.getState().mediaInputs).toEqual(restored.mediaInputs);
+      if (!completeExtraction) {
+        finishExtraction(extracted);
+        await vi.waitFor(() => {
+          expect(useGenerationStore.getState().mediaInputs["85:audios"])
+            .toMatchObject({ extractedAudioFile: extracted, isExtracting: false });
+        });
+      }
+    },
+  );
 
   it("restores image timeline selections as frame captures", async () => {
     const restoredFrame = new File(["frame"], "frame.png", {

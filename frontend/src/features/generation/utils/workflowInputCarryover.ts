@@ -1,5 +1,6 @@
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import type { GenerationMediaInputValue, WorkflowInput } from "../types";
+import { canAudioSlotHoldAsset, isAudioSlotVideoAsset } from "./audioSlotAssets";
 import {
   buildRepeatableInputSlotId,
   buildWorkflowInputLookup,
@@ -170,7 +171,7 @@ function isDirectCompatibleMediaValue(
 
   if (inputType === "audio") {
     return (
-      (value.kind === "asset" && assetMatchesType(value.asset, "audio")) ||
+      (value.kind === "asset" && canAudioSlotHoldAsset(value.asset)) ||
       (value.kind === "timelineSelection" && value.mediaType === "audio")
     );
   }
@@ -187,6 +188,16 @@ function isHeuristicCompatibleMediaValue(
 ): value is GenerationMediaInputValue {
   if (!isDirectCompatibleMediaValue(inputType, value)) {
     return false;
+  }
+
+  if (
+    inputType === "audio" &&
+    value.kind === "asset" &&
+    isAudioSlotVideoAsset(value.asset)
+  ) {
+    // An in-flight extraction still writes to its original slot. Only move
+    // it to a different workflow input once the prepared audio is available.
+    return Boolean(value.extractedAudioFile) && !value.isExtracting;
   }
 
   if (value.kind !== "timelineSelection") {

@@ -527,7 +527,6 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const queueGeneration = useGenerationStore((s) => s.queueGeneration);
   const fetchWorkflows = useGenerationStore((s) => s.fetchWorkflows);
   const setMediaInputAsset = useGenerationStore((s) => s.setMediaInputAsset);
-  const setMediaInputFrame = useGenerationStore((s) => s.setMediaInputFrame);
   const setMediaInputFrameWithSelection = useGenerationStore(
     (s) => s.setMediaInputFrameWithSelection,
   );
@@ -1291,7 +1290,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         void openDroppedVideoFrameExtraction({
           inputId,
           title: asset.name,
-          setMediaInputFrame,
+          setMediaInputAsset,
           prepare: async () => {
             const file = await resolveAssetFileForGeneration(asset);
             const sourceUrl = URL.createObjectURL(file);
@@ -1300,7 +1299,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
                 typeof asset.duration === "number" && asset.duration > 0
                   ? mediaSecondsToTick(asset.duration)
                   : await probeVideoDurationTicks(sourceUrl);
-              return { sourceUrl, sourceFile: file, durationTicks };
+              return { assetId: asset.id, sourceUrl, sourceFile: file, durationTicks };
             } catch (error) {
               URL.revokeObjectURL(sourceUrl);
               throw error;
@@ -1311,7 +1310,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       }
       assignAssetToInput(inputId, asset);
     },
-    [assignAssetToInput, setMediaInputFrame, workflowInputById],
+    [assignAssetToInput, setMediaInputAsset, workflowInputById],
   );
 
   const handleExternalInputDrop = useCallback(
@@ -1323,7 +1322,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         await openDroppedVideoFrameExtraction({
           inputId,
           title: file.name,
-          setMediaInputFrame,
+          setMediaInputAsset,
           prepare: async () => {
             const sourceUrl = URL.createObjectURL(file);
             try {
@@ -1358,7 +1357,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
       assignAssetToInput(inputId, asset);
     },
-    [assignAssetToInput, setMediaInputFrame, workflowInputById],
+    [assignAssetToInput, setMediaInputAsset, workflowInputById],
   );
 
   /**
