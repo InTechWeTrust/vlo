@@ -71,7 +71,7 @@ import {
   upsertWorkflowOption,
 } from "./workflowCatalog";
 import { carryOverMediaInputs } from "../utils/workflowInputCarryover";
-import { pruneMediaInputs } from "./mediaInputState";
+import { pruneMediaInputs, revokePreviewUrl } from "./mediaInputState";
 import { getAssetById } from "../../userAssets/api";
 interface WorkflowStoreStateOptions {
   getNextWorkflowLoadRequestId: () => number;
@@ -121,6 +121,28 @@ const MAX_BRIDGE_LOAD_RETRIES = 3;
  * genuine workflow change still applies on the next poll.
  */
 const SUSPECT_RULE_LOSS_CONFIRMATION_THRESHOLD = 2;
+
+/**
+ * Throws away a held menu detour, releasing the object URLs it owns.
+ *
+ * Frame grabs and timeline selections carry blob URLs that nothing else
+ * revokes: the live map's own pruning runs against state the detour already
+ * emptied, so a snapshot discarded without this would keep its blobs alive for
+ * the rest of the session. Values the live map has since taken over are left
+ * alone — those are still on screen.
+ */
+function discardWorkflowCarryover(state: GenerationWorkflowState): null {
+  const carryover = state.pendingWorkflowCarryover;
+  if (!carryover) return null;
+
+  const liveValues = new Set(Object.values(state.mediaInputs));
+  for (const value of Object.values(carryover.mediaInputs)) {
+    if (value && liveValues.has(value)) continue;
+    revokePreviewUrl(value);
+  }
+
+  return null;
+}
 
 /**
  * Brings `targetResolution` in line with the workflow that just loaded.
@@ -356,6 +378,7 @@ export function buildWorkflowStoreState(
     iframeWorkflowInstanceId: null,
     iframeWorkflowRevision: null,
     workflowInputs: [],
+    workflowInputsSourceId: null,
     availableWorkflows: [],
     tempWorkflow: null,
     selectedWorkflowId: null,
@@ -407,7 +430,12 @@ export function buildWorkflowStoreState(
       // project's state on disk untouched rather than record a partial one.
       if (get().isRestoringPanelSnapshot) return;
       const session = openPanelRestoreSession();
-      set({ isRestoringPanelSnapshot: true });
+      // The snapshot is the authority on what this panel holds; whatever a
+      // menu detour was holding is not part of it.
+      set((state) => ({
+        isRestoringPanelSnapshot: true,
+        pendingWorkflowCarryover: discardWorkflowCarryover(state),
+      }));
 
       try {
         await get().loadWorkflow(snapshot.workflowId);
@@ -468,6 +496,8 @@ export function buildWorkflowStoreState(
       set((state) => ({
         pendingPanelSnapshot: null,
         isRestoringPanelSnapshot: false,
+        // Media values name assets of the project being closed.
+        pendingWorkflowCarryover: discardWorkflowCarryover(state),
         pendingReplayPanelState: null,
         panelValues: EMPTY_GENERATION_PANEL_VALUES,
         panelResetToken: state.panelResetToken + 1,
@@ -486,6 +516,7 @@ export function buildWorkflowStoreState(
         iframeWorkflowInstanceId: null,
         iframeWorkflowRevision: null,
         workflowInputs: [],
+        workflowInputsSourceId: null,
         hasInferredInputs: false,
         derivedMaskMappings: [],
         activeWorkflowRules: null,
@@ -512,6 +543,7 @@ export function buildWorkflowStoreState(
     setMaskCropDilation: (dilation: number) =>
       set({ maskCropDilation: Math.max(0, Math.min(0.5, dilation)) }),
     mediaInputs: {},
+    pendingWorkflowCarryover: null,
     pendingReplayPanelState: null,
     setPendingReplayPanelState: (pendingReplayPanelState) =>
       set({ pendingReplayPanelState }),
@@ -583,13 +615,33 @@ export function buildWorkflowStoreState(
       options.getNextWorkflowLoadRequestId();
       editorSyncGeneration += 1;
       bridgeLoadRetryCounts.clear();
+      const state = get();
+      // Back is a step on the way to another workflow, not an act of
+      // discarding what is filled in: the menu is only reachable through it.
+      // The live panel still has to be cleared — what it holds is published to
+      // extensions, and a deselected workflow must not keep publishing — so
+      // the carryover source moves aside rather than going away.
+      const holdsCarryoverSource = state.workflowInputs.length > 0;
+      if (holdsCarryoverSource) {
+        // Replacing a detour nothing ever consumed. Values the incoming one
+        // also holds are spared; the rest are this call's to release.
+        discardWorkflowCarryover(state);
+      }
       set({
+        pendingWorkflowCarryover: holdsCarryoverSource
+          ? {
+              workflowId: state.workflowInputsSourceId,
+              inputs: state.workflowInputs,
+              mediaInputs: state.mediaInputs,
+            }
+          : state.pendingWorkflowCarryover,
         selectedWorkflowId: null,
         syncedWorkflow: null,
         syncedGraphData: null,
         iframeWorkflowInstanceId: null,
         iframeWorkflowRevision: null,
         workflowInputs: [],
+        workflowInputsSourceId: null,
         mediaInputs: {},
         isWorkflowLoading: false,
         workflowLoadState: "idle",
@@ -653,6 +705,7 @@ export function buildWorkflowStoreState(
         iframeWorkflowInstanceId: bridgeIdentity?.workflowInstanceId ?? null,
         iframeWorkflowRevision: bridgeIdentity?.revision ?? null,
         workflowInputs: presented.inputs,
+        workflowInputsSourceId: currentState.selectedWorkflowId,
         hasInferredInputs: presented.hasInferredInputs,
         derivedMaskMappings: presented.derivedMaskMappings,
         workflowRuleWarnings,
@@ -661,6 +714,11 @@ export function buildWorkflowStoreState(
           currentState.workflowInputs,
           currentState.mediaInputs,
           presented.inputs,
+          {
+            sameWorkflow:
+              currentState.workflowInputsSourceId ===
+              currentState.selectedWorkflowId,
+          },
         ),
         ...(markReady
           ? {
@@ -889,6 +947,7 @@ export function buildWorkflowStoreState(
           iframeWorkflowInstanceId: bridgeIdentity?.workflowInstanceId ?? null,
           iframeWorkflowRevision: bridgeIdentity?.revision ?? null,
           workflowInputs: deferredPresented.inputs,
+          workflowInputsSourceId: currentState.selectedWorkflowId,
           hasInferredInputs: deferredPresented.hasInferredInputs,
           derivedMaskMappings: deferredPresented.derivedMaskMappings,
           workflowRuleWarnings: deferredRuleWarnings,
@@ -898,6 +957,11 @@ export function buildWorkflowStoreState(
             currentState.workflowInputs,
             currentState.mediaInputs,
             deferredPresented.inputs,
+            {
+              sameWorkflow:
+                currentState.workflowInputsSourceId ===
+                currentState.selectedWorkflowId,
+            },
           ),
           isWorkflowLoading: false,
           workflowLoadState: "ready",
@@ -951,6 +1015,7 @@ export function buildWorkflowStoreState(
           iframeWorkflowInstanceId: bridgeIdentity?.workflowInstanceId ?? null,
           iframeWorkflowRevision: bridgeIdentity?.revision ?? null,
           workflowInputs: presented.inputs,
+          workflowInputsSourceId: persistedWorkflowId,
           hasInferredInputs: presented.hasInferredInputs,
           derivedMaskMappings: presented.derivedMaskMappings,
           workflowRuleWarnings,
@@ -963,6 +1028,10 @@ export function buildWorkflowStoreState(
             currentState.workflowInputs,
             currentState.mediaInputs,
             presented.inputs,
+            {
+              sameWorkflow:
+                currentState.workflowInputsSourceId === persistedWorkflowId,
+            },
           ),
           selectedWorkflowId: persistedWorkflowId,
           availableWorkflows: nextAvailable,
@@ -994,6 +1063,7 @@ export function buildWorkflowStoreState(
         iframeWorkflowInstanceId: bridgeIdentity?.workflowInstanceId ?? null,
         iframeWorkflowRevision: bridgeIdentity?.revision ?? null,
         workflowInputs: presented.inputs,
+        workflowInputsSourceId: TEMP_WORKFLOW_ID,
         hasInferredInputs: presented.hasInferredInputs,
         derivedMaskMappings: presented.derivedMaskMappings,
         workflowRuleWarnings,
@@ -1006,6 +1076,10 @@ export function buildWorkflowStoreState(
           currentState.workflowInputs,
           currentState.mediaInputs,
           presented.inputs,
+          {
+            sameWorkflow:
+              currentState.workflowInputsSourceId === TEMP_WORKFLOW_ID,
+          },
         ),
         selectedWorkflowId: TEMP_WORKFLOW_ID,
         availableWorkflows: nextAvailable,
@@ -1106,6 +1180,25 @@ export function buildWorkflowStoreState(
         }, delayMs);
       };
 
+      // Put the outgoing workflow back the way a direct switch would have left
+      // it, so the carryover downstream has something to read. Only ever onto
+      // an empty panel: anything already filled in is either this workflow
+      // reloading or a restore that owns the panel, and both outrank a detour.
+      const carryover = get().pendingWorkflowCarryover;
+      if (carryover && get().workflowInputs.length === 0) {
+        set((state) => ({
+          workflowInputs: [...carryover.inputs],
+          workflowInputsSourceId: carryover.workflowId,
+          // A media preparation running when the menu opened finishes against
+          // the live map, which the detour left empty. Those completions are
+          // newer than the snapshot by definition, so they win — otherwise a
+          // finished extraction would be reinstated as still-extracting, with
+          // no task left to ever settle it.
+          mediaInputs: { ...carryover.mediaInputs, ...state.mediaInputs },
+          pendingWorkflowCarryover: null,
+        }));
+      }
+
       set({
         selectedWorkflowId: workflowId,
         isWorkflowLoading: true,
@@ -1200,6 +1293,7 @@ export function buildWorkflowStoreState(
             iframeWorkflowInstanceId: null,
             iframeWorkflowRevision: null,
             workflowInputs: presented.inputs,
+            workflowInputsSourceId: workflowId,
             hasInferredInputs: presented.hasInferredInputs,
             derivedMaskMappings: presented.derivedMaskMappings,
             workflowRuleWarnings: mergedWarnings,
@@ -1207,6 +1301,7 @@ export function buildWorkflowStoreState(
               state.workflowInputs,
               state.mediaInputs,
               presented.inputs,
+              { sameWorkflow: state.workflowInputsSourceId === workflowId },
             ),
           }));
         } else {
@@ -1366,6 +1461,11 @@ export function buildWorkflowStoreState(
 
     loadWorkflowFromAssetMetadata: async (asset) => {
       editorSyncGeneration += 1;
+      // Regenerating reproduces the run recorded on the asset, so it starts
+      // from that and not from whatever a menu detour was holding.
+      set((state) => ({
+        pendingWorkflowCarryover: discardWorkflowCarryover(state),
+      }));
       let assetWithMetadata = asset;
       try {
         const { ensureAssetMetadataLoaded } = await import("../../userAssets");

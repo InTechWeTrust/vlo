@@ -207,3 +207,136 @@ test.describe('Workflow menu', () => {
         ).toBeVisible();
     });
 });
+
+test.describe('Switching workflows', () => {
+    /** A one-node graph whose CLIPTextEncode the panel presents as a prompt. */
+    const promptGraph = (nodeId: number) => ({
+        nodes: [
+            {
+                id: nodeId,
+                type: 'CLIPTextEncode',
+                title: 'Prompt',
+                widgets_values: [''],
+            },
+        ],
+        links: [],
+    });
+
+    /** A sidecar presenting that node's prompt, as packaged workflows do. */
+    const promptRules = (nodeId: number) => ({
+        version: 3,
+        name: 'Fixture',
+        sections: [],
+        nodes: {
+            [String(nodeId)]: {
+                present: { label: 'Prompt', input_type: 'text', param: 'text' },
+            },
+        },
+        validation: { inputs: [] },
+        frontend_controls: {},
+        derived_widgets: [],
+        rewrites: [],
+        effect_switches: [],
+        slots: {},
+        media_fallbacks: [],
+        pipeline: [],
+    });
+
+    /**
+     * Two workflows carrying the same prompt on different nodes — which is what
+     * makes a switch between them a carryover rather than an identifier match.
+     * Both ship a sidecar, so the panel runs in rules mode as the packaged
+     * workflows do; manual mode derives its inputs from the graph instead.
+     */
+    async function installTwoPromptWorkflows(page: Parameters<typeof installApiMock>[0]) {
+        await installWebSocketMock(page);
+        await installApiMock(page, {
+            workflowList: [
+                { id: 'wf_alpha.json', name: 'Alpha' },
+                { id: 'wf_beta.json', name: 'Beta' },
+            ],
+        });
+        // Registered after the mock's own handlers, so these win.
+        await page.route('**/comfy/workflow/content/*', async (route) => {
+            if (route.request().method() === 'PUT') {
+                await route.fulfill({ status: 200 });
+                return;
+            }
+            const isBeta = route.request().url().includes('wf_beta');
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify(promptGraph(isBeta ? 31 : 11)),
+            });
+        });
+        await page.route('**/comfy/workflow/rules/*', async (route) => {
+            // Leave the resolve endpoint to the mock; this is the per-id fetch.
+            if (route.request().url().endsWith('/resolve')) {
+                await route.fallback();
+                return;
+            }
+            const isBeta = route.request().url().includes('wf_beta');
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    workflow_id: isBeta ? 'wf_beta.json' : 'wf_alpha.json',
+                    has_sidecar: true,
+                    rules: promptRules(isBeta ? 31 : 11),
+                    warnings: [],
+                }),
+            });
+        });
+    }
+
+    test('A prompt follows the user to the next workflow', async ({ page }) => {
+        await installTwoPromptWorkflows(page);
+
+        const { EditorComponent } = await import('./components');
+        const editor = new EditorComponent(page);
+        await editor.setup();
+        const { generationPanel } = editor;
+
+        await generationPanel.selectWorkflow('Alpha');
+        const prompt = generationPanel.panel.locator('textarea').first();
+        await expect(prompt).toBeVisible({ timeout: 15000 });
+        await prompt.fill('a comic book hero');
+
+        // Reaching a second workflow means Back, then the menu, then a pick.
+        // The panel is cleared in the middle of that, and the inputs a
+        // carryover matches against go with it.
+        await generationPanel.panel
+            .getByRole('button', { name: 'Back to workflow menu' })
+            .click();
+        await expect(generationPanel.workflowMenu).toBeVisible();
+        await generationPanel.selectWorkflow('Beta');
+
+        const carried = generationPanel.panel.locator('textarea').first();
+        await expect(carried).toBeVisible({ timeout: 15000 });
+        await expect(carried).toHaveValue('a comic book hero');
+    });
+
+    test('A prompt survives backing out and picking the same workflow', async ({ page }) => {
+        await installTwoPromptWorkflows(page);
+
+        const { EditorComponent } = await import('./components');
+        const editor = new EditorComponent(page);
+        await editor.setup();
+        const { generationPanel } = editor;
+
+        await generationPanel.selectWorkflow('Alpha');
+        const prompt = generationPanel.panel.locator('textarea').first();
+        await expect(prompt).toBeVisible({ timeout: 15000 });
+        await prompt.fill('a comic book hero');
+
+        await generationPanel.panel
+            .getByRole('button', { name: 'Back to workflow menu' })
+            .click();
+        await expect(generationPanel.workflowMenu).toBeVisible();
+        await generationPanel.selectWorkflow('Alpha');
+
+        const again = generationPanel.panel.locator('textarea').first();
+        await expect(again).toBeVisible({ timeout: 15000 });
+        await expect(again).toHaveValue('a comic book hero');
+    });
+});

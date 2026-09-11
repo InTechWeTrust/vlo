@@ -64,6 +64,14 @@ export interface PreviewAnimation {
   totalFrames: number;
 }
 
+/** The previous workflow's shape and values, held across a menu detour. */
+export interface WorkflowCarryoverState {
+  /** The workflow these belong to, so a reload of it can be told apart. */
+  workflowId: string | null;
+  inputs: readonly WorkflowInput[];
+  mediaInputs: Readonly<Record<string, GenerationMediaInputValue | null>>;
+}
+
 export interface WorkflowReplayPanelState {
   textValues: Record<string, string>;
   widgetValues: Record<string, string>;
@@ -114,6 +122,15 @@ export interface GenerationWorkflowState {
   iframeWorkflowInstanceId: string | null;
   iframeWorkflowRevision: number | null;
   workflowInputs: WorkflowInput[];
+  /**
+   * The workflow `workflowInputs` were read from.
+   *
+   * Node ids are workflow-local, so the same id means "the same input" only
+   * within one workflow — two workflows can hand the same id to inputs that
+   * mean different things. Carrying values over consults this to decide
+   * whether an identifier match is evidence of identity or a coincidence.
+   */
+  workflowInputsSourceId: string | null;
   availableWorkflows: WorkflowOption[];
   tempWorkflow: TempWorkflow | null;
   selectedWorkflowId: string | null;
@@ -161,6 +178,18 @@ export interface GenerationWorkflowState {
   maskCropDilation: number;
   setMaskCropDilation: (dilation: number) => void;
   mediaInputs: Record<string, GenerationMediaInputValue | null>;
+  /**
+   * What a detour through the workflow menu holds on behalf of whichever
+   * workflow is picked next.
+   *
+   * Reaching a second workflow means going back to the menu first, and Back
+   * clears the live panel — it has to, or the inputs of a workflow that is no
+   * longer selected would keep being published to extensions. Carryover still
+   * needs both halves of what was cleared: the values, and the inputs that
+   * describe them well enough to match. This holds them for exactly as long as
+   * that detour lasts.
+   */
+  pendingWorkflowCarryover: WorkflowCarryoverState | null;
   pendingReplayPanelState: WorkflowReplayPanelState | null;
   setPendingReplayPanelState: (state: WorkflowReplayPanelState | null) => void;
   clearPendingReplayPanelState: () => void;

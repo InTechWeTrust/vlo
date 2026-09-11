@@ -444,6 +444,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   // Slot values keyed by workflow input ID
   const [textValues, setTextValues] = useState<Record<string, string>>({});
   const previousTextWorkflowInputsRef = useRef<WorkflowInput[]>([]);
+  /** The workflow those inputs came from; node ids only mean identity within one. */
+  const previousTextWorkflowSourceIdRef = useRef<string | null>(null);
 
   // Widget state
   const [widgetValues, setWidgetValues] = useState<WidgetValueMap>({});
@@ -749,25 +751,36 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   }, [widgetValues]);
 
   useEffect(() => {
+    // Read the refs once, here, and hand the values to the updater. React runs
+    // an updater during the re-render, after this effect body has finished, so
+    // an updater that read a ref itself would find what was just written to it
+    // — matching the incoming workflow against itself and resolving every
+    // value to its default.
+    const previousInputs = previousTextWorkflowInputsRef.current;
+    const previousSourceId = previousTextWorkflowSourceIdRef.current;
+    if (workflowInputs.length > 0) {
+      previousTextWorkflowInputsRef.current = workflowInputs;
+      previousTextWorkflowSourceIdRef.current = selectedWorkflowId;
+    }
+
     setTextValues((prev) => {
-      if (workflowInputs.length === 0 && isWorkflowLoading) {
+      // Nothing to reconcile against yet. That covers a workflow mid-load and
+      // equally a step back to the menu, which is the only way to reach a
+      // second workflow — reconciling against no inputs at all would answer
+      // "no values", emptying the prompt the next workflow is meant to inherit.
+      if (workflowInputs.length === 0) {
         return prev;
       }
 
-      const next = carryOverTextValues(
-        previousTextWorkflowInputsRef.current,
-        prev,
-        workflowInputs,
-      );
+      const next = carryOverTextValues(previousInputs, prev, workflowInputs, {
+        sameWorkflow: previousSourceId === selectedWorkflowId,
+      });
       const changed =
         Object.keys(prev).length !== Object.keys(next).length ||
         Object.entries(next).some(([key, value]) => prev[key] !== value);
       return changed ? next : prev;
     });
-    if (workflowInputs.length > 0) {
-      previousTextWorkflowInputsRef.current = workflowInputs;
-    }
-  }, [isWorkflowLoading, workflowInputs]);
+  }, [selectedWorkflowId, workflowInputs]);
 
   // Reconcile widget values and randomize toggles when widget inputs change.
   //

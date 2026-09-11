@@ -2151,6 +2151,221 @@ describe("useGenerationStore workflow editor sync", () => {
     });
   });
 
+  it("carries panel media through the menu on the way to another workflow", async () => {
+    // Reaching a second workflow means Back, then the menu, then a pick. The
+    // panel is cleared in the middle of that, so the values have to survive
+    // the detour or switching workflows always starts from empty.
+    const reference = {
+      kind: "asset" as const,
+      asset: {
+        id: "ref",
+        hash: "ref",
+        name: "ref.mp4",
+        type: "video" as const,
+        src: "assets/ref.mp4",
+        createdAt: 1,
+      },
+    };
+    const second = {
+      kind: "asset" as const,
+      asset: {
+        id: "ref2",
+        hash: "ref2",
+        name: "ref2.mp4",
+        type: "video" as const,
+        src: "assets/ref2.mp4",
+        createdAt: 2,
+      },
+    };
+    const inputNodeMap = {
+      VLOMemoryLoadVideo: [{ inputType: "video" as const, param: "file" }],
+    };
+    const rawObjectInfo = {
+      VLOMemoryLoadVideo: {
+        display_name: "Load Video",
+        input: { required: { file: ["STRING", {}] } },
+        input_order: { required: ["file"] },
+      },
+    };
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "a.json",
+      workflowInputs: [
+        {
+          nodeId: "129",
+          classType: "vloMemoryLoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Load Video",
+          currentValue: null,
+          origin: "inferred",
+          presentation: { repeatable: { max: 3 } },
+        },
+      ],
+      mediaInputs: {
+        "129:file": reference,
+        "129:file::repeat::1": second,
+      },
+      inputNodeMap,
+      rawObjectInfo,
+    });
+
+    useGenerationStore.getState().clearWorkflowSelection();
+
+    // The live panel is empty — a deselected workflow must not keep publishing
+    // its inputs — but the detour is holding what the next workflow inherits.
+    expect(useGenerationStore.getState()).toMatchObject({
+      workflowInputs: [],
+      mediaInputs: {},
+    });
+    expect(
+      useGenerationStore.getState().pendingWorkflowCarryover?.mediaInputs,
+    ).toEqual({
+      "129:file": reference,
+      "129:file::repeat::1": second,
+    });
+
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      nodes: [
+        {
+          id: 133,
+          type: "vloMemoryLoadVideo",
+          title: "Load Video",
+          widgets_values: ["memory-video-1"],
+        },
+      ],
+      links: [],
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "b.json",
+      has_sidecar: true,
+      rules: {
+        ...createDefaultWorkflowRules(),
+        nodes: {
+          "133": {
+            present: {
+              label: "Load Video",
+              input_type: "video",
+              param: "file",
+              repeatable: { max: 3 },
+            },
+          },
+        },
+      },
+      warnings: [],
+    });
+
+    await useGenerationStore.getState().loadWorkflow("b.json");
+
+    const state = useGenerationStore.getState();
+    // The whole batch, not just its first item.
+    expect(state.mediaInputs).toEqual({
+      "133:file": reference,
+      "133:file::repeat::1": second,
+    });
+    // Spent on arrival: a later reload of this workflow reconciles against
+    // what the panel holds now, not against a detour that is over.
+    expect(state.pendingWorkflowCarryover).toBeNull();
+  });
+
+  it("lets a preparation that finished during the detour win over the snapshot", async () => {
+    // Extraction writes back to the live map, which Back left empty. The
+    // snapshot predates that write, so reinstating it wholesale would restore
+    // a finished selection as still-extracting, with no task left to settle it.
+    const extracting = {
+      kind: "timelineSelection" as const,
+      mediaType: "video" as const,
+      timelineSelection: { clips: [] },
+      thumbnailUrl: "blob:thumb",
+      preparedVideoFile: null,
+      isExtracting: true,
+    } as never;
+    const finished = {
+      ...(extracting as object),
+      preparedVideoFile: new File(["v"], "v.mp4"),
+      isExtracting: false,
+    } as never;
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "a.json",
+      workflowInputsSourceId: "a.json",
+      workflowInputs: [
+        {
+          nodeId: "129",
+          classType: "vloMemoryLoadVideo",
+          inputType: "video",
+          param: "file",
+          label: "Load Video",
+          currentValue: null,
+          origin: "inferred",
+        },
+      ],
+      mediaInputs: { "129:file": extracting },
+    });
+
+    useGenerationStore.getState().clearWorkflowSelection();
+    // The extraction settles while the menu is open.
+    useGenerationStore.setState({ mediaInputs: { "129:file": finished } });
+
+    vi.spyOn(comfyApi, "getWorkflowContent").mockResolvedValue({
+      nodes: [{ id: 129, type: "vloMemoryLoadVideo", title: "Load Video" }],
+      links: [],
+    });
+    vi.spyOn(comfyApi, "getWorkflowRules").mockResolvedValue({
+      workflow_id: "a.json",
+      has_sidecar: true,
+      rules: createDefaultWorkflowRules(),
+      warnings: [],
+    });
+
+    await useGenerationStore.getState().loadWorkflow("a.json");
+
+    expect(useGenerationStore.getState().mediaInputs["129:file"]).toBe(finished);
+  });
+
+  it("releases the object URLs of a detour it throws away", () => {
+    const revoke = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+
+    useGenerationStore.setState({
+      selectedWorkflowId: "a.json",
+      workflowInputsSourceId: "a.json",
+      workflowInputs: makeInputs(),
+      mediaInputs: {
+        "1:image": {
+          kind: "frame",
+          previewUrl: "blob:frame-preview",
+        } as never,
+      },
+    });
+    useGenerationStore.getState().clearWorkflowSelection();
+
+    // Back moved the value out of the live map, so the live map's own pruning
+    // can no longer see it — discarding the detour has to release it.
+    useGenerationStore.getState().clearPanelForProjectChange();
+
+    expect(revoke).toHaveBeenCalledWith("blob:frame-preview");
+    expect(useGenerationStore.getState().pendingWorkflowCarryover).toBeNull();
+  });
+
+  it("drops a held menu detour when the project changes", () => {
+    useGenerationStore.setState({
+      selectedWorkflowId: "a.json",
+      workflowInputs: makeInputs(),
+      mediaInputs: { "1:image": null },
+    });
+    useGenerationStore.getState().clearWorkflowSelection();
+    expect(
+      useGenerationStore.getState().pendingWorkflowCarryover,
+    ).not.toBeNull();
+
+    // Those values name assets of the project being closed.
+    useGenerationStore.getState().clearPanelForProjectChange();
+
+    expect(useGenerationStore.getState().pendingWorkflowCarryover).toBeNull();
+  });
+
   it("ignores passive editor updates after returning to the menu", async () => {
     useGenerationStore.setState({
       selectedWorkflowId: "wf.json",
