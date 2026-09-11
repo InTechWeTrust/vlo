@@ -798,6 +798,18 @@ export function buildWorkflowStoreState(
       );
       const candidateRulesSourceId =
         tempWorkflow?.rulesSourceId ?? state.rulesWorkflowSourceId;
+      const candidatePersistedWorkflowId = resolveWorkflowPersistenceId(
+        selectedWorkflowId,
+        filename,
+      );
+      // Related workflows often share node IDs, so graph overlap cannot choose
+      // between their sidecars. Use the same persisted identity for rules and
+      // selection, including when repairing an existing source mismatch.
+      // Synthetic temp/duplicate filenames still retain their original source.
+      const rulesSourceChanged =
+        candidatePersistedWorkflowId !== null &&
+        candidateRulesSourceId !== null &&
+        candidatePersistedWorkflowId !== candidateRulesSourceId;
       const prunedCachedRules = pruneWorkflowRulesForWorkflows(
         currentWorkflowContext,
         state.activeWorkflowRules,
@@ -809,6 +821,7 @@ export function buildWorkflowStoreState(
           areWorkflowRulesEffectivelyEmpty(state.activeWorkflowRules)
         );
       const hasCompatibleRules =
+        !rulesSourceChanged &&
         candidateRulesSourceId !== null &&
         (
           hasRulelessWorkflowIdentity ||
@@ -832,12 +845,14 @@ export function buildWorkflowStoreState(
       // until the user reselects the workflow. Do not reuse an incompatible
       // source when another graph has replaced the selected editor tab.
       const requestedRulesSourceId =
-        resolvedRulesSourceId ??
-        (candidateRulesSourceId === null &&
-        (previousWorkflowMatches ||
-          areWorkflowRulesEffectivelyEmpty(state.activeWorkflowRules))
-          ? resolveWorkflowPersistenceId(selectedWorkflowId, filename)
-          : null);
+        rulesSourceChanged
+          ? candidatePersistedWorkflowId
+          : resolvedRulesSourceId ??
+            (candidateRulesSourceId === null &&
+            (previousWorkflowMatches ||
+              areWorkflowRulesEffectivelyEmpty(state.activeWorkflowRules))
+              ? candidatePersistedWorkflowId
+              : null);
 
       try {
         const resolved = await comfyApi.resolveWorkflowRules({
@@ -897,6 +912,8 @@ export function buildWorkflowStoreState(
       //     match alone is too weak — a different workflow could land in a
       //     tab that happens to share the selected filename, and we'd see
       //     legitimate rule changes incorrectly held back.
+      //   - rules source unchanged: a different named workflow must use its
+      //     own sidecar even when it shares most of the previous graph's nodes.
       //   - cached rules were non-empty and tied to a known source: nothing
       //     to protect otherwise. (A `rulesWorkflowSourceId === null` state
       //     means the rules are already orphaned from a previous wipe.)
@@ -905,6 +922,7 @@ export function buildWorkflowStoreState(
       //     from the resolved+pruned ones.
       const previousRules = state.activeWorkflowRules;
       const previousRulesProtectable =
+        !rulesSourceChanged &&
         previousRules !== null &&
         !areWorkflowRulesEffectivelyEmpty(previousRules) &&
         state.rulesWorkflowSourceId !== null;
@@ -981,14 +999,11 @@ export function buildWorkflowStoreState(
         presented.presentationWarnings,
       );
 
-      const candidatePersistedWorkflowId = resolveWorkflowPersistenceId(
-        selectedWorkflowId,
-        filename,
-      );
       const persistedWorkflowId =
         candidatePersistedWorkflowId &&
         candidatePersistedWorkflowId !== TEMP_WORKFLOW_ID &&
         (
+          rulesSourceChanged ||
           state.activeWorkflowRules === null ||
           areWorkflowRulesEffectivelyEmpty(state.activeWorkflowRules) ||
           hasCompatibleRules ||

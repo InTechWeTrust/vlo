@@ -245,6 +245,121 @@ describe("useGenerationStore workflow editor sync", () => {
     },
   );
 
+  it.each(["vlo_minimax_h3_i2v.json", "vlo_minimax_h3_inpaint_flf2va.json"])(
+    "uses the editor workflow's own sidecar when the selected workflow is %s",
+    async (selectedWorkflowId) => {
+      const sourceId = "vlo_minimax_h3_i2v.json";
+      const targetId = "vlo_minimax_h3_inpaint_flf2va.json";
+      const graph = {
+        nodes: [
+          { id: 1, type: "LoadVideo" },
+          { id: 2, type: "LoadVideo" },
+          { id: 3, type: "EmptyLatentImage" },
+        ],
+      };
+      const editedGraph = {
+        nodes: [...graph.nodes, { id: 99, type: "LoraLoaderModelOnly" }],
+      };
+      const previousRules = createDefaultWorkflowRules({
+        nodes: { "3": { ignore: true } },
+      });
+      const inpaintRules = createDefaultWorkflowRules({
+        pipeline: [
+          {
+            id: "mask_processing",
+            kind: "mask_processing",
+            targets: [{
+              source: { node_id: "1", param: "video" },
+              mask: { node_id: "2", param: "video" },
+              mask_type: "binary",
+              purpose: "video",
+            }],
+          },
+          {
+            id: "aspect_ratio",
+            kind: "aspect_ratio",
+            targets: [{
+              width: { node_id: "3", param: "width" },
+              height: { node_id: "3", param: "height" },
+            }],
+          },
+        ],
+      });
+      useGenerationStore.setState({
+        selectedWorkflowId,
+        rulesWorkflowSourceId: sourceId,
+        activeWorkflowRules: previousRules,
+        syncedGraphData: graph,
+      });
+      vi.mocked(comfyApi.resolveWorkflowRules).mockImplementation(
+        async ({ workflowId }) => ({
+          workflow_id: workflowId ?? "",
+          has_sidecar: true,
+          rules: workflowId === targetId ? inpaintRules : previousRules,
+          warnings: [],
+        }),
+      );
+
+      await useGenerationStore.getState().registerWorkflowFromEditor(
+        null, editedGraph, [], targetId.replace(/\.json$/, ""),
+      );
+
+      expect(comfyApi.resolveWorkflowRules).toHaveBeenLastCalledWith({
+        workflow: null,
+        graphData: editedGraph,
+        workflowId: targetId,
+      });
+      const state = useGenerationStore.getState();
+      expect(state.selectedWorkflowId).toBe(targetId);
+      expect(state.rulesWorkflowSourceId).toBe(targetId);
+      expect(state.activeWorkflowRules?.pipeline).toEqual(inpaintRules.pipeline);
+      expect(state.syncedGraphData).toEqual(editedGraph);
+      expect(state.suspectRuleLossCount).toBe(0);
+    },
+  );
+
+  it.each(["missing", "failed"])(
+    "does not inherit another workflow's rules when the new sidecar lookup is %s",
+    async (outcome) => {
+      const graph = { nodes: [{ id: 1, type: "LoadImage" }] };
+      useGenerationStore.setState({
+        selectedWorkflowId: "original.json",
+        rulesWorkflowSourceId: "original.json",
+        activeWorkflowRules: createDefaultWorkflowRules({
+          nodes: { "1": { ignore: true } },
+        }),
+        syncedGraphData: graph,
+      });
+      if (outcome === "failed") {
+        vi.mocked(comfyApi.resolveWorkflowRules).mockRejectedValue(
+          new Error("Rules request failed"),
+        );
+      } else {
+        vi.mocked(comfyApi.resolveWorkflowRules).mockResolvedValue({
+          workflow_id: "other.json",
+          has_sidecar: false,
+          rules: createDefaultWorkflowRules(),
+          warnings: [],
+        });
+      }
+
+      await useGenerationStore.getState().registerWorkflowFromEditor(
+        null, graph, [], "other.json",
+      );
+
+      expect(comfyApi.resolveWorkflowRules).toHaveBeenLastCalledWith({
+        workflow: null,
+        graphData: graph,
+        workflowId: "other.json",
+      });
+      const state = useGenerationStore.getState();
+      expect(state.selectedWorkflowId).toBe("other.json");
+      expect(state.rulesWorkflowSourceId).toBeNull();
+      expect(state.activeWorkflowRules?.nodes).toEqual({});
+      expect(state.suspectRuleLossCount).toBe(0);
+    },
+  );
+
   it("keeps a stable workflow id when syncing editor changes", async () => {
     useGenerationStore.setState({
       selectedWorkflowId: "wf.json",
