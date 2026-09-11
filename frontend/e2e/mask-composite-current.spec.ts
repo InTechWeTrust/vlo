@@ -14,6 +14,7 @@ import { expect, test } from './fixtures';
  */
 
 const TIMELINE_PATH = '.vloproject/timeline.json';
+const COMPOSITE_SESSION_PATH = '.vloproject/composite-session.json';
 const MASK_PARENT_CLIP_ID = 'clip_918b868b-27df-4533-bb5c-f09d78550011';
 const MASK_CLIP_ID =
     `${MASK_PARENT_CLIP_ID}::mask::e44bcce4-6af6-4a07-8811-320da10e2029`;
@@ -29,6 +30,23 @@ function readTimeline(editor: EditorComponent) {
 function readComposites(editor: EditorComponent) {
     return compositeLibraryDocumentSchema.parse(
         editor.fileSystem.readJson('.vloproject/composites.json'),
+    );
+}
+
+/** The subtimeline edit left open, or null when the project holds none. */
+function readCompositeSession(editor: EditorComponent) {
+    if (!editor.fileSystem.exists(COMPOSITE_SESSION_PATH)) return null;
+    return editor.fileSystem.readJson<{
+        session: null | {
+            stack: Array<{ ownerCompositeAssetId?: string | null }>;
+            current: { clips: Array<{ id: string }> };
+        };
+    }>(COMPOSITE_SESSION_PATH).session;
+}
+
+function publishedCompositeClipIds(editor: EditorComponent): string[] {
+    return readComposites(editor).composites[COMPOSITE_ID].content.clips.map(
+        (clip) => clip.id,
     );
 }
 
@@ -340,6 +358,80 @@ test.describe('Current-project masks and composites', () => {
                 (clip) => clip.id === secondPlacement!.id,
             )?.compositeId,
         ).toBe(COMPOSITE_ID);
+    });
+
+    // Composite content is published only on the return to the main timeline,
+    // and the timeline's own persistence is suspended while a subtimeline is
+    // open — so without the edit-session document, closing a project mid-edit
+    // lost every change made inside the composite.
+    test('keeps an open subtimeline edit across a project reopen', async ({
+        editorCurrent,
+    }) => {
+        test.setTimeout(180_000);
+        const editor = editorCurrent;
+        const { page, timeline, leftSidebar } = editor;
+
+        await timeline.seekToTick(0);
+        await leftSidebar.switchTo('Composite');
+
+        await timeline.seekToTick(1_602_000);
+        await timeline
+            .getClipById(COMPOSITE_PLACEMENT_ID)
+            .getByTestId('timeline-clip-composite-open')
+            .click();
+        await expect(
+            page.getByTestId('composite-panel-back-to-main'),
+        ).toBeVisible();
+
+        // Edit inside the subtimeline, and never return to the main timeline.
+        await timeline.seekToTick(60_000);
+        const innerClip = timeline.getClipById(COMPOSITE_INNER_CLIP_ID);
+        await innerClip.click();
+        await timeline.deleteSelected();
+        await expect(innerClip).toHaveCount(0);
+
+        // The open edit reaches disk as a session...
+        await expect
+            .poll(
+                () =>
+                    readCompositeSession(editor)?.current.clips.map(
+                        (clip) => clip.id,
+                    ) ?? null,
+                { timeout: 20_000 },
+            )
+            .not.toContain(COMPOSITE_INNER_CLIP_ID);
+        expect(readCompositeSession(editor)?.stack).toHaveLength(1);
+        // ...while the library still holds the last published content, so
+        // nothing has been baked.
+        expect(publishedCompositeClipIds(editor)).toContain(
+            COMPOSITE_INNER_CLIP_ID,
+        );
+
+        await editor.reopenProject();
+
+        // The editor comes back inside the subtimeline with the edit intact.
+        await expect(page.getByTestId('timeline-back-to-main')).toBeVisible({
+            timeout: 30_000,
+        });
+        await expect(
+            timeline.getClipById(COMPOSITE_INNER_CLIP_ID),
+        ).toHaveCount(0);
+        expect(publishedCompositeClipIds(editor)).toContain(
+            COMPOSITE_INNER_CLIP_ID,
+        );
+
+        // Returning to the main timeline publishes the edit as it always did,
+        // and the session that carried it is cleared.
+        await page.getByTestId('timeline-back-to-main').click();
+        await expect
+            .poll(() => publishedCompositeClipIds(editor), { timeout: 60_000 })
+            .not.toContain(COMPOSITE_INNER_CLIP_ID);
+        await expect
+            .poll(() => readCompositeSession(editor), { timeout: 20_000 })
+            .toBeNull();
+        await expect(
+            timeline.getClipById(COMPOSITE_PLACEMENT_ID),
+        ).toBeVisible();
     });
 
     test('groups a selected range into a composite and completes its bake', async ({

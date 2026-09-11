@@ -1,6 +1,9 @@
 import { useEffect } from "react";
 import { useProjectStore } from "../../features/project";
-import { useCompositeLibraryStore } from "../../features/composite";
+import {
+  restoreCompositeEditSession,
+  useCompositeLibraryStore,
+} from "../../features/composite";
 import { useAssetStore } from "../../features/userAssets";
 
 export function useEditorAssetLibrary() {
@@ -25,6 +28,10 @@ export function useEditorAssetLibrary() {
         // assets first so missing/stale cache normalization does not enqueue
         // healthy bakes simply because their records have not loaded yet.
         await fetchComposites();
+        // Reopening a subtimeline needs the composites its frames belong to,
+        // and replaces the timeline the project just loaded, so it follows
+        // both rather than racing them.
+        await restoreCompositeEditSession();
       } catch (error) {
         // Skip the disk scan if we couldn't load the asset index — scanning against
         // an empty/stale store would re-ingest existing files under new IDs.

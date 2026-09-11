@@ -244,26 +244,23 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     }, TIMELINE_PERSIST_DEBOUNCE_MS);
   };
 
-  const flushPendingPersistence = async (): Promise<void> => {
-    if (persistenceSuspended) {
-      if (pendingPersistTimer !== null) {
-        clearTimeout(pendingPersistTimer);
-        pendingPersistTimer = null;
-      }
-      pendingDocumentPatches = [];
-      return;
-    }
-
+  /**
+   * Writes whatever is queued without consulting the suspension flag. The
+   * queue and its fallback snapshot are captured synchronously because
+   * entering a composite subtimeline suspends persistence and replaces the
+   * snapshot in the same tick: after the first await, `get()` no longer
+   * describes the timeline these patches were produced against.
+   */
+  const drainPendingPersistence = async (): Promise<void> => {
     if (pendingPersistTimer !== null) {
       clearTimeout(pendingPersistTimer);
       pendingPersistTimer = null;
     }
 
-    if (flushInFlight) {
-      await flushInFlight;
+    if (pendingDocumentPatches.length === 0) {
+      if (flushInFlight) await flushInFlight;
+      return;
     }
-
-    if (pendingDocumentPatches.length === 0) return;
     if (!fileSystemService.getHandle()) {
       pendingDocumentPatches = [];
       return;
@@ -278,10 +275,17 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
       transitions: structuredClone(get().transitions),
     };
 
-    flushInFlight = projectPersistenceService
-      .applyTimelinePatches(patchesToApply, fallbackSnapshot)
-      .then(() => undefined)
-      .catch(async (error) => {
+    const previousFlush = flushInFlight;
+    const write = (async () => {
+      if (previousFlush) {
+        await previousFlush.catch(() => undefined);
+      }
+      try {
+        await projectPersistenceService.applyTimelinePatches(
+          patchesToApply,
+          fallbackSnapshot,
+        );
+      } catch (error) {
         console.error(
           "[TimelineStore] Failed to apply timeline patches; writing snapshot fallback.",
           error,
@@ -294,16 +298,37 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
             fallbackSnapshot.transitions ?? [],
           );
         });
-      })
-      .finally(() => {
-        flushInFlight = null;
-      });
+      }
+    })();
 
-    await flushInFlight;
+    const tracked: Promise<void> = write.finally(() => {
+      if (flushInFlight === tracked) {
+        flushInFlight = null;
+      }
+    });
+    flushInFlight = tracked;
+
+    await tracked;
 
     if (pendingDocumentPatches.length > 0) {
-      await flushPendingPersistence();
+      await drainPendingPersistence();
     }
+  };
+
+  const flushPendingPersistence = async (): Promise<void> => {
+    if (persistenceSuspended) {
+      // Subtimeline edits are not this project's timeline. They are saved by
+      // the composite edit session instead, and the queue is empty anyway
+      // because suspension stops it being filled.
+      if (pendingPersistTimer !== null) {
+        clearTimeout(pendingPersistTimer);
+        pendingPersistTimer = null;
+      }
+      pendingDocumentPatches = [];
+      return;
+    }
+
+    await drainPendingPersistence();
   };
 
   const commitModelMutation = (
@@ -501,14 +526,18 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   };
 
   const setPersistenceSuspended = (suspended: boolean): void => {
-    persistenceSuspended = suspended;
-    if (!suspended) return;
+    if (suspended === persistenceSuspended) return;
 
-    if (pendingPersistTimer !== null) {
-      clearTimeout(pendingPersistTimer);
-      pendingPersistTimer = null;
+    if (suspended) {
+      // What is queued belongs to the timeline being stashed away, not to the
+      // subtimeline replacing it, so it is written rather than dropped. The
+      // editor routinely suspends inside the persist debounce of the edit that
+      // opened the subtimeline — grouping a selection into a composite is
+      // exactly that edit.
+      void drainPendingPersistence();
     }
-    pendingDocumentPatches = [];
+
+    persistenceSuspended = suspended;
   };
 
   const registerBeforeUnloadPersistence = (): void => {

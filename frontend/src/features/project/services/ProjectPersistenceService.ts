@@ -16,6 +16,7 @@ import {
   ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
   COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+  COMPOSITE_SESSION_DOCUMENT_SCHEMA_VERSION,
   EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
   GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
@@ -34,6 +35,7 @@ import {
   assetMetadataDocumentSchema,
   compositeLibraryDocumentSchema,
   compositeLibraryDocumentSchemaV1,
+  compositeSessionDocumentSchema,
   legacyProjectDocumentSchema,
   projectManifestDocumentSchema,
   extensionStorageDocumentSchema,
@@ -44,7 +46,9 @@ import {
   type AssetIndexDocument,
   type AssetMetadataDocument,
   type CompositeLibraryDocument,
+  type CompositeSessionDocument,
   type ExtensionStorageDocument,
+  type PersistedCompositeSession,
   type GenerationPanelDocument,
   type LegacyProjectDocument,
   type PersistedAssetIndexEntry,
@@ -113,6 +117,14 @@ const GENERATION_PANEL_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
   documentType: "vlo.generation-panel",
   documentLabel: "Generation panel state",
   supportedSchemaVersion: GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION,
+};
+
+const COMPOSITE_SESSION_PATH = `${PROJECT_DIR}/${PROJECT_PERSISTENCE_FILE_NAMES.compositeSession}`;
+const COMPOSITE_SESSION_NEWER_SCHEMA_CHECK: NewerSchemaVersionCheck = {
+  path: COMPOSITE_SESSION_PATH,
+  documentType: "vlo.composite-session",
+  documentLabel: "Composite edit session",
+  supportedSchemaVersion: COMPOSITE_SESSION_DOCUMENT_SCHEMA_VERSION,
 };
 
 export interface LoadedProjectPersistenceDocuments {
@@ -300,6 +312,15 @@ function createCompositeLibraryDocument(
     schemaVersion: COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
     updated_at: Date.now(),
     composites: overrides.composites ?? {},
+  };
+}
+
+function createCompositeSessionDocument(): CompositeSessionDocument {
+  return {
+    documentType: "vlo.composite-session",
+    schemaVersion: COMPOSITE_SESSION_DOCUMENT_SCHEMA_VERSION,
+    updated_at: Date.now(),
+    session: null,
   };
 }
 
@@ -591,6 +612,7 @@ export class ProjectPersistenceService {
   private compositeLibraryCache: CompositeLibraryDocument | null = null;
   private extensionStorageCache: ExtensionStorageDocument | null = null;
   private generationPanelCache: GenerationPanelDocument | null = null;
+  private compositeSessionCache: CompositeSessionDocument | null = null;
   private assetMetadataCache = new Map<string, AssetMetadataDocument | null>();
 
   private enqueue<T>(key: string, operation: () => Promise<T>): Promise<T> {
@@ -973,6 +995,53 @@ export class ProjectPersistenceService {
     });
   }
 
+  /**
+   * The open subtimeline edit this project was last left in, or a document
+   * with no session when it was left on the main timeline. A missing file is
+   * the normal case, not an error.
+   */
+  async readCompositeSession(): Promise<CompositeSessionDocument> {
+    if (this.compositeSessionCache) {
+      return clone(this.compositeSessionCache);
+    }
+    try {
+      const file = await fileSystemService.readFile(COMPOSITE_SESSION_PATH);
+      const raw = JSON.parse(await file.text()) as unknown;
+      throwIfNewerSchemaVersion(raw, COMPOSITE_SESSION_NEWER_SCHEMA_CHECK);
+      const document = compositeSessionDocumentSchema.parse(raw);
+      this.compositeSessionCache = document;
+      return clone(document);
+    } catch (error) {
+      if (!isNotFoundError(error)) {
+        throw error;
+      }
+      const empty = createCompositeSessionDocument();
+      this.compositeSessionCache = empty;
+      return clone(empty);
+    }
+  }
+
+  /** Replaces the open subtimeline edit wholesale; `null` clears it. */
+  async writeCompositeSession(
+    session: PersistedCompositeSession | null,
+  ): Promise<CompositeSessionDocument> {
+    return this.enqueue(COMPOSITE_SESSION_PATH, async () => {
+      const next: CompositeSessionDocument = {
+        documentType: "vlo.composite-session",
+        schemaVersion: COMPOSITE_SESSION_DOCUMENT_SCHEMA_VERSION,
+        updated_at: Date.now(),
+        session: session ? clone(session) : null,
+      };
+      await writeJson(
+        COMPOSITE_SESSION_PATH,
+        next,
+        compositeSessionDocumentSchema,
+      );
+      this.compositeSessionCache = next;
+      return clone(next);
+    });
+  }
+
   async readAssetMetadata(
     assetId: string,
     metadataRef?: string,
@@ -1237,6 +1306,7 @@ export class ProjectPersistenceService {
     this.compositeLibraryCache = null;
     this.extensionStorageCache = null;
     this.generationPanelCache = null;
+    this.compositeSessionCache = null;
     this.assetMetadataCache.clear();
   }
 
@@ -1251,6 +1321,8 @@ export type {
   AssetIndexDocument,
   AssetMetadataDocument,
   CompositeLibraryDocument,
+  CompositeSessionDocument,
+  PersistedCompositeSession,
   GenerationPanelDocument,
   PersistedAssetIndexEntry,
   ProjectManifestDocument,

@@ -22,6 +22,7 @@ import {
   ASSET_INDEX_DOCUMENT_SCHEMA_VERSION,
   ASSET_METADATA_DOCUMENT_SCHEMA_VERSION,
   COMPOSITE_LIBRARY_DOCUMENT_SCHEMA_VERSION,
+  COMPOSITE_SESSION_DOCUMENT_SCHEMA_VERSION,
   EXTENSION_STORAGE_DOCUMENT_SCHEMA_VERSION,
   GENERATION_PANEL_DOCUMENT_SCHEMA_VERSION,
   PROJECT_MANIFEST_SCHEMA_VERSION,
@@ -40,6 +41,7 @@ const PROJECT_FILE_NAMES = {
   assetMetadataDir: "asset-metadata",
   extensionStorage: "extension-storage.json",
   generationPanel: "generation-panel.json",
+  compositeSession: "composite-session.json",
 } as const;
 
 export const HEAVY_ASSET_METADATA_INLINE_THRESHOLD_BYTES = 16 * 1024;
@@ -400,6 +402,52 @@ export const generationPanelDocumentSchema = z.object({
 export type GenerationPanelDocument = z.infer<
   typeof generationPanelDocumentSchema
 >;
+
+const compositeSessionSnapshotSchema = z.object({
+  tracks: z.array(timelineTrackSchema),
+  clips: z.array(timelineClipSchema),
+  transitions: z.array(transitionSchema).default([]),
+});
+
+const compositeSessionFrameSchema = z.object({
+  previousSnapshot: compositeSessionSnapshotSchema,
+  ownerCompositeAssetId: z.string().nullable().optional(),
+  ownerClipId: z.string().nullable().optional(),
+  name: z.string(),
+  insertStartTick: z.number().optional(),
+  initialContentSnapshot: z.string().optional(),
+});
+
+/**
+ * A subtimeline edit that is still open: the frames stashed on the way in and
+ * the content being edited right now. Composite edits only reach the library
+ * when the editor returns to the main timeline, so without this document a
+ * project closed mid-edit would lose every change made inside the composite —
+ * and the parent timeline it was opened from. Nothing here is canonical: the
+ * session is replayed into the editor on load and discarded once it commits.
+ */
+export const compositeSessionDocumentSchema = z.object({
+  documentType: z.literal("vlo.composite-session"),
+  schemaVersion: z.literal(COMPOSITE_SESSION_DOCUMENT_SCHEMA_VERSION),
+  updated_at: z.number(),
+  session: z
+    .object({
+      stack: z.array(compositeSessionFrameSchema).min(1),
+      current: compositeSessionSnapshotSchema,
+    })
+    .nullable(),
+});
+
+export type CompositeSessionDocument = z.infer<
+  typeof compositeSessionDocumentSchema
+>;
+
+export type PersistedCompositeSession = NonNullable<
+  CompositeSessionDocument["session"]
+>;
+
+export type PersistedCompositeSessionFrame =
+  PersistedCompositeSession["stack"][number];
 
 /** v1 composites only carried their canonical content and legacy bake pointer. */
 export const compositeLibraryDocumentSchemaV1 = z.object({

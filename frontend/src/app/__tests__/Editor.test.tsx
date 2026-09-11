@@ -101,6 +101,8 @@ vi.mock("../../features/composite", () => ({
   }),
   useCompositeLibraryStore: (selector: (state: unknown) => unknown) =>
     selector({ fetchComposites: () => Promise.resolve() }),
+  installCompositeSessionPersistence: () => () => undefined,
+  restoreCompositeEditSession: () => Promise.resolve(false),
 }));
 
 vi.mock("../../features/timeline", () => ({

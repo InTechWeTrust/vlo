@@ -433,6 +433,96 @@ describe("useCompositeTimelineStore", () => {
     );
   });
 
+  it("commits a restored subtimeline edit when it returns to the main timeline", async () => {
+    const composite = compositeAsset();
+    const updateCompositeAssetContent = vi.fn().mockResolvedValue(composite);
+    useCompositeLibraryStore.setState({
+      composites: [composite],
+      updateCompositeAssetContent,
+    });
+    const placement = createCompositeTimelineClip({
+      id: "placement",
+      compositeId: composite.id,
+      assetId: "bake",
+      durationTicks: composite.content.durationTicks,
+      trackId: mainTrack.id,
+      start: 0,
+    });
+    seedTimeline([]);
+
+    expect(
+      useCompositeTimelineStore.getState().restoreSession({
+        stack: [
+          {
+            previousSnapshot: {
+              tracks: [mainTrack],
+              clips: [placement],
+              transitions: [],
+            },
+            ownerCompositeAssetId: composite.id,
+            ownerClipId: placement.id,
+            name: composite.name,
+          },
+        ],
+        current: {
+          tracks: [innerTrack],
+          clips: [innerClip, { ...innerClip, id: "unsaved-edit" }],
+          transitions: [],
+        },
+      }),
+    ).toBe(true);
+
+    expect(useTimelineStore.getState().clips.map((clip) => clip.id)).toEqual([
+      innerClip.id,
+      "unsaved-edit",
+    ]);
+
+    await expect(
+      useCompositeTimelineStore.getState().exitToMainTimeline(),
+    ).resolves.toBe(true);
+
+    // The edit publishes — and so bakes — on the return to the main timeline,
+    // exactly as it would have without the reopen.
+    expect(updateCompositeAssetContent).toHaveBeenCalledWith(
+      composite.id,
+      expect.objectContaining({
+        content: expect.objectContaining({
+          clips: expect.arrayContaining([
+            expect.objectContaining({ id: "unsaved-edit" }),
+          ]),
+        }),
+      }),
+    );
+    expect(useTimelineStore.getState().clips.map((clip) => clip.id)).toEqual([
+      placement.id,
+    ]);
+  });
+
+  it("declines to restore a saved edit over one already open", () => {
+    const composite = compositeAsset();
+    useCompositeLibraryStore.setState({ composites: [composite] });
+    seedTimeline([]);
+
+    expect(
+      useCompositeTimelineStore.getState().openCompositeAsset(composite.id),
+    ).toBe(true);
+    const openStack = useCompositeTimelineStore.getState().stack;
+
+    expect(
+      useCompositeTimelineStore.getState().restoreSession({
+        stack: [
+          {
+            previousSnapshot: { tracks: [mainTrack], clips: [], transitions: [] },
+            ownerCompositeAssetId: composite.id,
+            name: composite.name,
+          },
+        ],
+        current: { tracks: [innerTrack], clips: [], transitions: [] },
+      }),
+    ).toBe(false);
+    expect(useCompositeTimelineStore.getState().stack).toBe(openStack);
+  });
+
   it("returns to the main timeline without inserting an untouched blank scene", async () => {
     playbackClock.setTime(12_000);
     seedTimeline([]);

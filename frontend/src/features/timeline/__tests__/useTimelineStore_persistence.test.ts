@@ -109,6 +109,53 @@ describe("useTimelineStore persistence", () => {
     expect(applyPatchesSpy).toHaveBeenCalledTimes(3);
   });
 
+  // Entering a composite subtimeline suspends persistence and swaps the whole
+  // snapshot out. Grouping a selection into a composite is itself a timeline
+  // edit, so the queue routinely holds the parent timeline's last change at
+  // that moment: dropping it loses the edit that opened the subtimeline.
+  it("writes queued patches before suspending rather than dropping them", async () => {
+    act(() => {
+      useTimelineStore.getState().addClip(createClip("clip-d", "track-1"));
+    });
+    expect(applyPatchesSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+      // The subtimeline replaces the snapshot in the same tick.
+      useTimelineStore.getState().replaceTimelineSnapshot({
+        tracks: [createTrack("inner", "Inner")],
+        clips: [createClip("inner-clip", "inner")],
+      });
+    });
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(applyPatchesSpy).toHaveBeenCalledTimes(1);
+    const [patches, fallback] = applyPatchesSpy.mock.calls[0] as [
+      Patch[],
+      { clips: TimelineClip[] },
+    ];
+    expect(patches.length).toBeGreaterThan(0);
+    // The fallback describes the timeline the patches came from, not the
+    // subtimeline that replaced it.
+    expect(fallback.clips.map((clip) => clip.id)).toEqual(["clip-d"]);
+  });
+
+  it("does not persist edits made inside a suspended subtimeline", async () => {
+    act(() => {
+      useTimelineStore.getState().setTimelinePersistenceSuspended(true);
+      useTimelineStore.getState().addClip(createClip("inner-only", "track-1"));
+    });
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(applyPatchesSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      useTimelineStore.getState().setTimelinePersistenceSuspended(false);
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(applyPatchesSpy).not.toHaveBeenCalled();
+  });
+
   it("persists transition patches and includes them in the fallback snapshot", async () => {
     const upper = { ...createTrack("upper", "Upper"), type: "visual" as const };
     const lower = { ...createTrack("lower", "Lower"), type: "visual" as const };

@@ -20,6 +20,10 @@ export {
   type CompositeSourcePresentationTarget,
 } from "./services/CompositeSourcePresentationService";
 export { CompositePanel } from "./CompositePanel";
+export {
+  installCompositeSessionPersistence,
+  restoreCompositeEditSession,
+} from "./persistence/compositeSessionPersistence";
 export { useTimelineCompositeRevealClipOverlay } from "./hooks/useTimelineCompositeRevealClipOverlay";
 export { useTimelineCompositeRenderStatusOverlay } from "./hooks/useTimelineCompositeRenderStatusOverlay";
 export {

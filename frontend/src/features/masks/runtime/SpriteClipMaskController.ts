@@ -973,6 +973,19 @@ export class SpriteClipMaskController {
   }
 
   public syncMaskSpriteTransform(): void {
+    // Pixi clears a destroyed container's transform, and the content sprite can
+    // be destroyed between a frame being planned and presented: replacing the
+    // timeline snapshot — entering a composite subtimeline, or reopening a
+    // project inside one — tears the old clips' nodes down mid-flight. There is
+    // nothing left to mirror, and the mask nodes are going away with it.
+    const contentPosition = this.sprite.position as
+      | { x: number; y: number }
+      | null
+      | undefined;
+    if (!contentPosition) {
+      return;
+    }
+
     if (this.maskSprite) {
       this.syncSpriteTransformToContent(this.maskSprite);
       this.maskSprite.alpha = this.sprite.alpha;

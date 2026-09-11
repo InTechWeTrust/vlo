@@ -1,12 +1,13 @@
 # vlo
 
-Vlo is a free, local, open source video editor with ComfyUI-backed generative AI features.
-
-This project is in early alpha, but I believe its usefulness already outstrips its bugginess.
-
-The aim is to integrate the latest-and-greatest AI tools with real video editing workflows. It's designed to support an intentional creative process, not for churning out heaps of dross, so the development priority is control, not automation. In the long run, I'd like it to grow into a tool which anyone, including those who just want to make videos, not AI videos, can benefit from.
-
 Skip to install instructions [here](#install), or continue reading.
+
+Vlo is a free, local, open source video editor with AI features.
+
+The aim is to integrate the latest-and-greatest AI tools with real video editing workflows, and to allow users to add their own extensions, making it a playground for cutting-edge tools which may not yet exist in commercial products. Currently, it includes tools for automatic rotoscoping, semantic audio extraction, beat detection etc. It also has a live bridge to ComfyUI, to run *any* possible ComfyUI workflow, and it includes bespoke workflows tailored for using AI models to edit live on the timeline.
+
+Ultimately I want vlo to be useful for *anyone* who wants to make videos, so it is free, extensible and open source.  It aims to handle the tricky design problems of building a proper frame-accurate nonlinear video editor so that you can build extensions and code (or vibe) your own effects.
+
 
 ## Demo videos
 
@@ -38,36 +39,29 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 - SAM2 points editor and masking.
   - Includes automatic cropping and stitching for video inpainting workflows.
 - ComfyUI bridge, allowing images, videos and timeline selections to be sent to ComfyUI
-  - Includes automatic aspect ratio adjustment (video models such as WAN and LTX2.5 cannot do all aspect ratios exactly).
-- Built-in stackable adjustments and filters
+  - Includes automatic aspect ratio adjustment so any video model can be used to edit any video without cropping.
+- Built-in adjustments (color grading, audio, layout) and filters
 - Keyframes and spline editor for all transformations (layout, adjustments and filter effects)
 - Snappable markers and beat detection
 - Asset organisation (hot-swappable generation groups, favourites)
-- ComfyUI-backed workflows for interpolation and image and video upscaling.
+- ComfyUI-backed workflows for image and video generation, inpainting and upscaling.
 - Mask algebera (unions, intersections etc)
 - Draggable motion paths
+- Sam-audio 
 
-## Extensions (experimental)
+## Extensions
 
-Vlo now has an early trusted extension runtime. Approved frontend code runs in the
-editor page, and approved backend code runs with the backend process's authority;
-this is a consent gate, not a sandbox. Start with the
-[`extension-template`](extension-template/README.md), and read the
-[`extension-system-plan`](docs/extension-system-plan.md) for the current contracts
-and phased roadmap.
+You can add extensions to vlo. The 
+[`extension-template`](extension-template/README.md).
 
-## Changelog (v0.2.0)
+## Changelog (v0.3.0)
 
-- Updated ComfyUI bridge for more responsiveness
-- Updated workflow rules schema
-- Added waveform visualisation for audio
-- Added text rendering
-- Added new workflows, including Wan TTM, animate, LTX edit and inpaint, SeedVR upscaling, GIMM-VFI interpolation.
-- Added composite clips [caution - very experimental!]
-- Added asset groups and favourites
-- Updated mask rendering entirely, improving efficiently
-- Added mask algebra, for creating complex masks (e.g. edge masks)
-- Added draggable motion paths
+- New Live ComfyUI bridge, allows any workflow.
+- Sam-audio
+- Added new workflows, including Minimax workflows.
+- Added composite clips
+- Added extension SDK
+- Unified backend and ComfyUI queuing to prevent conflict.
 
 ## Try it on runpod
 

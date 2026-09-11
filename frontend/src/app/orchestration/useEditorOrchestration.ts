@@ -6,6 +6,7 @@ import {
   installGenerationPanelPersistence,
   useGenerationStore,
 } from "../../features/generation";
+import { installCompositeSessionPersistence } from "../../features/composite";
 import { flushAllBrushMaskCommits } from "../../features/masks/api";
 import {
   selectIsLocalModelWorkHoldingGpu,
@@ -61,6 +62,17 @@ export function useEditorOrchestration(): void {
       unregisterBrushMaskFlush();
     };
   }, []);
+
+  // A subtimeline edit reaches the composite library only when the editor
+  // returns to the main timeline, so an edit still open is saved with the
+  // project and resumed when it reopens.
+  //
+  // Installed after the flush hooks above, and so registered after them:
+  // pre-save hooks run in registration order, and painting inside a
+  // subtimeline leaves brush pixels that only become an asset id on the clip
+  // when `flushAllBrushMaskCommits` materializes them. Capturing the session
+  // first would save the edit as it stood before its own masks existed.
+  useEffect(() => installCompositeSessionPersistence(), []);
 
   useEffect(() => {
     // The model-work ledger is operational state, not panel state: the
