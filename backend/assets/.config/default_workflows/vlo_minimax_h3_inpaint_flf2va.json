@@ -1,8 +1,8 @@
 {
   "id": "5307784b-d1d0-403e-9f5b-6d184c299f1a",
   "revision": 0,
-  "last_node_id": 96,
-  "last_link_id": 163,
+  "last_node_id": 98,
+  "last_link_id": 166,
   "nodes": [
     {
       "id": 3,
@@ -766,7 +766,7 @@
         140
       ],
       "flags": {},
-      "order": 65,
+      "order": 67,
       "mode": 0,
       "inputs": [
         {
@@ -792,7 +792,7 @@
         {
           "name": "latent_image",
           "type": "LATENT",
-          "link": 107
+          "link": 165
         }
       ],
       "outputs": [
@@ -1059,7 +1059,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 67,
+      "order": 69,
       "mode": 0,
       "inputs": [
         {
@@ -1100,7 +1100,7 @@
       "flags": {
         "collapsed": false
       },
-      "order": 66,
+      "order": 68,
       "mode": 0,
       "inputs": [
         {
@@ -1140,7 +1140,7 @@
         154
       ],
       "flags": {},
-      "order": 68,
+      "order": 70,
       "mode": 0,
       "inputs": [
         {
@@ -1238,7 +1238,7 @@
         334
       ],
       "flags": {},
-      "order": 69,
+      "order": 71,
       "mode": 0,
       "inputs": [
         {
@@ -1678,7 +1678,7 @@
           "name": "output",
           "type": "LATENT",
           "links": [
-            107
+            164
           ]
         }
       ],
@@ -3536,6 +3536,115 @@
         "height": 480,
         "length": 124
       }
+    },
+    {
+      "id": 98,
+      "type": "GetNode",
+      "pos": [
+        2239.95386726318,
+        4675.280079548546
+      ],
+      "size": [
+        210,
+        60
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 65,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            166
+          ]
+        }
+      ],
+      "title": "Get_AUDIO_VAE",
+      "properties": {
+        "Node name for S&R": "GetNode",
+        "aux_id": "kijai/ComfyUI-KJNodes"
+      },
+      "widgets_values": [
+        "AUDIO_VAE"
+      ],
+      "widgets_values_named": {
+        "Constant": "AUDIO_VAE"
+      },
+      "color": "#322",
+      "bgcolor": "#533"
+    },
+    {
+      "id": 97,
+      "type": "vloFeatherAudioLatentMask",
+      "pos": [
+        2479.9538672631693,
+        4655.280079548546
+      ],
+      "size": [
+        325.5748046875,
+        298
+      ],
+      "flags": {},
+      "order": 66,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "audio_latent",
+          "type": "LATENT",
+          "link": 164
+        },
+        {
+          "name": "original_audio_latent",
+          "shape": 7,
+          "type": "LATENT",
+          "link": null
+        },
+        {
+          "name": "audio_vae",
+          "shape": 7,
+          "type": "VAE",
+          "link": 166
+        }
+      ],
+      "outputs": [
+        {
+          "name": "audio_latent",
+          "type": "LATENT",
+          "links": [
+            165
+          ]
+        }
+      ],
+      "title": "Feather audio mask edges",
+      "properties": {
+        "Node name for S&R": "vloFeatherAudioLatentMask"
+      },
+      "widgets_values": [
+        "outer",
+        0.15,
+        0.15,
+        0.1,
+        0.1,
+        "cosine",
+        0,
+        "auto",
+        0
+      ],
+      "widgets_values_named": {
+        "mode": "outer",
+        "lead_ramp": 0.15,
+        "tail_ramp": 0.15,
+        "lead_hold": 0.1,
+        "tail_hold": 0.1,
+        "curve": "cosine",
+        "floor": 0,
+        "layout_override": "auto",
+        "audio_latent_rate": 0
+      }
     }
   ],
   "links": [
@@ -3900,14 +4009,6 @@
       "LATENT"
     ],
     [
-      107,
-      29,
-      0,
-      39,
-      4,
-      "LATENT"
-    ],
-    [
       110,
       5,
       0,
@@ -4250,6 +4351,30 @@
       96,
       0,
       "IMAGE"
+    ],
+    [
+      164,
+      29,
+      0,
+      97,
+      0,
+      "LATENT"
+    ],
+    [
+      165,
+      97,
+      0,
+      39,
+      4,
+      "LATENT"
+    ],
+    [
+      166,
+      98,
+      0,
+      97,
+      2,
+      "VAE"
     ]
   ],
   "groups": [
