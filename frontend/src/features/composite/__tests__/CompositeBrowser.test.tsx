@@ -11,6 +11,7 @@ import { useCompositeTimelineStore } from "../useCompositeTimelineStore";
 
 const mocks = vi.hoisted(() => ({
   scrollToItemId: vi.fn(),
+  useRealCards: false,
 }));
 
 vi.mock("../../libraryBrowser", () => ({
@@ -42,7 +43,11 @@ vi.mock("../../libraryBrowser", () => ({
   },
 }));
 
-vi.mock("../components/CompositeCard", () => ({
+vi.mock("../components/CompositeCard", async (importOriginal) => {
+  const { CompositeCard: RealCompositeCard } = await importOriginal<
+    typeof import("../components/CompositeCard")
+  >();
+  return {
   CompositeCard: ({
     composite,
     isSelected,
@@ -61,7 +66,18 @@ vi.mock("../components/CompositeCard", () => ({
     onRename: () => void;
     onDelete: () => void;
     onPlaceOnTimeline: () => void;
-  }) => (
+  }) => mocks.useRealCards ? (
+    <RealCompositeCard
+      composite={composite}
+      isSelected={isSelected}
+      disableDrag={disableDrag}
+      onSelect={onSelect}
+      onOpen={onOpen}
+      onRename={onRename}
+      onDelete={onDelete}
+      onPlaceOnTimeline={onPlaceOnTimeline}
+    />
+  ) : (
     <div
       data-testid="composite-card"
       data-composite-id={composite.id}
@@ -89,7 +105,8 @@ vi.mock("../components/CompositeCard", () => ({
       </button>
     </div>
   ),
-}));
+  };
+});
 
 function composite(id: string, name = id): CompositeAsset {
   return {
@@ -147,6 +164,7 @@ function renderBrowser(
 describe("CompositeBrowser", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.useRealCards = false;
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);
       return 1;
@@ -208,7 +226,8 @@ describe("CompositeBrowser", () => {
     view.unmount();
   });
 
-  it("selects normally or additively and clears from the background", () => {
+  it.each([false, true])("selects and clears from the background (real cards: %s)", (useRealCards) => {
+    mocks.useRealCards = useRealCards;
     renderBrowser();
     const cards = screen.getAllByTestId("composite-card");
     fireEvent.click(cards[0]);
@@ -224,6 +243,8 @@ describe("CompositeBrowser", () => {
       true,
     );
 
+    expect(libraryActions.clearSelection).not.toHaveBeenCalled();
+    expect(timelineActions.selectClip).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("mock-grid"));
     expect(libraryActions.clearSelection).toHaveBeenCalled();
     expect(timelineActions.selectClip).toHaveBeenCalledWith(null);

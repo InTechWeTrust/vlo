@@ -1,11 +1,10 @@
 import React, { useCallback, useMemo, useState } from "react";
-import { Box, IconButton, Paper, Typography } from "@mui/material";
+import { Typography } from "@mui/material";
 import { styled } from "@mui/material/styles";
-import { useDraggable } from "@dnd-kit/core";
-import MusicNoteIcon from "@mui/icons-material/MusicNote";
-import GradientIcon from "@mui/icons-material/Gradient";
-import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import {
+  MediaAssetCard,
+  MediaAssetCardActionButton,
+} from "./MediaAssetCard";
 import DeleteIcon from "@mui/icons-material/Delete";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import ReplayIcon from "@mui/icons-material/Replay";
@@ -15,7 +14,6 @@ import FavoriteIcon from "@mui/icons-material/Favorite";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 import type { Asset } from "../../../types/Asset";
 import {
-  createClipFromAsset,
   insertAssetAtTime,
   useTimelineClipCountForAsset,
 } from "../../timeline";
@@ -28,149 +26,28 @@ import { AppMenu } from "../../../core/shell/AppMenu";
 import type { HostMenuItemDescriptor } from "../../../core/shell/menuDescriptors";
 import type { HostMenuSubject } from "../../../core/shell/hostMenus";
 
-interface AssetCardProps {
+interface AssetCardActionsProps {
   asset: Asset;
-  disableDrag?: boolean;
   hideActions?: boolean;
-  isSelected?: boolean;
   onDeleteAll?: (familyId: string) => void;
   onShowFamily?: (familyId: string) => void;
+}
+
+interface AssetCardProps extends AssetCardActionsProps {
+  disableDrag?: boolean;
+  isSelected?: boolean;
   onSelect?: (event: React.MouseEvent<HTMLDivElement>) => void;
   onRequestPreview?: (assetId: string) => void;
   layout?: "default" | "square";
 }
 
-// Styled Components for better performance
-const StyledCard = styled(Paper, {
-  shouldForwardProp: (prop) =>
-    !["isDragDisabled", "isDragging", "isSelected", "layout"].includes(
-      String(prop),
-    ),
-})<{
-  isDragDisabled?: boolean;
-  isDragging?: boolean;
-  isSelected?: boolean;
-  layout: "default" | "square";
-}>(({ isDragDisabled, isDragging, isSelected, layout }) => ({
-  width: "100%",
-  backgroundColor: "#252525",
-  color: "white",
-  overflow: "hidden",
-  cursor: isDragDisabled ? "pointer" : "grab",
-  transition: "transform 0.1s, box-shadow 0.1s, outline-color 0.1s",
-  "&:hover": { transform: "scale(1.02)" },
-  position: "relative",
-  opacity: isDragging ? 0.5 : 1,
-  outline: isSelected ? "2px solid #4dabf5" : "2px solid transparent",
-  outlineOffset: "-2px",
-  boxShadow: isSelected ? "0 0 0 1px rgba(77, 171, 245, 0.35)" : "none",
-  ...(layout === "square"
-    ? {
-        aspectRatio: "1 / 1",
-      }
-    : {}),
-}));
-
-const ThumbnailContainer = styled(Box, {
-  shouldForwardProp: (prop) => prop !== "layout",
-})<{ layout: "default" | "square" }>(({ layout }) => ({
-  height: layout === "square" ? "100%" : 80,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  backgroundColor: "#000",
-  position: "relative",
-}));
-
-const OverlayControls = styled(Box)({
-  position: "absolute",
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  backgroundColor: "rgba(0,0,0,0.3)",
-  opacity: 1,
-  transition: "opacity 0.2s",
-  "&:hover": { opacity: 1 },
-});
-
-const DurationBadge = styled(Box)({
-  position: "absolute",
-  bottom: 4,
-  right: 4,
-  backgroundColor: "rgba(0, 0, 0, 0.7)",
-  paddingLeft: 4,
-  paddingRight: 4,
-  borderRadius: 2,
-  pointerEvents: "none",
-});
-
-const StyledActionButton = styled(IconButton)({
-  position: "absolute",
-  top: 4,
-  backgroundColor: "rgba(0, 0, 0, 0.5)",
-  color: "white",
-  padding: 4,
-  "&:hover": {
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-  },
-  zIndex: 10,
-});
-
-const StyledFavouriteButton = styled(StyledActionButton)({
+const StyledFavouriteButton = styled(MediaAssetCardActionButton)({
   left: 4,
 });
 
-const StyledMenuButton = styled(StyledActionButton)({
+const StyledMenuButton = styled(MediaAssetCardActionButton)({
   right: 4,
 });
-
-const MetadataArea = styled(Box, {
-  shouldForwardProp: (prop) => prop !== "layout",
-})<{ layout: "default" | "square" }>(({ layout }) => ({
-  padding: 8,
-  ...(layout === "square"
-    ? {
-        position: "absolute",
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 2,
-        paddingTop: 28,
-        background:
-          "linear-gradient(180deg, rgba(0, 0, 0, 0) 0%, rgba(9, 9, 9, 0.84) 44%, rgba(9, 9, 9, 0.96) 100%)",
-      }
-    : {}),
-}));
-
-const ContentRoot = styled(Box)({
-  height: "100%",
-});
-
-const EMPTY_PREVIEW_STYLES = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  width: "100%",
-  height: "100%",
-} as const;
-
-const MEDIA_ACTION_STYLES = {
-  color: "white",
-} as const;
-
-const DURATION_TEXT_STYLES = {
-  fontSize: "0.6rem",
-  color: "white",
-} as const;
-
-const TIMESTAMP_STYLES = {
-  fontSize: "0.65rem",
-  color: "#aaa",
-} as const;
 
 const MENU_ANCHOR_ORIGIN = {
   vertical: "bottom",
@@ -182,26 +59,13 @@ const MENU_TRANSFORM_ORIGIN = {
   horizontal: "right",
 } as const;
 
-// Helper to format seconds into MM:SS
-const formatDuration = (seconds?: number) => {
-  if (!seconds) return "";
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-};
-
-function AssetCardContent({
+function AssetCardActions({
   asset,
   hideActions = false,
   onDeleteAll,
   onShowFamily,
-  onRequestPreview,
-  layout = "default",
-}: AssetCardProps) {
+}: AssetCardActionsProps) {
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
-
-  const displayImage =
-    asset.thumbnail || (asset.type === "image" ? asset.src : null);
 
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
   const updateAsset = useAssetStore((state) => state.updateAsset);
@@ -288,14 +152,6 @@ function AssetCardContent({
     }
   }, [asset.familyId, handleCloseMenu, onDeleteAll]);
 
-  const handlePlayToggle = useCallback(
-    (event: React.MouseEvent) => {
-      event.stopPropagation();
-      onRequestPreview?.(asset.id);
-    },
-    [asset.id, onRequestPreview],
-  );
-
   // Menu as data; all items remain inline actions because they are coupled to
   // component props/callbacks (family handlers, confirmation flows).
   const assetMenuItems: HostMenuItemDescriptor[] = [
@@ -347,166 +203,72 @@ function AssetCardContent({
 
   return (
     <>
-      <ContentRoot>
-        {/* Thumbnail / Video Area */}
-        <ThumbnailContainer layout={layout}>
-          {displayImage ? (
-            <img
-              src={displayImage}
-              alt={asset.name}
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
+      {!hideActions ? (
+        <StyledFavouriteButton
+          size="small"
+          onClick={handleFavouriteToggle}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-label={
+            asset.favourite ? "Remove from favourites" : "Add to favourites"
+          }
+          title={
+            asset.favourite ? "Remove from favourites" : "Add to favourites"
+          }
+          sx={{
+            color: asset.favourite ? "#ff4d4f" : "white",
+          }}
+        >
+          {asset.favourite ? (
+            <FavoriteIcon fontSize="small" />
           ) : (
-            <Box sx={EMPTY_PREVIEW_STYLES}>
-              {asset.type === "audio" ? (
-                <MusicNoteIcon sx={{ fontSize: 40, color: "#888" }} />
-              ) : asset.type === "lut" ? (
-                <GradientIcon sx={{ fontSize: 40, color: "#888" }} />
-              ) : (
-                <Typography variant="caption" sx={{ color: "#555" }}>
-                  No Preview
-                </Typography>
-              )}
-            </Box>
+            <FavoriteBorderIcon fontSize="small" />
           )}
+        </StyledFavouriteButton>
+      ) : null}
 
-          {/* Preview / Playback Overlay Controls */}
-          {asset.type === "video" ||
-          asset.type === "audio" ||
-          (asset.type === "image" && displayImage) ? (
-            <OverlayControls>
-              <IconButton
-                onClick={handlePlayToggle}
-                onPointerDown={(e) => e.stopPropagation()}
-                aria-label={
-                  asset.type === "video"
-                    ? "Preview video"
-                    : asset.type === "image"
-                      ? "Preview image"
-                      : "Preview audio"
-                }
-                sx={MEDIA_ACTION_STYLES}
-              >
-                {asset.type === "image" ? (
-                  <ZoomInIcon sx={{ fontSize: 32 }} />
-                ) : (
-                  <PlayCircleOutlineIcon sx={{ fontSize: 32 }} />
-                )}
-              </IconButton>
-            </OverlayControls>
-          ) : null}
+      {!hideActions && canShowFamily ? (
+        <StyledMenuButton
+          size="small"
+          onClick={handleOpenFamily}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Open family"
+          title="Open family"
+          sx={{ right: 34 }}
+        >
+          <FolderOpenIcon fontSize="small" />
+        </StyledMenuButton>
+      ) : null}
 
-          {/* Duration Badge */}
-          {asset.type !== "image" && asset.duration && (
-            <DurationBadge
-              sx={{
-                bottom: layout === "square" ? 56 : 4,
-              }}
-            >
-              <Typography
-                variant="caption"
-                sx={DURATION_TEXT_STYLES}
-              >
-                {formatDuration(asset.duration)}
-              </Typography>
-            </DurationBadge>
-          )}
-        </ThumbnailContainer>
-
-        {!hideActions ? (
-          <StyledFavouriteButton
-            size="small"
-            onClick={handleFavouriteToggle}
-            onPointerDown={(event) => event.stopPropagation()}
-            aria-label={
-              asset.favourite ? "Remove from favourites" : "Add to favourites"
-            }
-            title={
-              asset.favourite ? "Remove from favourites" : "Add to favourites"
-            }
-            sx={{
-              color: asset.favourite ? "#ff4d4f" : "white",
-            }}
-          >
-            {asset.favourite ? (
-              <FavoriteIcon fontSize="small" />
-            ) : (
-              <FavoriteBorderIcon fontSize="small" />
-            )}
-          </StyledFavouriteButton>
-        ) : null}
-
-        {!hideActions && canShowFamily ? (
-          <StyledMenuButton
-            size="small"
-            onClick={handleOpenFamily}
-            onPointerDown={(e) => e.stopPropagation()}
-            aria-label="Open family"
-            title="Open family"
-            sx={{ right: 34 }}
-          >
-            <FolderOpenIcon fontSize="small" />
-          </StyledMenuButton>
-        ) : null}
-
-        {!hideActions ? (
-          <StyledMenuButton
-            size="small"
-            onClick={handleOpenMenu}
-            onPointerDown={(e) => e.stopPropagation()}
-            aria-label="Asset actions"
-            title="Asset actions"
-          >
-            <MoreVertIcon fontSize="small" />
-          </StyledMenuButton>
-        ) : null}
-        {!hideActions && isMenuOpen ? (
-          <AppMenu
-            menuId="library.item.actions"
-            subject={assetMenuContext}
-            items={assetMenuItems}
-            open
-            onClose={handleCloseMenu}
-            anchorEl={menuAnchorEl}
-            anchorOrigin={MENU_ANCHOR_ORIGIN}
-            transformOrigin={MENU_TRANSFORM_ORIGIN}
-            onClick={(event) => event.stopPropagation()}
-            extensionItemTestIdPrefix="extension-asset-menu-item-"
-          />
-        ) : null}
-
-        {/* Metadata Area */}
-        <MetadataArea layout={layout}>
-          <Typography
-            variant="caption"
-            noWrap
-            display="block"
-            sx={{
-              fontWeight: 500,
-              pr: layout === "square" ? 3 : 0,
-            }}
-            title={asset.name} // Tooltip for long names
-            data-testid="asset-card-name"
-          >
-            {asset.name}
-          </Typography>
-          <Typography
-            variant="caption"
-            display="block"
-            sx={TIMESTAMP_STYLES}
-          >
-            {asset.createdAt
-              ? new Date(asset.createdAt).toLocaleTimeString()
-              : "Unknown Time"}
-            {/* Fallback added in case createdAt is missing in legacy data */}
-          </Typography>
-        </MetadataArea>
-      </ContentRoot>
+      {!hideActions ? (
+        <StyledMenuButton
+          size="small"
+          onClick={handleOpenMenu}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Asset actions"
+          title="Asset actions"
+        >
+          <MoreVertIcon fontSize="small" />
+        </StyledMenuButton>
+      ) : null}
+      {!hideActions && isMenuOpen ? (
+        <AppMenu
+          menuId="library.item.actions"
+          subject={assetMenuContext}
+          items={assetMenuItems}
+          open
+          onClose={handleCloseMenu}
+          anchorEl={menuAnchorEl}
+          anchorOrigin={MENU_ANCHOR_ORIGIN}
+          transformOrigin={MENU_TRANSFORM_ORIGIN}
+          onClick={(event) => event.stopPropagation()}
+          extensionItemTestIdPrefix="extension-asset-menu-item-"
+        />
+      ) : null}
     </>
   );
 }
 
-const MemoizedAssetCardContent = React.memo(AssetCardContent);
+const MemoizedAssetCardActions = React.memo(AssetCardActions);
 
 function AssetCardComponent({
   asset,
@@ -519,54 +281,36 @@ function AssetCardComponent({
   onRequestPreview,
   layout = "default",
 }: AssetCardProps) {
-  const draggableData = React.useMemo(
-    () => ({
-      type: "asset",
-      // LUTs never become timeline clips; they only drop onto asset slots.
-      clip: asset.type === "lut" ? null : createClipFromAsset(asset),
-      asset,
-    }),
-    [asset],
-  );
-
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `asset_${asset.id}`,
-    data: draggableData,
-    disabled: disableDrag,
-  });
-
   return (
-    <StyledCard
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      elevation={2}
-      isDragDisabled={disableDrag}
-      isDragging={isDragging}
+    <MediaAssetCard
+      id={asset.id}
+      dragId={`asset_${asset.id}`}
+      name={asset.name}
+      asset={asset}
+      disableDrag={disableDrag}
       isSelected={isSelected}
       layout={layout}
-      onClick={(event) => {
-        event.stopPropagation();
-        onSelect?.(event);
-      }}
-      onDoubleClick={(event) => {
-        event.stopPropagation();
-        onRequestPreview?.(asset.id);
-      }}
-      data-asset-id={asset.id}
-      data-drag-disabled={disableDrag ? "true" : "false"}
-      data-selected={isSelected ? "true" : "false"}
-      data-testid="asset-card"
+      onSelect={onSelect}
+      onRequestPreview={onRequestPreview}
+      metadata={
+        <Typography
+          variant="caption"
+          display="block"
+          sx={{ fontSize: "0.65rem", color: "#aaa" }}
+        >
+          {asset.createdAt
+            ? new Date(asset.createdAt).toLocaleTimeString()
+            : "Unknown Time"}
+        </Typography>
+      }
     >
-      <MemoizedAssetCardContent
+      <MemoizedAssetCardActions
         asset={asset}
         hideActions={hideActions}
         onDeleteAll={onDeleteAll}
         onShowFamily={onShowFamily}
-        onRequestPreview={onRequestPreview}
-        layout={layout}
       />
-    </StyledCard>
+    </MediaAssetCard>
   );
 }
 

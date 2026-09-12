@@ -5,14 +5,7 @@ import {
   useState,
   type MouseEvent,
 } from "react";
-import { useDraggable } from "@dnd-kit/core";
-import {
-  Box,
-  IconButton,
-  Paper,
-  Tooltip,
-  Typography,
-} from "@mui/material";
+import { Tooltip, Typography } from "@mui/material";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditIcon from "@mui/icons-material/Edit";
 import DriveFileRenameOutlineIcon from "@mui/icons-material/DriveFileRenameOutline";
@@ -21,10 +14,17 @@ import LayersIcon from "@mui/icons-material/Layers";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import SensorsIcon from "@mui/icons-material/Sensors";
-import { styled } from "@mui/material/styles";
 import type { CompositeAsset } from "../../../types/TimelineTypes";
-import { useAsset } from "../../userAssets/api";
+import {
+  MediaAssetCard,
+  MediaAssetCardActionButton,
+  openAssetInMiniEditor,
+  useAssetStore,
+} from "../../userAssets";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
+import { useProjectStore } from "../../project";
+import { getProjectDimensions } from "../../renderer/utils/dimensions";
+import { resolveCompositeBakeSelection } from "../utils/resolveCompositeBakeSelection";
 import { createCompositeBaseClipFromAsset } from "../utils/createCompositeClip";
 import { useCompositeLibraryStore } from "../useCompositeLibraryStore";
 import {
@@ -35,6 +35,8 @@ import {
 import { AppMenu } from "../../../core/shell/AppMenu";
 import type { HostMenuSubject } from "../../../core/shell/hostMenus";
 import type { HostMenuItemDescriptor } from "../../../core/shell/menuDescriptors";
+
+const COMPOSITE_THUMBNAIL_FALLBACK = <LayersIcon sx={{ fontSize: 40, color: "#888" }} />;
 
 interface CompositeCardProps {
   composite: CompositeAsset;
@@ -47,40 +49,6 @@ interface CompositeCardProps {
   onPlaceOnTimeline: () => void;
 }
 
-const CardRoot = styled(Paper)({
-  position: "relative",
-  width: "100%",
-  overflow: "hidden",
-  backgroundColor: "#252525",
-  color: "white",
-  cursor: "grab",
-  transition: "transform 0.1s, box-shadow 0.1s, outline-color 0.1s",
-  "&:hover": {
-    transform: "scale(1.02)",
-  },
-});
-
-const PreviewArea = styled("div")({
-  height: 80,
-  position: "relative",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  backgroundColor: "#000",
-});
-
-const CardActionButton = styled(IconButton)({
-  position: "absolute",
-  top: 4,
-  padding: 4,
-  zIndex: 10,
-  color: "white",
-  backgroundColor: "rgba(0, 0, 0, 0.5)",
-  "&:hover": {
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-  },
-});
-
 function CompositeCardComponent({
   composite,
   isSelected,
@@ -91,7 +59,38 @@ function CompositeCardComponent({
   onDelete,
   onPlaceOnTimeline,
 }: CompositeCardProps) {
-  const bakedAsset = useAsset(composite.bake?.assetId ?? composite.bakedAssetId);
+  const assets = useAssetStore((state) => state.assets);
+  const projectFps = useProjectStore((state) => state.config.fps);
+  const projectAspectRatio = useProjectStore(
+    (state) => state.config.aspectRatio,
+  );
+  const bakedAsset = useMemo(() => {
+    // Legacy documents have only a media pointer. Versioned bakes must match
+    // the actual render inputs, including project settings and source assets.
+    if (!composite.bake) {
+      return assets.find((asset) => asset.id === composite.bakedAssetId);
+    }
+    const { validity } = resolveCompositeBakeSelection({
+      composite,
+      assets,
+      projectFps,
+      logicalDimensions: getProjectDimensions(projectAspectRatio),
+    });
+    return validity.valid
+      ? assets.find((asset) => asset.id === validity.assetId)
+      : undefined;
+  }, [assets, composite, projectFps, projectAspectRatio]);
+  const clip = useMemo(
+    () => createCompositeBaseClipFromAsset(composite),
+    [composite],
+  );
+  const handlePreview = useCallback(() => {
+    if (bakedAsset) {
+      void openAssetInMiniEditor(bakedAsset, {
+        openerId: `composite-browser:${composite.id}`,
+      });
+    }
+  }, [bakedAsset, composite.id]);
   const retryCompositeBake = useCompositeLibraryStore(
     (state) => state.retryCompositeBake,
   );
@@ -115,16 +114,6 @@ function CompositeCardComponent({
       composite.name,
     ],
   );
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: `composite-asset-${composite.id}`,
-    data: {
-      type: "asset",
-      clip: createCompositeBaseClipFromAsset(composite),
-      compositeAsset: composite,
-    },
-    disabled: disableDrag,
-  });
-
   const stopAction = useCallback((event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -193,85 +182,20 @@ function CompositeCardComponent({
 
   return (
     <>
-      <CardRoot
-        ref={setNodeRef}
-        {...attributes}
-        {...listeners}
-        elevation={2}
-        data-testid="composite-card"
-        data-composite-id={composite.id}
-        data-selected={isSelected ? "true" : "false"}
-        onClick={onSelect}
-        style={{
-          opacity: isDragging ? 0.55 : 1,
-          outline: isSelected ? "2px solid #4dabf5" : "2px solid transparent",
-          outlineOffset: "-2px",
-          boxShadow: isSelected
-            ? "0 0 0 1px rgba(77, 171, 245, 0.35)"
-            : "none",
-          cursor: disableDrag ? "pointer" : "grab",
-        }}
-      >
-        <PreviewArea>
-          {bakedAsset?.thumbnail || bakedAsset?.src ? (
-            <img
-              src={bakedAsset.thumbnail || bakedAsset.src}
-              alt={composite.name}
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-              }}
-            />
-          ) : (
-            <LayersIcon sx={{ fontSize: 40, color: "#888" }} />
-          )}
-        </PreviewArea>
-
-        <Tooltip
-          title={forceLive ? "Use automatic source policy" : "Force live rendering"}
-        >
-          <CardActionButton
-            size="small"
-            aria-label={
-              forceLive ? "Use automatic source policy" : "Force live rendering"
-            }
-            aria-pressed={forceLive}
-            onMouseDown={stopAction}
-            onClick={(event) => {
-              stopAction(event);
-              setCompositeForceLive(composite.id, !forceLive);
-            }}
-            sx={{ left: 4, color: forceLive ? "#86efac" : "white" }}
-          >
-            <SensorsIcon fontSize="small" />
-          </CardActionButton>
-        </Tooltip>
-
-        <CardActionButton
-          size="small"
-          aria-label="Composite actions"
-          title="Composite actions"
-          aria-haspopup="menu"
-          aria-expanded={menuAnchorEl ? "true" : undefined}
-          onMouseDown={stopAction}
-          onClick={handleOpenMenu}
-          sx={{ right: 4 }}
-        >
-          <MoreVertIcon fontSize="small" />
-        </CardActionButton>
-
-        <Box sx={{ p: 1 }}>
-          <Typography
-            variant="caption"
-            noWrap
-            display="block"
-            sx={{ fontWeight: 500 }}
-            title={composite.name}
-            data-testid="composite-card-name"
-          >
-            {composite.name}
-          </Typography>
+      <MediaAssetCard
+        id={composite.id}
+        dragId={`composite-asset-${composite.id}`}
+        name={composite.name}
+        asset={bakedAsset}
+        clip={clip}
+        compositeAsset={composite}
+        isSelected={isSelected}
+        disableDrag={disableDrag}
+        onSelect={onSelect}
+        onRequestPreview={bakedAsset ? handlePreview : undefined}
+        fallback={COMPOSITE_THUMBNAIL_FALLBACK}
+        testId="composite-card"
+        metadata={
           <Typography
             variant="caption"
             data-testid="composite-bake-status"
@@ -295,8 +219,41 @@ function CompositeCardComponent({
                     ? "Bake ready"
                     : "Live only"}
           </Typography>
-        </Box>
-      </CardRoot>
+        }
+      >
+        <Tooltip
+          title={forceLive ? "Use automatic source policy" : "Force live rendering"}
+        >
+          <MediaAssetCardActionButton
+            size="small"
+            aria-label={
+              forceLive ? "Use automatic source policy" : "Force live rendering"
+            }
+            aria-pressed={forceLive}
+            onPointerDown={stopAction}
+            onClick={(event) => {
+              stopAction(event);
+              setCompositeForceLive(composite.id, !forceLive);
+            }}
+            sx={{ left: 4, color: forceLive ? "#86efac" : "white" }}
+          >
+            <SensorsIcon fontSize="small" />
+          </MediaAssetCardActionButton>
+        </Tooltip>
+
+        <MediaAssetCardActionButton
+          size="small"
+          aria-label="Composite actions"
+          title="Composite actions"
+          aria-haspopup="menu"
+          aria-expanded={menuAnchorEl ? "true" : undefined}
+          onPointerDown={stopAction}
+          onClick={handleOpenMenu}
+          sx={{ right: 4 }}
+        >
+          <MoreVertIcon fontSize="small" />
+        </MediaAssetCardActionButton>
+      </MediaAssetCard>
 
       <AppMenu
         menuId="library.composite.actions"

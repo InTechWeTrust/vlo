@@ -59,3 +59,5 @@ export {
   useAssetSourceUrl,
   useFamily,
 } from "./api";
+
+export { MediaAssetCard, MediaAssetCardActionButton } from "./components/MediaAssetCard";
