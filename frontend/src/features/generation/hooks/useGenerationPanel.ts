@@ -17,6 +17,7 @@ import { useGenerationStore } from "../useGenerationStore";
 import { useProjectStore } from "../../project";
 import type {
   GenerationMediaInputValue,
+  GenerationBakedEditOrigin,
   WorkflowSelectionConfig,
   WorkflowInput,
   WorkflowInputItemOption,
@@ -25,16 +26,15 @@ import type {
 import type { SlotValue } from "../utils/pipeline";
 import {
   captureFramePngAtTick,
-  getDerivedMaskRenderKey,
   renderTimelineSelectionToMp4,
   pickPrimaryPreparedMaskFile,
   renderTimelineSelectionToMp4WithDerivedMasks,
 } from "../utils/inputSelection";
+import { bakeMiniEditorVideo, replayMiniEditorAssetEdit } from "../services/miniEditorReplay";
 import { buildDerivedMaskRenderSignature } from "../utils/derivedMaskRenderSignature";
 import {
   buildEditedTimelineSelection,
   getTimelineSelectionEditorState,
-  renderSyntheticEditedOutputs,
 } from "../utils/miniEditorEdit";
 import {
   createAudioSelectionPlaceholderFile,
@@ -291,6 +291,7 @@ function resolveEditAudioExportFps(
 interface AudioSelectionExtractionOptions {
   inputId: string;
   timelineSelection: ReturnType<typeof createTimelineSelection>;
+  bakedEdit?: GenerationBakedEditOrigin;
   thumbnailFile: File;
   extractionRequestId: number;
   exportFps?: number;
@@ -303,6 +304,7 @@ interface AudioSelectionExtractionOptions {
 async function extractAudioTimelineSelection({
   inputId,
   timelineSelection,
+  bakedEdit,
   thumbnailFile,
   extractionRequestId,
   exportFps,
@@ -338,6 +340,7 @@ async function extractAudioTimelineSelection({
   if (!isCurrent()) return;
   setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
     mediaType: "audio",
+    bakedEdit,
     isExtracting: false,
     extractionRequestId,
     preparedAudioFile,
@@ -350,6 +353,7 @@ interface VideoSelectionExtractionOptions {
   inputId: string;
   inputNodeId?: string;
   timelineSelection: ReturnType<typeof createTimelineSelection>;
+  bakedEdit?: GenerationBakedEditOrigin;
   thumbnailFile: File;
   extractionRequestId: number;
   mode: "rules" | "manual";
@@ -366,6 +370,7 @@ async function extractVideoTimelineSelection({
   inputId,
   inputNodeId,
   timelineSelection,
+  bakedEdit,
   thumbnailFile,
   extractionRequestId,
   mode,
@@ -398,6 +403,7 @@ async function extractVideoTimelineSelection({
       if (!isCurrent()) return;
       setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
         mediaType: "video",
+        bakedEdit,
         isExtracting: false,
         extractionRequestId,
         preparedVideoFile: video,
@@ -413,6 +419,7 @@ async function extractVideoTimelineSelection({
     if (!isCurrent()) return;
     setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
       mediaType: "video",
+      bakedEdit,
       isExtracting: false,
       extractionRequestId,
       preparedVideoFile,
@@ -1388,17 +1395,44 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
       selectionExtractionRequestIdsRef.current[inputId] = extractionRequestId;
       const { timelineSelection, thumbnailFile } = value;
+      const bakedEdit = value.bakedEdit ?? undefined;
 
       setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
         mediaType: value.mediaType,
+        bakedEdit,
         isExtracting: true,
         extractionRequestId,
       });
+
+      if (timelineSelection.bakedSource && bakedEdit) {
+        const mappings = mode === "manual" ? [] : useGenerationStore.getState().derivedMaskMappings.filter(
+          (mapping) => mapping.sourceInputId === (input ? getWorkflowInputId(input) : inputId) ||
+            (!mapping.sourceInputId && mapping.sourceNodeId === input?.nodeId),
+        );
+        void replayMiniEditorAssetEdit(bakedEdit, value.mediaType, mappings)
+          .then(({ thumbnailFile: replayThumbnail, ...prepared }) => {
+            if (selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId) return;
+            setMediaInputTimelineSelection(inputId, timelineSelection, replayThumbnail, {
+              mediaType: value.mediaType, bakedEdit, extractionRequestId,
+              isExtracting: false, ...prepared,
+            });
+          })
+          .catch((error: unknown) => {
+            if (selectionExtractionRequestIdsRef.current[inputId] !== extractionRequestId) return;
+            setMediaInputTimelineSelection(inputId, timelineSelection, thumbnailFile, {
+              mediaType: value.mediaType, bakedEdit, extractionRequestId,
+              isExtracting: false,
+              extractionError: error instanceof Error ? error.message : "Failed to replay mini editor edit",
+            });
+          });
+        return;
+      }
 
       if (value.mediaType === "audio") {
         void extractAudioTimelineSelection({
           inputId,
           timelineSelection,
+          bakedEdit,
           thumbnailFile,
           extractionRequestId,
           exportFps:
@@ -1421,6 +1455,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         inputId,
         inputNodeId: input?.nodeId,
         timelineSelection,
+        bakedEdit,
         thumbnailFile,
         extractionRequestId,
         mode,
@@ -1921,11 +1956,12 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         value.kind === "timelineSelection" &&
         value.mediaType === "audio"
       ) {
-        const selection = value.timelineSelection;
+        const selection = value.bakedEdit?.timelineSelection ?? value.timelineSelection;
+        editorInitial = value.bakedEdit?.timelineSelection ? value.bakedEdit.spec : undefined;
         sourceSelection = selection;
         // The rendered audio spans exactly the selection, so the editor's crop
         // ticks are already selection-relative — what the rebuild expects.
-        const preparedAudioFile = value.preparedAudioFile;
+        const preparedAudioFile = value.bakedEdit?.timelineSelection ? null : value.preparedAudioFile;
         prepare = async () => {
           const file =
             preparedAudioFile ??
@@ -1961,6 +1997,11 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         // it, so the audio still comes off the timeline with every clip, level
         // and transform the original selection carried.
         if (sourceSelection) {
+          const bakedEdit: GenerationBakedEditOrigin = {
+            assetId: null,
+            timelineSelection: structuredClone(sourceSelection),
+            spec: structuredClone(spec),
+          };
           const editedSelection = buildEditedTimelineSelection(sourceSelection, {
             ...spec,
             // Range masks are a visual matte; an audio slot never has any.
@@ -1972,6 +2013,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             thumbnailFile,
             {
               mediaType: "audio",
+              bakedEdit,
               isExtracting: true,
               extractionRequestId,
             },
@@ -1979,6 +2021,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           await extractAudioTimelineSelection({
             inputId,
             timelineSelection: editedSelection,
+            bakedEdit,
             thumbnailFile,
             extractionRequestId,
             exportFps: resolveEditAudioExportFps(input),
@@ -2013,7 +2056,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             isExtracting: false,
             extractionRequestId,
             preparedAudioFile: trimmedFile,
-            bakedEdit: { assetId: bakeOriginAssetId, spec },
+            bakedEdit: { assetId: bakeOriginAssetId, spec: structuredClone(spec) },
           },
         );
       };
@@ -2121,14 +2164,14 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         value.kind === "timelineSelection" &&
         value.mediaType === "video"
       ) {
-        const selection = value.timelineSelection;
+        const selection = value.bakedEdit?.timelineSelection ?? value.timelineSelection;
         const { ranges, previewSelection } =
           getTimelineSelectionEditorState(selection);
-        editorInitial = { ranges };
+        editorInitial = value.bakedEdit?.timelineSelection ? value.bakedEdit.spec : { ranges };
         // A cached render may already contain these masks. Preview their
         // underlying frames so shrinking or deleting a range reveals video.
         const existingPrepared =
-          ranges.length === 0 ? value.preparedVideoFile : null;
+          !value.bakedEdit?.timelineSelection && ranges.length === 0 ? value.preparedVideoFile : null;
         sourceSelection = selection;
         prepare = async () => {
           const file =
@@ -2167,6 +2210,11 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         // it through the standard extraction path so timeline masks, transforms
         // and metadata are preserved and the derived mask is recomputed.
         if (sourceSelection) {
+          const bakedEdit: GenerationBakedEditOrigin = {
+            assetId: null,
+            timelineSelection: structuredClone(sourceSelection),
+            spec: structuredClone(spec),
+          };
           const editedSelection = buildEditedTimelineSelection(
             sourceSelection,
             spec,
@@ -2177,6 +2225,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             thumbnailFile,
             {
               mediaType: "video",
+              bakedEdit,
               isExtracting: true,
               extractionRequestId,
             },
@@ -2185,6 +2234,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             inputId,
             inputNodeId: input?.nodeId,
             timelineSelection: editedSelection,
+            bakedEdit,
             thumbnailFile,
             extractionRequestId,
             mode,
@@ -2203,6 +2253,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         const dims = {
           width: sourceWidth > 0 ? sourceWidth : 1280,
           height: sourceHeight > 0 ? sourceHeight : 720,
+          fps: Math.max(1, useProjectStore.getState().config.fps),
         };
         const visualMasks =
           mode === "manual"
@@ -2214,21 +2265,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
                     (!mapping.sourceInputId &&
                       mapping.sourceNodeId === input?.nodeId)),
               );
-        // One request per distinct render key: binary and soft mappings on the
-        // same source are two different mattes, exactly as the timeline path
-        // renders them.
-        const maskRequests = visualMasks.map((mapping) => {
-          const key = getDerivedMaskRenderKey(mapping);
-          return {
-            key,
-            maskType: key === "video_soft" ? ("soft" as const) : ("binary" as const),
-            sourceVideoTreatment: mapping.sourceVideoTreatment,
-          };
-        });
-        const { video, masks, maskContentByKey } =
-          await renderSyntheticEditedOutputs(spec, source, dims, {
-            maskRequests,
-          });
+        const prepared = await bakeMiniEditorVideo(spec, source, dims, visualMasks);
         const cropLen = Math.max(1, spec.cropEndTicks - spec.cropStartTicks);
 
         setMediaInputTimelineSelection(
@@ -2239,16 +2276,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             mediaType: "video",
             isExtracting: false,
             extractionRequestId,
-            preparedVideoFile: video,
-            // Every matte is kept, empty ones included: emptiness is carried
-            // beside them so a required mask still ships (with a warning) and
-            // only an optional one is withheld — as on the timeline path.
-            preparedMaskFile: pickPrimaryPreparedMaskFile(visualMasks, masks),
-            preparedMasksByKey: masks,
-            preparedMaskContentByKey: maskContentByKey,
-            preparedDerivedMaskSignature:
-              buildDerivedMaskRenderSignature(visualMasks),
-            bakedEdit: { assetId: bakeOriginAssetId, spec },
+            ...prepared,
+            bakedEdit: { assetId: bakeOriginAssetId, spec: structuredClone(spec), render: dims },
             includeEmbeddedAudio,
           },
         );

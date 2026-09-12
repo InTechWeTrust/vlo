@@ -462,7 +462,7 @@ function toLightweightCreationInput(
     return input;
   }
 
-  const { timelineSelection, ...rest } = input;
+  const { timelineSelection, miniEditorEdit: _miniEditorEdit, ...rest } = input;
   return { ...rest, timelineSelectionStart: timelineSelection.start };
 }
 

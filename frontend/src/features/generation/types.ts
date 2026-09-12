@@ -2,9 +2,9 @@ import type {
   Asset,
   AssetType,
   GeneratedCreationMetadata,
+  GeneratedMiniEditorEdit,
 } from "../../types/Asset";
 import type { TimelineSelection } from "../../types/TimelineTypes";
-import type { MiniEditorEditSpec } from "../miniEditor";
 
 export type GenerationMode = "image" | "video";
 export type WorkflowLoadState = "idle" | "loading" | "ready" | "error";
@@ -264,20 +264,17 @@ export interface GenerationVideoTimelineSelectionInputValue
   preparedMaskContentByKey?: Partial<Record<string, boolean>> | null;
   preparedDerivedMaskSignature?: string | null;
   /**
-   * Origin of a baked selection: the asset the mini editor baked from and the
-   * edit it applied. Re-editing reopens the *original* asset with this spec
+   * Source and instructions for a mini editor save. Real selections retain
+   * their original detached snapshot; synthetic bakes retain their asset id.
+   * Re-editing reopens the original source with this spec
    * restored, so a second edit composes on the source rather than on the
    * already-cropped bake (which has no clips to render from).
    */
   bakedEdit?: GenerationBakedEditOrigin | null;
 }
 
-/** See {@link GenerationVideoTimelineSelectionInputValue.bakedEdit}. */
-export interface GenerationBakedEditOrigin {
-  /** Null when the source asset is gone and the bake itself became the source. */
-  assetId: string | null;
-  spec: MiniEditorEditSpec;
-}
+/** Shared by live input state and its serializable metadata recipe. */
+export type GenerationBakedEditOrigin = GeneratedMiniEditorEdit;
 
 export type GenerationTimelineSelectionInputValue =
   | GenerationAudioTimelineSelectionInputValue

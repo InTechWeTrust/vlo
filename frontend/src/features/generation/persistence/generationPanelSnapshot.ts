@@ -9,6 +9,7 @@ import type { WorkflowMaskCroppingMode } from "../types";
 import type { GenerationAspectRatioSelection } from "../utils/aspectRatioSelection";
 import type { WorkflowRules } from "../services/workflowRules";
 import { TEMP_WORKFLOW_ID } from "../store/constants";
+import { parseMiniEditorEdit } from "../utils/miniEditorMetadata";
 import {
   buildGeneratedCreationInputs,
   buildGeneratedCreationReplayState,
@@ -138,12 +139,14 @@ function parseInput(value: unknown): GeneratedCreationInput | null {
   }
 
   if (value.kind === "timelineSelection" && isRecord(value.timelineSelection)) {
+    const miniEditorEdit = parseMiniEditorEdit(value.miniEditorEdit);
     return {
       nodeId: value.nodeId,
       ...(inputId ? { inputId } : {}),
       ...includeEmbeddedAudio,
       kind: "timelineSelection",
       timelineSelection: value.timelineSelection as unknown as TimelineSelection,
+      ...(miniEditorEdit ? { miniEditorEdit } : {}),
     };
   }
 

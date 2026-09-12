@@ -293,7 +293,8 @@ async function restoreSavedMediaInputs(
     if (options.toleratePendingAssets) {
       const missingAssetIds = await waitForRestorableAssets(
         inputs.flatMap((input) =>
-          input.kind === "draggedAsset" ? [input.parentAssetId] : [],
+          input.kind === "draggedAsset" ? [input.parentAssetId] :
+            input.miniEditorEdit?.assetId ? [input.miniEditorEdit.assetId] : [],
         ),
         isStale,
       );

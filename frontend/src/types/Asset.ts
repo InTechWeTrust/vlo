@@ -1,4 +1,15 @@
 import type { ClipTransform, TimelineSelection } from "./TimelineTypes";
+import type { MiniEditorEditSpec } from "../features/miniEditor";
+
+/** Serializable source and instructions for replaying a generation mini-editor save. */
+export interface GeneratedMiniEditorEdit {
+  assetId: string | null;
+  /** Original detached selection, before the editor's crop and range masks. */
+  timelineSelection?: TimelineSelection;
+  spec: MiniEditorEditSpec;
+  /** Pins the synthetic asset bake to the settings used when Save was pressed. */
+  render?: { width: number; height: number; fps: number };
+}
 
 export type AssetType = "video" | "image" | "audio" | "lut";
 
@@ -31,6 +42,7 @@ export type GeneratedCreationInput =
       timelineSelection?: TimelineSelection;
       /** Set only on the abridged index copy: the stripped selection's start tick. */
       timelineSelectionStart?: number;
+      miniEditorEdit?: GeneratedMiniEditorEdit;
       /** Per-item audio inclusion for a batch reference video. */
       includeEmbeddedAudio?: boolean;
     }

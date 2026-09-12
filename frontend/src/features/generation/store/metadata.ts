@@ -6,6 +6,8 @@ import type {
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { getAssetById } from "../../userAssets/api";
 import { useProjectStore } from "../../project";
+import { replayMiniEditorAssetEdit } from "../services/miniEditorReplay";
+import { buildEditedTimelineSelection } from "../utils/miniEditorEdit";
 import { normalizeDetachedTimelineSelection } from "../../timelineSelection";
 import type { DerivedMaskMapping } from "../pipeline/types";
 import {
@@ -299,9 +301,67 @@ export async function restoreMediaInputsFromMetadata(
       continue;
     }
 
+    const edit = input.miniEditorEdit;
     const timelineSelection = normalizeDetachedTimelineSelection(
-      input.timelineSelection,
+      edit?.timelineSelection
+        ? buildEditedTimelineSelection(edit.timelineSelection, {
+            ...edit.spec,
+            ...(workflowInput.inputType === "audio" ? { ranges: [] } : {}),
+          })
+        : input.timelineSelection,
     );
+    const sourceMappings = derivedMaskMappings.filter(
+      (mapping) =>
+        mapping.sourceInputId === getWorkflowInputId(workflowInput) ||
+        (!mapping.sourceInputId && mapping.sourceNodeId === workflowInput.nodeId),
+    );
+    let selectionSeeded = false;
+    const isCurrent = () => {
+      if (!options.getMediaInputs) return true;
+      const current = readWorkflowInputSlotValue(options.getMediaInputs(), inputId, workflowInputById);
+      return current?.kind === "timelineSelection" &&
+        current.timelineSelection === timelineSelection && current.extractionRequestId === 1;
+    };
+    const setSelection: typeof actions.setMediaInputTimelineSelection = (
+      id, selection, thumbnail, preparation,
+    ) => {
+      if (selectionSeeded && !isCurrent()) return;
+      actions.setMediaInputTimelineSelection(id, selection, thumbnail, {
+        ...preparation,
+        ...(edit ? { bakedEdit: structuredClone(edit) } : {}),
+      });
+      selectionSeeded = true;
+    };
+
+    if (timelineSelection.bakedSource) {
+      const mediaType = workflowInput.inputType === "audio" ? "audio" : "video";
+      const thumbnail = createAudioSelectionPlaceholderFile();
+      const canReplay = Boolean(edit?.assetId);
+      setSelection(inputId, timelineSelection, thumbnail, {
+        mediaType,
+        isExtracting: canReplay,
+        extractionRequestId: 1,
+        extractionError: canReplay ? null :
+          "This saved input has no mini editor source/edit metadata. Re-select its source and apply the edit again.",
+      });
+      restoreItemOptions();
+      if (!edit || !canReplay) continue;
+      void replayMiniEditorAssetEdit(edit, mediaType, sourceMappings)
+        .then(({ thumbnailFile, ...prepared }) => {
+          if (!isCurrent()) return;
+          setSelection(inputId, timelineSelection, thumbnailFile, {
+            mediaType, isExtracting: false, extractionRequestId: 1, ...prepared,
+          });
+        })
+        .catch((error: unknown) => {
+          if (!isCurrent()) return;
+          setSelection(inputId, timelineSelection, thumbnail, {
+            mediaType, isExtracting: false, extractionRequestId: 1,
+            extractionError: error instanceof Error ? error.message : "Failed to replay mini editor edit",
+          });
+        });
+      continue;
+    }
 
     if (workflowInput.inputType === "image") {
       const frameFile = await captureFramePngAtTick(
@@ -325,7 +385,7 @@ export async function restoreMediaInputsFromMetadata(
             "generation-selection-thumb",
             timelineSelection,
           );
-    actions.setMediaInputTimelineSelection(
+    setSelection(
       inputId,
       timelineSelection,
       thumbnailFile,
@@ -352,7 +412,7 @@ export async function restoreMediaInputsFromMetadata(
           ) ?? undefined,
       })
         .then((preparedAudioFile) => {
-          actions.setMediaInputTimelineSelection(
+          setSelection(
             inputId,
             timelineSelection,
             thumbnailFile,
@@ -369,7 +429,7 @@ export async function restoreMediaInputsFromMetadata(
           );
         })
         .catch((error) => {
-          actions.setMediaInputTimelineSelection(
+          setSelection(
             inputId,
             timelineSelection,
             thumbnailFile,
@@ -388,11 +448,6 @@ export async function restoreMediaInputsFromMetadata(
       continue;
     }
 
-    const sourceMappings = derivedMaskMappings.filter(
-      (mapping) =>
-        mapping.sourceInputId === getWorkflowInputId(workflowInput) ||
-        (!mapping.sourceInputId && mapping.sourceNodeId === workflowInput.nodeId),
-    );
 
     if (sourceMappings.length > 0) {
       const cachedVisualMasks = sourceMappings.filter(
@@ -403,7 +458,7 @@ export async function restoreMediaInputsFromMetadata(
         cachedVisualMasks,
       )
         .then(({ video, masks }) => {
-          actions.setMediaInputTimelineSelection(
+          setSelection(
             inputId,
             timelineSelection,
             thumbnailFile,
@@ -422,7 +477,7 @@ export async function restoreMediaInputsFromMetadata(
           );
         })
         .catch((error) => {
-          actions.setMediaInputTimelineSelection(
+          setSelection(
             inputId,
             timelineSelection,
             thumbnailFile,
@@ -443,7 +498,7 @@ export async function restoreMediaInputsFromMetadata(
 
     void renderTimelineSelectionToMp4(timelineSelection)
       .then((preparedVideoFile) => {
-        actions.setMediaInputTimelineSelection(
+        setSelection(
           inputId,
           timelineSelection,
           thumbnailFile,
@@ -456,7 +511,7 @@ export async function restoreMediaInputsFromMetadata(
         );
       })
       .catch((error) => {
-        actions.setMediaInputTimelineSelection(
+        setSelection(
           inputId,
           timelineSelection,
           thumbnailFile,
@@ -512,6 +567,7 @@ export function buildGeneratedCreationInputs(
           ...repeatableIdentity,
           ...itemOptions,
           kind: "timelineSelection",
+          ...(value.bakedEdit ? { miniEditorEdit: structuredClone(value.bakedEdit) } : {}),
           timelineSelection: cloneTimelineSelectionForMetadata(
             value.timelineSelection,
           ),

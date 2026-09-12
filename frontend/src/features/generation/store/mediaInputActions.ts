@@ -164,6 +164,19 @@ function carryForwardItemOptions(
 ): GenerationMediaInputValue {
   if (!previous) return next;
 
+  // Extraction completion/error replaces the value, but its edit recipe still
+  // describes the same request. Do not inherit it for a newly selected range.
+  if (
+    previous.kind === "timelineSelection" &&
+    next.kind === "timelineSelection" &&
+    previous.mediaType === next.mediaType &&
+    previous.timelineSelection === next.timelineSelection &&
+    previous.extractionRequestId === next.extractionRequestId &&
+    !next.bakedEdit && previous.bakedEdit
+  ) {
+    next = { ...next, bakedEdit: previous.bakedEdit };
+  }
+
   const carry = (includeEmbeddedAudio: boolean | undefined) =>
     typeof includeEmbeddedAudio === "boolean"
       ? { ...next, includeEmbeddedAudio }

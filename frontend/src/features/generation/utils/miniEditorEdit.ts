@@ -300,7 +300,7 @@ function toEven(value: number): number {
 function buildSyntheticRenderInputs(
   spec: MiniEditorEditSpec,
   source: ResolvedEditorSource,
-  dims: { width: number; height: number },
+  dims: { width: number; height: number; fps?: number },
 ): EditedRenderInputs {
   const durationTicks = Math.max(0, Math.round(source.durationTicks));
   const cropStart = clamp(spec.cropStartTicks, 0, durationTicks);
@@ -366,7 +366,7 @@ function buildSyntheticRenderInputs(
     backgroundAlpha: 0,
   };
 
-  const fps = Math.max(1, useProjectStore.getState().config.fps);
+  const fps = Math.max(1, dims.fps ?? useProjectStore.getState().config.fps);
   const projectData: ProjectData = {
     tracks: [track],
     clips: [clip],
@@ -418,7 +418,7 @@ function dedupeMaskRequests(
 export async function renderSyntheticEditedOutputs(
   spec: MiniEditorEditSpec,
   source: ResolvedEditorSource,
-  dims: { width: number; height: number },
+  dims: { width: number; height: number; fps?: number },
   options: {
     signal?: AbortSignal;
     /**

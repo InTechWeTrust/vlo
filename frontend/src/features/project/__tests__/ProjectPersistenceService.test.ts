@@ -434,7 +434,11 @@ describe("ProjectPersistenceService", () => {
       source: "generated",
       workflowName: "Workflow",
       inputs: [
-        { nodeId: "3", kind: "timelineSelection", timelineSelection: selection },
+        {
+          nodeId: "3", kind: "timelineSelection", timelineSelection: selection,
+          miniEditorEdit: { assetId: null, timelineSelection: selection,
+            spec: { cropStartTicks: 0, cropEndTicks: 100, ranges: [] } },
+        },
       ],
       comfyuiWorkflow: { nodes: [] },
     };
@@ -496,6 +500,10 @@ describe("ProjectPersistenceService", () => {
     expect(sidecar.creationMetadata.inputs[0].timelineSelection).toEqual(
       selection,
     );
+    expect(sidecar.creationMetadata.inputs[0].miniEditorEdit).toEqual({
+      assetId: null, timelineSelection: selection,
+      spec: { cropStartTicks: 0, cropEndTicks: 100, ranges: [] },
+    });
     expect(sidecar.creationMetadata.comfyuiWorkflow).toEqual({ nodes: [] });
   });
 
