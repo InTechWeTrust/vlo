@@ -53,6 +53,7 @@ export function createTimelineSelection(
     selectionMessage,
     selectionIncludeModeEnabled,
     selectionIncludedTrackIds,
+    selectionAudioOnly,
   } =
     useTimelineSelectionStore.getState();
   const selectionFps = resolveSelectionFps(
@@ -91,6 +92,10 @@ export function createTimelineSelection(
     fps: selectionFps,
     frameStep: selectionFrameStep,
     frameOffset: selectionFrameOffset,
+    // Resolved here like fps and resolution: what the selection was taken as
+    // travels with it, so the extraction it produced stays readable from the
+    // selection alone.
+    ...(selectionAudioOnly ? { audioOnly: true as const } : {}),
   };
 }
 

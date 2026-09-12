@@ -92,6 +92,13 @@ export interface TimelineSelection extends TimelineRegionData {
    */
   resolution?: number;
   /**
+   * Records that this selection was taken as audio only: the extraction it
+   * produced is a soundtrack, not a video. Set from the selection overlay's
+   * own switch, so an extracted audio asset's creation metadata says how it
+   * was made rather than implying a video render.
+   */
+  audioOnly?: true;
+  /**
    * Marks a placeholder selection that stands in for already-baked media (the
    * generation mini editor's synthetic asset edit): it carries no clips and no
    * project geometry, so it can never be re-rendered — consumers must use the

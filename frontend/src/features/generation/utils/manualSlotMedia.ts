@@ -1,13 +1,6 @@
-import {
-  ALL_FORMATS,
-  BlobSource,
-  BufferTarget,
-  Conversion,
-  Input,
-  Output,
-  WavOutputFormat,
-} from "mediabunny";
+import { ALL_FORMATS, BlobSource, Input } from "mediabunny";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
+import { extractAudioTrackToWav } from "../../../core/media";
 import { mediaSecondsToTick, tickToMediaSeconds } from "../../../core/time";
 import { renderTimelineSelectionToMp4 } from "./inputSelection";
 import { throwIfAborted } from "../pipeline/utils/abort";
@@ -44,40 +37,11 @@ async function convertAudioToWav(
   options: { trim?: { start: number; end: number }; signal?: AbortSignal },
 ): Promise<File | null> {
   throwIfAborted(options.signal);
-  const input = new Input({
-    source: new BlobSource(file),
-    formats: ALL_FORMATS,
+  return extractAudioTrackToWav(file, {
+    ...(options.trim ? { trim: options.trim } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
+    filenamePrefix: "generation-audio",
   });
-
-  try {
-    const audioTrack = await input.getPrimaryAudioTrack();
-    throwIfAborted(options.signal);
-    if (!audioTrack) return null;
-
-    const target = new BufferTarget();
-    const output = new Output({
-      format: new WavOutputFormat(),
-      target,
-    });
-
-    const conversion = await Conversion.init({
-      input,
-      output,
-      ...(options.trim ? { trim: options.trim } : {}),
-      video: { discard: true },
-    });
-    if (!conversion.isValid) return null;
-    await conversion.execute();
-    throwIfAborted(options.signal);
-
-    if (!target.buffer) return null;
-    return new File([target.buffer], `generation-audio-${Date.now()}.wav`, {
-      type: "audio/wav",
-      lastModified: Date.now(),
-    });
-  } finally {
-    input.dispose();
-  }
 }
 
 /** Pulls a video's whole soundtrack out as WAV. */

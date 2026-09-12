@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
+import { extractAudioTrackToWav } from "../../../core/media";
 import {
   installHostExportController,
   type HostExportRunRequest,
@@ -37,6 +38,27 @@ import {
   getCompositeForceLiveIds,
 } from "../../composite";
 import { createCompositeSourcePolicySnapshot } from "../services/framePlanning";
+
+/**
+ * Short edge an audio-only extraction renders at. The frames are discarded
+ * once their soundtrack is taken, so the cheapest rung is the right one.
+ */
+const AUDIO_ONLY_RENDER_RESOLUTION = 480;
+
+/**
+ * Pulls the soundtrack out of a rendered range. A silent range has nothing to
+ * extract, and handing back the video instead would quietly contradict what
+ * the user asked for, so this throws rather than falling back.
+ */
+async function extractSelectionAudioFile(renderedFile: File): Promise<File> {
+  const audioFile = await extractAudioTrackToWav(renderedFile, {
+    filenamePrefix: "selection-audio",
+  });
+  if (!audioFile) {
+    throw new Error("The selected range contains no audio to extract.");
+  }
+  return audioFile;
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
@@ -95,6 +117,12 @@ export interface SelectionExportOptions {
   selectionResolution?: number | null;
   selectionFrameStep: number;
   selectionFrameOffset?: number;
+  /**
+   * Take only the range's soundtrack: the render still runs (that is how the
+   * timeline's audio is mixed), but what lands in the library is the WAV it
+   * produced rather than the video.
+   */
+  audioOnly?: boolean;
   onProgress?: (progress: number) => void;
   /** Output container; the renderer's own default when omitted. */
   format?: OutputVideoFormat;
@@ -217,6 +245,7 @@ export function useExportJobController({
         selectionResolution,
         selectionFrameStep,
         selectionFrameOffset,
+        audioOnly,
         onProgress,
         format,
         keyFrameInterval,
@@ -228,9 +257,14 @@ export function useExportJobController({
 
       try {
         wakeLock = acquireExportWakeLock();
+        // An audio-only extraction throws the pixels away, so it renders at
+        // the smallest offered short edge whatever the selection asked for —
+        // the soundtrack is mixed independently of frame size.
         const outputDimensions = resolveRenderOutputDimensions(
           projectAspectRatio,
-          selectionResolution ?? projectOutputResolution,
+          audioOnly
+            ? AUDIO_ONLY_RENDER_RESOLUTION
+            : (selectionResolution ?? projectOutputResolution),
         );
 
         const exportConfig: ExportConfig = {
@@ -271,6 +305,7 @@ export function useExportJobController({
           ...(selectionFrameOffset && selectionFrameOffset > 1
             ? { frameOffset: selectionFrameOffset }
             : {}),
+          ...(audioOnly ? { audioOnly: true as const } : {}),
         };
 
         const file = await renderSelectionToVideoFile(
@@ -294,13 +329,17 @@ export function useExportJobController({
           },
         );
 
+        const extractedFile = audioOnly
+          ? await extractSelectionAudioFile(file)
+          : file;
+
         // `reuseExistingHash` matches what `api.assets.ingest` already does:
         // re-rendering identical bytes should answer with the asset that
         // holds them, not with nothing. Without it a repeat render skips the
         // upload and reports no asset at all, which contradicts what a range
         // render promises.
         const asset = await addLocalAsset(
-          file,
+          extractedFile,
           { source: "extracted", timelineSelection: selectionTimelineSelection },
           undefined,
           { reuseExistingHash: true },

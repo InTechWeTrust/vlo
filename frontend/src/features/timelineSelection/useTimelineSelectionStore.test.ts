@@ -14,6 +14,8 @@ describe("useTimelineSelectionStore", () => {
       selectionIncludeModeEnabled: false,
       selectionAllowIncludeAll: false,
       selectionIncludedTrackIds: [],
+      selectionAllowAudioOnly: false,
+      selectionAudioOnly: false,
       selectionFpsOverride: null,
       selectionResolutionOverride: null,
       selectionFrameStep: 1,
@@ -256,6 +258,47 @@ describe("useTimelineSelectionStore", () => {
 
       expect(result.current.selectionFpsOverride).toBeNull();
       expect(result.current.selectionResolutionOverride).toBeNull();
+    });
+  });
+
+  describe("audio only", () => {
+    it("takes the switch only from a flow that offers it", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000);
+        result.current.setSelectionAudioOnly(true);
+      });
+
+      expect(result.current.selectionAllowAudioOnly).toBe(false);
+      expect(result.current.selectionAudioOnly).toBe(false);
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000, { allowAudioOnly: true });
+        result.current.setSelectionAudioOnly(true);
+      });
+
+      expect(result.current.selectionAllowAudioOnly).toBe(true);
+      expect(result.current.selectionAudioOnly).toBe(true);
+    });
+
+    it("does not carry the switch into the next selection", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000, { allowAudioOnly: true });
+        result.current.setSelectionAudioOnly(true);
+        result.current.exitSelectionMode();
+      });
+
+      expect(result.current.selectionAllowAudioOnly).toBe(false);
+      expect(result.current.selectionAudioOnly).toBe(false);
+
+      act(() => {
+        result.current.enterSelectionMode(0, 5_000, { allowAudioOnly: true });
+      });
+
+      expect(result.current.selectionAudioOnly).toBe(false);
     });
   });
 

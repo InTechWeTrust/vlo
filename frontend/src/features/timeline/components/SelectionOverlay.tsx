@@ -2,7 +2,9 @@ import { useCallback, useRef, useState, useEffect } from "react";
 import {
   Box,
   Button,
+  Checkbox,
   Collapse,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Paper,
@@ -142,6 +144,8 @@ interface SelectionResolutionSettingProps {
   projectResolution: number;
   recommended: number | null;
   onChange: (resolution: number | null) => void;
+  /** Nothing renders pixels (audio-only), so the short edge means nothing. */
+  disabled?: boolean;
 }
 
 /**
@@ -154,6 +158,7 @@ function SelectionResolutionSetting({
   projectResolution,
   recommended,
   onChange,
+  disabled = false,
 }: SelectionResolutionSettingProps) {
   const followsProject = value === null;
   const inherited = recommended ?? projectResolution;
@@ -166,6 +171,7 @@ function SelectionResolutionSetting({
       <Select
         value={followsProject ? "" : String(value)}
         displayEmpty
+        disabled={disabled}
         onChange={(event) => {
           const next = event.target.value;
           onChange(next === "" ? null : Number(next));
@@ -211,6 +217,49 @@ function SelectionResolutionSetting({
   );
 }
 
+interface SelectionAudioOnlySettingProps {
+  checked: boolean;
+  onChange: (audioOnly: boolean) => void;
+}
+
+/**
+ * Takes the range's soundtrack instead of a video. Offered only by flows that
+ * can consume audio (the extraction flow), so it sits beside the render
+ * settings it switches off rather than in the always-visible row.
+ */
+function SelectionAudioOnlySetting({
+  checked,
+  onChange,
+}: SelectionAudioOnlySettingProps) {
+  return (
+    <FormControlLabel
+      control={
+        <Checkbox
+          size="small"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          inputProps={{ "aria-label": "Extract audio only" }}
+          data-testid="selection-audio-only-setting"
+          sx={{
+            color: "#888",
+            p: 0.25,
+            "&.Mui-checked": { color: "#7ec8e3" },
+          }}
+        />
+      }
+      label="Audio only"
+      sx={{
+        m: 0,
+        gap: 0.5,
+        "& .MuiFormControlLabel-label": {
+          fontSize: "0.875rem",
+          color: "#aaa",
+        },
+      }}
+    />
+  );
+}
+
 export function SelectionOverlay({
   maxSelectionTicks = null,
   recommendedMaxTicks,
@@ -224,6 +273,15 @@ export function SelectionOverlay({
   const endTick = useTimelineSelectionStore((s) => s.selectionEndTick);
   const updateSelectionEnd = useTimelineSelectionStore(
     (s) => s.updateSelectionEnd,
+  );
+  const selectionAllowAudioOnly = useTimelineSelectionStore(
+    (s) => s.selectionAllowAudioOnly,
+  );
+  const selectionAudioOnly = useTimelineSelectionStore(
+    (s) => s.selectionAudioOnly,
+  );
+  const setSelectionAudioOnly = useTimelineSelectionStore(
+    (s) => s.setSelectionAudioOnly,
   );
   const selectionFpsOverride = useTimelineSelectionStore(
     (s) => s.selectionFpsOverride,
@@ -754,11 +812,14 @@ export function SelectionOverlay({
     project: projectResolution,
   });
 
+  const audioOnly = selectionAllowAudioOnly && selectionAudioOnly;
+
   const settingsSummary = [
+    audioOnly ? "audio only" : null,
     `${effectiveFps} fps`,
     // Only when there is something to say: a workflow recommendation or a
     // user override. Matching the project is the unremarkable case.
-    effectiveResolution !== projectResolution
+    effectiveResolution !== projectResolution && !audioOnly
       ? (RESOLUTION_LABELS[effectiveResolution] ?? `${effectiveResolution}p`)
       : null,
     effectiveFrameStep > 1 || effectiveFrameOffset > 1
@@ -1088,6 +1149,12 @@ export function SelectionOverlay({
                   borderTop: "1px solid #3a3a3a",
                 }}
               >
+                {selectionAllowAudioOnly ? (
+                  <SelectionAudioOnlySetting
+                    checked={selectionAudioOnly}
+                    onChange={setSelectionAudioOnly}
+                  />
+                ) : null}
                 <SelectionSetting
                   label="Max"
                   value={
@@ -1122,6 +1189,7 @@ export function SelectionOverlay({
                   projectResolution={projectResolution}
                   recommended={recommendedResolutionFromStore}
                   onChange={setSelectionResolutionOverride}
+                  disabled={audioOnly}
                 />
                 <SelectionSetting
                   label="Step"

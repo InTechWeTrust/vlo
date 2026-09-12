@@ -785,6 +785,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
       selectionRecommendedResolution,
       selectionFrameStep,
       selectionFrameOffset,
+      selectionAudioOnly,
       exitSelectionMode,
     } = useTimelineSelectionStore.getState();
     // Read before exiting selection mode, which clears the recommendations.
@@ -810,6 +811,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
         selectionResolution,
         selectionFrameStep,
         selectionFrameOffset,
+        audioOnly: selectionAudioOnly,
         onProgress: (progress) => {
           useExtractStore.getState().setProgress(progress);
         },
@@ -828,7 +830,9 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
     closeDialog();
     // Pause playback when entering selection mode
     if (isPlaying) setIsPlaying(false);
-    enterSelectionMode(currentTime, safeEnd);
+    // This is the one flow that can hand back a soundtrack on its own, so it
+    // is the one that offers the audio-only switch.
+    enterSelectionMode(currentTime, safeEnd, { allowAudioOnly: true });
     setOnConfirmSelection(handleConfirmSelection);
   }, [isPlaying, setIsPlaying, handleConfirmSelection]);
 

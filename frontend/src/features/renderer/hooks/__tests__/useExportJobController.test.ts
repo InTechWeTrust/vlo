@@ -35,7 +35,11 @@ vi.mock("../../utils/dimensions", async (importOriginal) => {
 vi.mock("../../services/ExportRenderer", () => ({
   ExportRenderer: class {},
 }));
+vi.mock("../../../../core/media", () => ({
+  extractAudioTrackToWav: vi.fn(),
+}));
 
+import { extractAudioTrackToWav } from "../../../../core/media";
 import { addLocalAsset } from "../../../userAssets";
 import { prepareBrushMasksForTimelineRender } from "../../../masks/api";
 import { renderSelectionToVideoFile } from "../../services/renderSelectionToVideoFile";
@@ -101,6 +105,7 @@ function selectionOptions() {
 
 beforeEach(() => {
   vi.mocked(renderSelectionToVideoFile).mockReset();
+  vi.mocked(extractAudioTrackToWav).mockReset();
   vi.mocked(addLocalAsset).mockReset();
   vi.mocked(prepareBrushMasksForTimelineRender).mockReset();
   vi.mocked(prepareBrushMasksForTimelineRender).mockResolvedValue(undefined);
@@ -453,6 +458,84 @@ describe("useExportJobController run log", () => {
       status: "failed",
       assetId: null,
       error: expect.stringContaining("library"),
+    });
+  });
+
+  describe("audio only", () => {
+    it("ingests the soundtrack instead of the video", async () => {
+      const rendered = new File(["v"], "selection.mp4");
+      const audio = new File(["a"], "selection-audio.wav", {
+        type: "audio/wav",
+      });
+      vi.mocked(renderSelectionToVideoFile).mockResolvedValue(rendered);
+      vi.mocked(extractAudioTrackToWav).mockResolvedValue(audio);
+      vi.mocked(addLocalAsset).mockResolvedValue({ id: "a1" } as never);
+
+      const { result } = makeController({ projectOutputResolution: 1080 });
+      await act(async () => {
+        await result.current.runSelectionExport({
+          ...selectionOptions(),
+          audioOnly: true,
+        });
+      });
+
+      expect(extractAudioTrackToWav).toHaveBeenCalledWith(
+        rendered,
+        expect.objectContaining({ filenamePrefix: "selection-audio" }),
+      );
+      expect(addLocalAsset).toHaveBeenCalledWith(
+        audio,
+        expect.objectContaining({
+          source: "extracted",
+          timelineSelection: expect.objectContaining({ audioOnly: true }),
+        }),
+        undefined,
+        { reuseExistingHash: true },
+      );
+    });
+
+    // The frames are thrown away, so rendering them at the project's short
+    // edge would only cost time.
+    it("renders at the cheapest short edge whatever the selection asked for", async () => {
+      vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+        new File(["v"], "selection.mp4"),
+      );
+      vi.mocked(extractAudioTrackToWav).mockResolvedValue(
+        new File(["a"], "selection-audio.wav", { type: "audio/wav" }),
+      );
+      vi.mocked(addLocalAsset).mockResolvedValue({ id: "a1" } as never);
+
+      const { result } = makeController({ projectOutputResolution: 2160 });
+      await act(async () => {
+        await result.current.runSelectionExport({
+          ...selectionOptions(),
+          selectionResolution: 2160,
+          audioOnly: true,
+        });
+      });
+
+      expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("16:9", 480);
+    });
+
+    it("fails rather than ingesting a video when the range is silent", async () => {
+      vi.mocked(renderSelectionToVideoFile).mockResolvedValue(
+        new File(["v"], "selection.mp4"),
+      );
+      vi.mocked(extractAudioTrackToWav).mockResolvedValue(null);
+
+      const { result } = makeController();
+      await act(async () => {
+        await result.current.runSelectionExport({
+          ...selectionOptions(),
+          audioOnly: true,
+        });
+      });
+
+      expect(addLocalAsset).not.toHaveBeenCalled();
+      expect(getLatestExportRun()).toMatchObject({
+        status: "failed",
+        error: expect.stringContaining("no audio"),
+      });
     });
   });
 

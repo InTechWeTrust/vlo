@@ -19,6 +19,8 @@ interface MockSelectionState {
   selectionIncludeModeEnabled: boolean;
   selectionAllowIncludeAll: boolean;
   selectionIncludedTrackIds: string[];
+  selectionAllowAudioOnly: boolean;
+  selectionAudioOnly: boolean;
   selectionFpsOverride: number | null;
   selectionResolutionOverride: number | null;
   selectionFrameStep: number;
@@ -30,6 +32,7 @@ interface MockSelectionState {
   selectionRecommendedMaxTicks: number | null;
   updateSelectionStart: Mock;
   updateSelectionEnd: Mock;
+  setSelectionAudioOnly: Mock;
   setSelectionFpsOverride: Mock;
   setSelectionResolutionOverride: Mock;
   setSelectionFrameStep: Mock;
@@ -67,6 +70,8 @@ function createSelectionState(
     selectionIncludeModeEnabled: true,
     selectionAllowIncludeAll: false,
     selectionIncludedTrackIds: ["track-1", "track-2"],
+    selectionAllowAudioOnly: false,
+    selectionAudioOnly: false,
     selectionFpsOverride: null,
     selectionResolutionOverride: null,
     selectionFrameStep: 1,
@@ -78,6 +83,7 @@ function createSelectionState(
     selectionRecommendedMaxTicks: null,
     updateSelectionStart: vi.fn(),
     updateSelectionEnd: vi.fn(),
+    setSelectionAudioOnly: vi.fn(),
     setSelectionFpsOverride: vi.fn(),
     setSelectionResolutionOverride: vi.fn(),
     setSelectionFrameStep: vi.fn(),
@@ -321,6 +327,48 @@ describe("SelectionOverlay", () => {
     fireEvent.change(screen.getByDisplayValue("5"), { target: { value: "9" } });
     fireEvent.blur(screen.getByDisplayValue("9"));
     expect(selectionState.setSelectionFrameOffset).toHaveBeenCalledWith(9);
+  });
+
+  describe("audio only", () => {
+    it("stays hidden for a flow that cannot use a soundtrack", () => {
+      render(<SelectionOverlay />);
+      fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+
+      expect(
+        screen.queryByTestId("selection-audio-only-setting"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("commits the switch when the flow offers it", () => {
+      selectionState = createSelectionState({ selectionAllowAudioOnly: true });
+
+      render(<SelectionOverlay />);
+      fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+
+      fireEvent.click(screen.getByLabelText("Extract audio only"));
+
+      expect(selectionState.setSelectionAudioOnly).toHaveBeenCalledWith(true);
+    });
+
+    it("summarises the switch and drops the render resolution", () => {
+      selectionState = createSelectionState({
+        selectionAllowAudioOnly: true,
+        selectionAudioOnly: true,
+        selectionRecommendedResolution: 720,
+      });
+
+      render(<SelectionOverlay />);
+
+      const summary = screen.getByTestId("selection-overlay-settings-summary");
+      expect(summary).toHaveTextContent("audio only");
+      // No pixels are kept, so the short edge has nothing to say.
+      expect(summary).not.toHaveTextContent("720p");
+
+      fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+      expect(
+        screen.getByLabelText("Selection render resolution"),
+      ).toHaveAttribute("aria-disabled", "true");
+    });
   });
 
   describe("render resolution", () => {

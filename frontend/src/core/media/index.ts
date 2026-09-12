@@ -6,3 +6,5 @@ export type {
   BrowserVideoOperationOptions,
   CaptureVideoFrameOptions,
 } from "./browserVideo";
+export { extractAudioTrackToWav } from "./audioTrack";
+export type { ExtractAudioTrackOptions } from "./audioTrack";

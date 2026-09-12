@@ -12,6 +12,15 @@ export interface TimelineSelectionState {
   selectionIncludeModeEnabled: boolean;
   selectionAllowIncludeAll: boolean;
   selectionIncludedTrackIds: string[];
+  /**
+   * Whether this flow can extract audio on its own. Only a consumer that can
+   * do something with a soundtrack offers the switch — everything else needs
+   * the rendered pixels, and a control that did nothing would be worse than
+   * no control.
+   */
+  selectionAllowAudioOnly: boolean;
+  /** Take only the soundtrack of the range; no video is rendered. */
+  selectionAudioOnly: boolean;
   selectionFpsOverride: number | null;
   /**
    * Short edge in pixels for every render this selection produces, or `null`
@@ -36,6 +45,7 @@ export interface TimelineSelectionState {
       includeTracks?: boolean;
       allowIncludeAll?: boolean;
       includedTrackIds?: string[];
+      allowAudioOnly?: boolean;
       frameStep?: number | null;
       frameOffset?: number | null;
       fpsOverride?: number | null;
@@ -49,6 +59,7 @@ export interface TimelineSelectionState {
   returnToRangeSelectionStage: () => void;
   toggleSelectionIncludedTrack: (trackId: string) => void;
   includeAllSelectionTracks: (trackIds: readonly string[]) => void;
+  setSelectionAudioOnly: (audioOnly: boolean) => void;
   setSelectionFpsOverride: (fps: number | null) => void;
   setSelectionResolutionOverride: (resolution: number | null) => void;
   setSelectionFrameStep: (step: number) => void;
@@ -88,6 +99,8 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
   selectionIncludeModeEnabled: false,
   selectionAllowIncludeAll: false,
   selectionIncludedTrackIds: [],
+  selectionAllowAudioOnly: false,
+  selectionAudioOnly: false,
   selectionFpsOverride: null,
   selectionResolutionOverride: null,
   selectionFrameStep: 1,
@@ -107,6 +120,10 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
         typeof options?.message === "string" && options.message.trim().length > 0
           ? options.message.trim()
           : null,
+      selectionAllowAudioOnly: options?.allowAudioOnly === true,
+      // Never carried over: a flow that cannot extract audio must not inherit
+      // the previous one's switch, and one that can starts on video.
+      selectionAudioOnly: false,
       selectionFrameStep: toPositiveInteger(options?.frameStep, 1),
       selectionFrameOffset: toPositiveInteger(options?.frameOffset, 1),
       selectionFpsOverride: toPositiveIntegerOrNull(options?.fpsOverride),
@@ -173,6 +190,10 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
         ),
       };
     }),
+  setSelectionAudioOnly: (audioOnly) =>
+    set((state) =>
+      state.selectionAllowAudioOnly ? { selectionAudioOnly: audioOnly } : {},
+    ),
   setSelectionFpsOverride: (fps) =>
     set({ selectionFpsOverride: toPositiveIntegerOrNull(fps) }),
   setSelectionResolutionOverride: (resolution) =>
@@ -244,6 +265,8 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionIncludeModeEnabled: false,
       selectionAllowIncludeAll: false,
       selectionIncludedTrackIds: [],
+      selectionAllowAudioOnly: false,
+      selectionAudioOnly: false,
       // The grid, fps and resolution belong to the selection that just ended,
       // exactly like the recommendations below. Leaving them behind is what
       // made a plain extraction inherit the previous workflow's settings.
