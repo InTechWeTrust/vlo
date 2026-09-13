@@ -109,6 +109,103 @@ describe("GenerationInputs", () => {
     expect(screen.getByRole("spinbutton")).toHaveValue(0.8);
   });
 
+  it("buffers a typed weight and commits it on Enter", () => {
+    // Committing per keystroke re-rendered the parsed number over the text
+    // being typed, so "0.0" collapsed to "0" and "0.05" ended up as 5.
+    const onWidgetChange = vi.fn();
+    const { widgetInputs, targets } = buildLoraPanelState(null);
+    render(
+      <GenerationInputs
+        inputs={[]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[...widgetInputs]}
+        widgetValues={{}}
+        bypassedWidgetTargets={targets}
+        randomizeToggles={{}}
+        onWidgetChange={onWidgetChange}
+        onToggleRandomize={vi.fn()}
+      />,
+    );
+
+    const weight = screen.getByRole("spinbutton");
+    weight.focus();
+    fireEvent.change(weight, { target: { value: "0.0" } });
+    expect(weight).toHaveValue(0);
+    expect(onWidgetChange).not.toHaveBeenCalled();
+    fireEvent.change(weight, { target: { value: "0.05" } });
+    fireEvent.keyDown(weight, { key: "Enter" });
+
+    expect(onWidgetChange).toHaveBeenCalledTimes(1);
+    expect(onWidgetChange).toHaveBeenCalledWith("12", "strength_model", 0.05);
+  });
+
+  function StatefulLoraPanel({ accept }: { accept: boolean }) {
+    const { widgetInputs, targets } = buildLoraPanelState(null);
+    const [widgetValues, setWidgetValues] = useState<
+      Record<string, Record<string, unknown>>
+    >({});
+    return (
+      <GenerationInputs
+        inputs={[]}
+        textValues={{}}
+        onTextValueCommit={vi.fn()}
+        mediaInputs={{}}
+        onInputDrop={vi.fn()}
+        onExternalInputDrop={vi.fn()}
+        onInputClear={vi.fn()}
+        onSwapMediaInputs={vi.fn()}
+        onMoveMediaInput={vi.fn()}
+        onClickSelect={vi.fn()}
+        widgetInputs={[...widgetInputs]}
+        widgetValues={widgetValues}
+        bypassedWidgetTargets={targets}
+        randomizeToggles={{}}
+        // A refused write is one the panel never stores, like the session's
+        // range check rejecting it.
+        onWidgetChange={(nodeId, param, value) => {
+          if (!accept) return;
+          setWidgetValues((prev) => ({
+            ...prev,
+            [nodeId]: { ...prev[nodeId], [param]: value },
+          }));
+        }}
+        onToggleRandomize={vi.fn()}
+      />
+    );
+  }
+
+  it("puts the stored weight back when a typed one is refused", () => {
+    render(<StatefulLoraPanel accept={false} />);
+
+    const weight = screen.getByRole("spinbutton");
+    weight.focus();
+    fireEvent.change(weight, { target: { value: "150" } });
+    fireEvent.keyDown(weight, { key: "Enter" });
+
+    // Reset in place: a replacement input would pull Tab back into the field.
+    expect(screen.getByRole("spinbutton")).toBe(weight);
+    expect(weight).toHaveValue(0.8);
+  });
+
+  it("keeps an accepted weight in the field after committing it", () => {
+    render(<StatefulLoraPanel accept={true} />);
+
+    const weight = screen.getByRole("spinbutton");
+    weight.focus();
+    fireEvent.change(weight, { target: { value: "0.50" } });
+    fireEvent.keyDown(weight, { key: "Enter" });
+
+    expect(screen.getByRole("spinbutton")).toHaveValue(0.5);
+  });
+
   it("greys out the weight while the loader is switched off", () => {
     // "None (bypass)" leaves the node out of the run, so its weight changes
     // nothing — but it stays on screen, or a loader that ships off would look

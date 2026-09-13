@@ -39,9 +39,10 @@ export {
   type BufferedColorInputProps,
 } from "./components/BufferedColorInput";
 export {
-  TextInput,
   BufferedTextInput,
-  CommittedTextInput,
+  BufferedNumberInput,
+  type BufferedTextInputProps,
+  type BufferedNumberInputProps,
 } from "./components/BufferedTextInput";
 export {
   RichTextInput,

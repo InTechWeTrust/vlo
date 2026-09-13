@@ -6,7 +6,8 @@ import {
   AssetBatchDropSlot,
   AssetDropSlot,
   type AssetDropSlotDisabledActions,
-  CommittedTextInput,
+  BufferedNumberInput,
+  BufferedTextInput,
   PanelSection,
   type AssetBatchSlotItem,
 } from "../../panelUI";
@@ -320,12 +321,10 @@ function ResolutionLadderRow({
           />
         </Box>
         <Box sx={{ flexShrink: 0, width: 92 }}>
-          <CommittedTextInput
-            key={resolution}
+          <BufferedNumberInput
             label="Custom"
             disabled={disabled}
-            initialValue={String(resolution)}
-            type="number"
+            value={String(resolution)}
             inputProps={{ min: 1, step: 1, "aria-label": "Custom resolution" }}
             onCommit={(nextValue) => {
               const nextResolution = Number(nextValue.trim());
@@ -442,11 +441,11 @@ function TextInputSection({
           </Button>
         </Box>
       ) : null}
-      <CommittedTextInput
+      <BufferedTextInput
         // Remounted when a claim comes or goes, so the buffered field picks up
         // the composed text instead of redisplaying the draft it was holding.
         key={claim ? "claimed" : "free"}
-        initialValue={value}
+        value={value}
         disabled={claim !== null}
         onCommit={(nextValue) => onCommit(commitInputId, nextValue)}
         commitDebounceMs={PROMPT_COMMIT_DEBOUNCE_MS}
@@ -935,6 +934,11 @@ function WidgetRow({
     !isRandomized && (isEnumWidget(widget) || isBooleanWidget(widget));
   const isSlider = isSliderWidget(widget);
   const isTextArea = !isRandomized && !useSelectInput && isTextAreaWidget(widget);
+  // Numbers are typed through forms that are not numbers yet ("0.0", "-"), and
+  // a field that re-rendered the parsed value on every keystroke would rewrite
+  // them mid-edit ("0.05" became "5"). Buffer the text; commit on Enter/blur.
+  const useBufferedNumericInput =
+    useNumericInput && !isRandomized && !useSelectInput;
   const showInlineExactAspectRatioControl =
     showExactAspectRatioControl &&
     typeof onExactAspectRatioChange === "function";
@@ -1050,8 +1054,8 @@ function WidgetRow({
             {widget.config.label}
           </Typography>
         ) : null}
-        <CommittedTextInput
-          initialValue={displayValue}
+        <BufferedTextInput
+          value={displayValue}
           disabled={nodeBypassed}
           onCommit={(nextValue) => {
             onWidgetChange(widget.nodeId, widget.param, nextValue);
@@ -1091,77 +1095,93 @@ function WidgetRow({
             {widget.config.label}
           </Typography>
         </Box>
-        <TextField
-          fullWidth
-          select={useSelectInput}
-          size="small"
-          type={useNumericInput && !isRandomized ? "number" : "text"}
-          value={displayValue}
-          disabled={isRandomized || nodeBypassed}
-          onChange={(event) => {
-            onWidgetChange(
-              widget.nodeId,
-              widget.param,
-              parseWidgetValue(event.target.value, useNumericInput, widget),
-            );
-          }}
-          inputProps={{
-            ...(useNumericInput && !isRandomized
-              ? {
-                  min: widget.config.min,
-                  max: widget.config.max,
-                  step: widget.config.valueType === "int" ? 1 : 0.01,
-                }
-              : {}),
-          }}
-          sx={{
-            minWidth: 80,
-            "& .MuiOutlinedInput-root": {
-              bgcolor: isRandomized ? "#2a2a30" : "#1a1a1a",
-              fontSize: "0.875rem",
-            },
-          }}
-        >
-          {useSelectInput &&
-            (isBooleanWidget(widget)
-              ? [
-                  <MenuItem key="boolean:true" value="true">
-                    true
-                  </MenuItem>,
-                  <MenuItem key="boolean:false" value="false">
-                    false
-                  </MenuItem>,
-                ]
-              : [
-                  ...(widget.config.nodeBypassOption
-                    ? [
-                        <MenuItem
-                          key="node-bypass-option"
-                          value={widget.config.nodeBypassOption.value}
-                        >
-                          {widget.config.nodeBypassOption.label}
-                        </MenuItem>,
-                      ]
-                    : []),
-                  ...(widget.config.options ?? []).map((option) => (
-                    <MenuItem key={String(option)} value={String(option)}>
-                      {widget.config.optionLabels?.[String(option)] ??
-                        String(option)}
-                    </MenuItem>
-                  )),
-                  ...(hasOutOfRangeEnumValue
-                    ? [
-                        <MenuItem
-                          key="out-of-range-enum-value"
-                          value={displayValue}
-                          disabled={true}
-                        >
-                          {displayValue} (unavailable)
-                        </MenuItem>,
-                      ]
-                    : []),
-                ])}
-        </TextField>
+        {useBufferedNumericInput ? (
+          <BufferedNumberInput
+            value={displayValue}
+            disabled={nodeBypassed}
+            onCommit={(nextValue) => {
+              onWidgetChange(
+                widget.nodeId,
+                widget.param,
+                parseWidgetValue(nextValue, useNumericInput, widget),
+              );
+            }}
+            inputProps={{
+              min: widget.config.min,
+              max: widget.config.max,
+              step: widget.config.valueType === "int" ? 1 : 0.01,
+            }}
+            sx={{
+              minWidth: 80,
+              "& .MuiOutlinedInput-root": {
+                bgcolor: "#1a1a1a",
+                fontSize: "0.875rem",
+              },
+            }}
+          />
+        ) : (
+          <TextField
+            fullWidth
+            select={useSelectInput}
+            size="small"
+            value={displayValue}
+            disabled={isRandomized || nodeBypassed}
+            onChange={(event) => {
+              onWidgetChange(
+                widget.nodeId,
+                widget.param,
+                parseWidgetValue(event.target.value, useNumericInput, widget),
+              );
+            }}
+            sx={{
+              minWidth: 80,
+              "& .MuiOutlinedInput-root": {
+                bgcolor: isRandomized ? "#2a2a30" : "#1a1a1a",
+                fontSize: "0.875rem",
+              },
+            }}
+          >
+            {useSelectInput &&
+              (isBooleanWidget(widget)
+                ? [
+                    <MenuItem key="boolean:true" value="true">
+                      true
+                    </MenuItem>,
+                    <MenuItem key="boolean:false" value="false">
+                      false
+                    </MenuItem>,
+                  ]
+                : [
+                    ...(widget.config.nodeBypassOption
+                      ? [
+                          <MenuItem
+                            key="node-bypass-option"
+                            value={widget.config.nodeBypassOption.value}
+                          >
+                            {widget.config.nodeBypassOption.label}
+                          </MenuItem>,
+                        ]
+                      : []),
+                    ...(widget.config.options ?? []).map((option) => (
+                      <MenuItem key={String(option)} value={String(option)}>
+                        {widget.config.optionLabels?.[String(option)] ??
+                          String(option)}
+                      </MenuItem>
+                    )),
+                    ...(hasOutOfRangeEnumValue
+                      ? [
+                          <MenuItem
+                            key="out-of-range-enum-value"
+                            value={displayValue}
+                            disabled={true}
+                          >
+                            {displayValue} (unavailable)
+                          </MenuItem>,
+                        ]
+                      : []),
+                  ])}
+          </TextField>
+        )}
 
         {widget.config.controlAfterGenerate && (
           <IconButton

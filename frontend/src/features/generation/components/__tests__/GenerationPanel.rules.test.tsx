@@ -898,6 +898,14 @@ describe("GenerationPanel workflow rule hints", () => {
 
     // ...but the custom field is free-form, and flags the value as an override.
     const customInput = screen.getByLabelText("Custom resolution");
+
+    // A short edge that cannot exist is refused, and the field says so by
+    // going back to the resolution in effect rather than keeping the typo.
+    fireEvent.change(customInput, { target: { value: "0" } });
+    fireEvent.blur(customInput);
+    expect(setTargetResolution).not.toHaveBeenCalled();
+    expect(customInput).toHaveValue(480);
+
     fireEvent.change(customInput, { target: { value: "544" } });
     fireEvent.blur(customInput);
 

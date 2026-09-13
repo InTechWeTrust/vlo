@@ -2,15 +2,15 @@ import { useState } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BufferedTextInput, CommittedTextInput } from "../BufferedTextInput";
+import { BufferedNumberInput, BufferedTextInput } from "../BufferedTextInput";
 
-describe("CommittedTextInput", () => {
+describe("BufferedTextInput", () => {
   it("does not re-commit the same draft before the parent updates", () => {
     const handleCommit = vi.fn();
 
     render(
-      <CommittedTextInput
-        initialValue=""
+      <BufferedTextInput
+        value=""
         onCommit={handleCommit}
         placeholder="Enter prompt..."
       />,
@@ -27,6 +27,86 @@ describe("CommittedTextInput", () => {
   });
 });
 
+describe("BufferedNumberInput", () => {
+  /** A parent that stores what its rule accepts and ignores the rest. */
+  function Host({
+    initial,
+    accept,
+    onCommit,
+  }: {
+    initial: number;
+    accept: (next: number) => boolean;
+    onCommit?: (text: string) => void;
+  }) {
+    const [value, setValue] = useState(initial);
+    return (
+      <BufferedNumberInput
+        value={String(value)}
+        inputProps={{ "aria-label": "Amount" }}
+        onCommit={(text) => {
+          onCommit?.(text);
+          const next = Number(text);
+          if (text.trim() !== "" && Number.isFinite(next) && accept(next)) {
+            setValue(next);
+          }
+        }}
+      />
+    );
+  }
+
+  it("keeps intermediate text while editing", () => {
+    const onCommit = vi.fn();
+    render(<Host initial={1} accept={() => true} onCommit={onCommit} />);
+
+    const input = screen.getByLabelText("Amount") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "0.0" } });
+
+    expect(input.value).toBe("0.0");
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it("shows the accepted value, normalized, on the same input", () => {
+    render(<Host initial={1} accept={() => true} />);
+
+    const input = screen.getByLabelText("Amount") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "0.50" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    // The same node: a remount would cost the browser its place in the tab
+    // order, sending Tab back into this field.
+    expect(screen.getByLabelText("Amount")).toBe(input);
+    expect(input.value).toBe("0.5");
+  });
+
+  it("restores the parent's value when a commit is refused", () => {
+    render(<Host initial={100} accept={(next) => next > 0} />);
+
+    const input = screen.getByLabelText("Amount") as HTMLInputElement;
+    input.focus();
+    fireEvent.change(input, { target: { value: "-5" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(screen.getByLabelText("Amount")).toBe(input);
+    expect(input.value).toBe("100");
+  });
+
+  it("offers a refused value again after it was reset", () => {
+    const onCommit = vi.fn();
+    render(
+      <Host initial={100} accept={(next) => next > 0} onCommit={onCommit} />,
+    );
+
+    const input = screen.getByLabelText("Amount") as HTMLInputElement;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      fireEvent.change(input, { target: { value: "-5" } });
+      fireEvent.blur(input);
+    }
+
+    expect(onCommit).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("commitDebounceMs", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -40,8 +120,8 @@ describe("commitDebounceMs", () => {
     const handleCommit = vi.fn();
 
     render(
-      <CommittedTextInput
-        initialValue=""
+      <BufferedTextInput
+        value=""
         onCommit={handleCommit}
         commitDebounceMs={250}
         placeholder="Enter prompt..."
@@ -64,8 +144,8 @@ describe("commitDebounceMs", () => {
     const handleCommit = vi.fn();
 
     render(
-      <CommittedTextInput
-        initialValue=""
+      <BufferedTextInput
+        value=""
         onCommit={handleCommit}
         commitDebounceMs={250}
         placeholder="Enter prompt..."
@@ -94,8 +174,8 @@ describe("commitDebounceMs", () => {
     const handleCommit = vi.fn();
 
     render(
-      <CommittedTextInput
-        initialValue=""
+      <BufferedTextInput
+        value=""
         onCommit={handleCommit}
         commitDebounceMs={250}
         placeholder="Enter prompt..."
@@ -155,8 +235,8 @@ describe("commitDebounceMs", () => {
     const handleCommit = vi.fn();
 
     render(
-      <CommittedTextInput
-        initialValue=""
+      <BufferedTextInput
+        value=""
         onCommit={handleCommit}
         placeholder="Enter prompt..."
       />,
