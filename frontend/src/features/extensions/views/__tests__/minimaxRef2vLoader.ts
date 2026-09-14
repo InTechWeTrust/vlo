@@ -17,6 +17,10 @@ import * as documentModule from "../../../../../../extensions/installed/vlo.mini
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
 import * as referenceComposerModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/ReferenceComposer";
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
+import * as structureModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/referenceStructure";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
+import * as assistanceModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/referenceAssistance";
+// @ts-ignore - optional package, absent unless installed into extensions/installed/
 import * as objectViewModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/PromptObjectView";
 // @ts-ignore - optional package, absent unless installed into extensions/installed/
 import * as composerViewModule from "../../../../../../extensions/installed/vlo.minimax-prompt/frontend/src/ComposerView";
@@ -72,10 +76,52 @@ export interface LoadedCatalogue {
   readonly silentSoundtracks: readonly { readonly itemId: string }[];
 }
 
+export interface LoadedPictureRole {
+  readonly id: string;
+  readonly kind: string;
+  readonly shotIds: readonly string[];
+}
+
+export type LoadedDefinitionEntry =
+  | {
+      readonly kind: "definition";
+      readonly id: string;
+      readonly targetId: string;
+      readonly roles: readonly LoadedPictureRole[];
+      readonly body: LoadedInlineDocument;
+    }
+  | { readonly kind: "raw"; readonly id: string; readonly body: LoadedInlineDocument };
+
+export type LoadedRetentionScope =
+  | { readonly mode: "derived" }
+  | { readonly mode: "custom"; readonly text: LoadedInlineDocument }
+  | { readonly mode: "none" };
+
+export type LoadedRetentionEntry =
+  | {
+      readonly kind: "retention";
+      readonly id: string;
+      readonly targetId: string;
+      readonly marker: string;
+      readonly scope: LoadedRetentionScope;
+      readonly description: LoadedInlineDocument;
+      readonly fromFrameRole: boolean;
+      readonly edited: boolean;
+    }
+  | { readonly kind: "raw"; readonly id: string; readonly body: LoadedInlineDocument };
+
 export interface LoadedReferenceDocument {
-  readonly version: 1;
+  readonly version: 2;
   readonly preamble: string;
   readonly subjects: readonly { readonly id: string; readonly name: string }[];
+  readonly definitions: readonly LoadedDefinitionEntry[];
+  readonly summary: {
+    readonly categories: readonly string[];
+    readonly body: LoadedInlineDocument;
+    readonly dismissed: readonly string[];
+  };
+  readonly retention: readonly LoadedRetentionEntry[];
+  readonly suppressedRetention: readonly string[];
   readonly sections: Readonly<Record<string, LoadedInlineDocument>>;
   readonly styleOpening: LoadedInlineDocument;
   readonly shots: readonly { readonly id: string; readonly body: LoadedInlineDocument }[];
@@ -88,6 +134,7 @@ export type LoadedResolution =
       readonly missing: readonly string[];
       readonly uncertain: readonly string[];
       readonly ambiguousShots: readonly number[];
+      readonly incompleteRoles: readonly string[];
     };
 
 export interface LoadedInlineHistoryEntry {
@@ -161,6 +208,80 @@ export interface MinimaxRef2vPackage {
     offset: -1 | 1,
   ): LoadedReferenceDocument;
   collectUnbound(document: LoadedReferenceDocument): readonly string[];
+  setSummaryBody(
+    document: LoadedReferenceDocument,
+    body: LoadedInlineDocument,
+  ): LoadedReferenceDocument;
+  toggleSummaryCategory(document: LoadedReferenceDocument, category: string): LoadedReferenceDocument;
+  dismissSummarySuggestion(document: LoadedReferenceDocument, category: string): LoadedReferenceDocument;
+  insertEditingOpener(document: LoadedReferenceDocument, videoTargetId: string): LoadedReferenceDocument;
+  createSubject(
+    document: LoadedReferenceDocument,
+    input: {
+      readonly id: string;
+      readonly name: string;
+      readonly description: string;
+      readonly sourceIds: readonly string[];
+      readonly definitionId: string;
+    },
+  ): LoadedReferenceDocument;
+  addDefinition(document: LoadedReferenceDocument, entry: LoadedDefinitionEntry): LoadedReferenceDocument;
+  removeDefinition(document: LoadedReferenceDocument, entryId: string): LoadedReferenceDocument;
+  setDefinitionBody(
+    document: LoadedReferenceDocument,
+    entryId: string,
+    body: LoadedInlineDocument,
+  ): LoadedReferenceDocument;
+  setPictureRoles(
+    document: LoadedReferenceDocument,
+    entryId: string,
+    roles: readonly LoadedPictureRole[],
+  ): LoadedReferenceDocument;
+  addRetention(
+    document: LoadedReferenceDocument,
+    input: {
+      readonly id: string;
+      readonly targetId: string;
+      readonly marker: string;
+      readonly scope?: LoadedRetentionScope;
+    },
+  ): LoadedReferenceDocument;
+  removeRetention(document: LoadedReferenceDocument, entryId: string): LoadedReferenceDocument;
+  restoreSuggestedRetention(
+    document: LoadedReferenceDocument,
+    pictureTargetId: string,
+  ): LoadedReferenceDocument;
+  setRetentionMarker(
+    document: LoadedReferenceDocument,
+    entryId: string,
+    marker: string,
+  ): LoadedReferenceDocument;
+  setRetentionScope(
+    document: LoadedReferenceDocument,
+    entryId: string,
+    scope: LoadedRetentionScope,
+  ): LoadedReferenceDocument;
+  setRetentionDescription(
+    document: LoadedReferenceDocument,
+    entryId: string,
+    description: LoadedInlineDocument,
+  ): LoadedReferenceDocument;
+  suggestedCategories(document: LoadedReferenceDocument): readonly string[];
+  availableForRetention(
+    document: LoadedReferenceDocument,
+    labeller: { label(targetId: string): string | null; target(token: string): string | null },
+  ): readonly { readonly targetId: string; readonly scope: readonly LoadedInlineNodeInput[] }[];
+  guideHints(
+    document: LoadedReferenceDocument,
+    labeller: { label(targetId: string): string | null; target(token: string): string | null },
+  ): readonly { readonly id: string; readonly text: string }[];
+  markersFor(kind: "Subject" | "Picture" | "Video" | "Audio"): readonly string[];
+  retentionReview(entry: never, document: LoadedReferenceDocument): string | null;
+  parseRetention(
+    sectionText: string,
+    context: never,
+    derivedFor: never,
+  ): readonly LoadedRetentionEntry[];
   splitDetailedDescription(
     text: string,
   ):
@@ -224,7 +345,9 @@ export interface MinimaxRef2vPackage {
 
 export const minimaxRef2vPackage = {
   ...catalogueModule,
+  ...structureModule,
   ...documentModule,
+  ...assistanceModule,
   ...referenceComposerModule,
   ...objectViewModule,
   ...composerViewModule,

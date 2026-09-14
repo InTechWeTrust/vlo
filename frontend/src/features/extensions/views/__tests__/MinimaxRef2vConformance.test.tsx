@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -25,6 +25,7 @@ import type {
 import type {
   LoadedInlineDocument,
   LoadedInlineNodeInput,
+  LoadedRetentionEntry,
   MinimaxRef2vPackage,
 } from "./minimaxRef2vLoader";
 import { useGenerationStore } from "../../../generation";
@@ -263,11 +264,25 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
     expect(document.styleOpening.nodes).toEqual([
       { kind: "text", text: "Warm, handheld, late afternoon." },
     ]);
-    // The retention citation of a shot is a citation, not a boundary.
-    expect(document.sections.retention_analysis.nodes).toContainEqual({
-      kind: "reference",
-      targetId: pkg.shotTarget(document.shots[0].id),
-    });
+    // The retention citation of a shot is a role-derived scope, not a
+    // boundary: Picture 1 is not defined with a role here, so the scope is
+    // authored text that cites the shot.
+    expect(document.retention).toMatchObject([
+      {
+        kind: "retention",
+        targetId: "visual:media-A",
+        marker: "fully_preserved",
+        scope: {
+          mode: "custom",
+          text: {
+            nodes: [
+              { kind: "reference", targetId: pkg.shotTarget(document.shots[0].id) },
+              { kind: "text", text: " first frame" },
+            ],
+          },
+        },
+      },
+    ]);
 
     const resolution = pkg.resolveReferenceDocument(document, catalogue);
     expect(resolution).toEqual(expect.objectContaining({ ok: true, text: PROMPT_TEXT }));
@@ -320,6 +335,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
       missing: ["visual:media-A"],
       uncertain: [],
       ambiguousShots: [],
+      incompleteRoles: [],
     });
   });
 
@@ -353,6 +369,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
       missing: [pkg.shotTarget(first.id)],
       uncertain: [],
       ambiguousShots: [],
+      incompleteRoles: [],
     });
   });
 
@@ -375,9 +392,8 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
       "subject-cat",
       -1,
     );
-    const text = pkg.setProseSection(
+    const text = pkg.setSummaryBody(
       catFirst,
-      "summary",
       pkg.inlineDocument([
         { kind: "reference", targetId: pkg.subjectTarget("subject-cat") },
         { kind: "text", text: " chases " },
@@ -402,7 +418,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
     ]);
     expect(typed).toEqual(inserted);
 
-    const withUnknown = pkg.setProseSection(document, "summary", typed);
+    const withUnknown = pkg.setSummaryBody(document, typed);
     expect(pkg.collectUnbound(withUnknown)).toEqual(["<Video 9>"]);
   });
 
@@ -456,6 +472,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
       missing: [],
       uncertain: [],
       ambiguousShots: [1, 2],
+      incompleteRoles: [],
     });
   });
 
@@ -681,7 +698,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: composer", () => {
       });
     });
 
-    expect(chipLabels("Subject definitions")).toEqual(["<Subject 1>", "<Picture 2>"]);
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 2>"]);
     expect(chipLabels("Shot 1")).toEqual(["<Subject 1>", "<Picture 1>", "<Audio 2>"]);
     // The talking video now emits a soundtrack of its own, beside its video.
     expect(objectRows()).toContainEqual(["media-talk", ["<Audio 1>", "<Video 1>"]]);
@@ -718,7 +735,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: composer", () => {
       inputs: panelInputs(INITIAL_PROMPT),
     });
     const { drafts } = await mount(pkg);
-    expect(chipLabels("Subject definitions")).toEqual(["<Subject 1>", "<Picture 1>"]);
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 1>"]);
 
     // No text has been touched: the document is still the prompt, read back.
     act(() => {
@@ -731,7 +748,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: composer", () => {
     });
 
     // The hero is now second, and the sentence about the hero says so.
-    expect(chipLabels("Subject definitions")).toEqual(["<Subject 1>", "<Picture 2>"]);
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 2>"]);
     expect(chipLabels("Shot 1")).toEqual(["<Subject 1>", "<Picture 1>", "<Audio 1>"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Commit to prompt" }));
@@ -825,7 +842,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: composer", () => {
       "Kept while closed.",
     );
     // Still the staged arrangement: the hero is second.
-    expect(chipLabels("Subject definitions")).toEqual(["<Subject 1>", "<Picture 2>"]);
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 2>"]);
     (first.session as { dispose(): void }).dispose();
   });
 
@@ -928,7 +945,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
       inputs: panelInputs(INITIAL_PROMPT),
     });
     await mount(pkg);
-    expect(chipLabels("Subject definitions")).toEqual(["<Subject 1>", "<Picture 1>"]);
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 1>"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Move city earlier" }));
 
@@ -938,7 +955,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
       ["media-city", ["<Picture 1>"]],
       ["media-hero", ["<Picture 2>"]],
     ]);
-    expect(chipLabels("Subject definitions")).toEqual(["<Subject 1>", "<Picture 2>"]);
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 2>"]);
     expect(screen.getByRole("button", { name: "Move city earlier" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Commit to prompt" }));
@@ -1282,5 +1299,515 @@ describe.skipIf(!packagePresent)("minimax ref2v: inline reference editor", () =>
     setDisabled(false);
     fireEvent.keyDown(root, { key: "z", ctrlKey: true });
     expect(loader.readReferenceText(root)).toBe("fixed");
+  });
+});
+
+// --- R2: structured definitions, summary, retention and scope -----------------
+
+/** The guide's complete example (VIDEO_PROMPT_WRITING_GUIDE_ref_en.md §7). */
+const GUIDE_EXAMPLE = [
+  "subject_definitions:",
+  "<Subject 1> is the coffee-shop environment in <Picture 1>, featuring an exposed brick wall, an orange tufted sofa with patterned pillows, a neon sign, and a wooden coffee table.",
+  "<Subject 2> is the fluffy white Samoyed in <Picture 2>, <Picture 3>, and <Picture 4>, with thick white fur, pointed ears, a dark nose, and a curved tail.",
+  "<Subject 3> is the young blonde woman in <Video 1>, with long blonde hair and a light-pink button-down shirt with rolled-up sleeves.",
+  "<Subject 4> is the young man in <Video 2>, with short wavy brown hair and a dark-grey hoodie with drawstrings.",
+  "<Audio 1> is the voice-timbre reference for <Subject 3> (S1), containing a spoken English vocal layer.",
+  "",
+  "summary:",
+  "[reference generation + audio reference] The target video shows <Subject 3> eating a cookie in <Subject 1>. <Subject 4> enters with <Subject 2>, which lunges toward the cookie. The three-shot exchange uses <Audio 1> as the voice-timbre reference for <Subject 3> and ends with a canned audience laugh.",
+  "",
+  "retention_analysis:",
+  "<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the exposed brick wall, orange tufted sofa, patterned pillows, neon sign, and wooden coffee table are retained.",
+  "<Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - the Samoyed's thick white fur, pointed ears, dark nose, and curved tail are retained.",
+  "<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the blonde woman's identity, long hair, and light-pink shirt are retained.",
+  "<Subject 4> (appears in [Shot 1], [Shot 2]): fully_preserved - the young man's short wavy brown hair and dark-grey hoodie are retained.",
+  "<Audio 1>: reference - its vocal timbre guides the dialogue delivery of <Subject 3> without copying the original signal.",
+  "",
+  "detailed_description:",
+  "The target video uses a realistic multi-camera sitcom style with warm indoor lighting.",
+  "[Shot 1] A medium shot establishes <Subject 1>, the coffee shop. <Subject 3> (S1) sits on the sofa. From the left, <Subject 4> enters holding the leash of <Subject 2>. <Subject 3> (S1) exclaims, <d>[English] Hey! Watch your dog!</d>",
+  "[Shot 2] At 00:03.000, the shot cuts to a close-up of <Subject 4> (S2) sitting beside <Subject 3> and holding <Subject 2>. <Subject 4> (S2) says, <d>[English] He just likes cookies more than me.</d>",
+  "[Shot 3] At 00:05.000, the shot cuts to a close-up of <Subject 3> (S1). She replies, <d>[English] Well, he has good taste at least.</d>",
+  "",
+  "overall_soundscape:",
+  "Soft indoor coffee-shop room tone continues throughout the scene.",
+  "",
+  "non_diegetic_music:",
+  "N/A",
+].join("\n");
+
+function guideExampleInputs() {
+  return asExtension([
+    batch(IMAGES, "image", [1, 2, 3, 4].map((n) => item(IMAGES, n - 1, { itemId: `media-P${n}` }))),
+    batch(VIDEOS, "video", [1, 2].map((n) =>
+      item(VIDEOS, n - 1, { itemId: `media-V${n}`, mediaType: "video", hasAudio: true }),
+    )),
+    batch(AUDIOS, "audio", [item(AUDIOS, 0, { itemId: "media-S1", mediaType: "audio", hasAudio: true })]),
+  ]);
+}
+
+/** A document made from `prompt` against `inputs`, and what it resolves to. */
+async function structured(prompt: string, inputs = workedExample()) {
+  const pkg = await loadPackage();
+  const catalogue = pkg.buildReferenceCatalogue(inputs, REFERENCE_IDS);
+  const result = pkg.importReferencePrompt(prompt, catalogue);
+  if (!result.ok) throw new Error(`import failed: ${JSON.stringify(result)}`);
+  const resolve = (document: typeof result.document, against = catalogue) => {
+    const resolution = pkg.resolveReferenceDocument(document, against);
+    if (!resolution.ok) throw new Error(`expected to resolve: ${JSON.stringify(resolution)}`);
+    return resolution.text;
+  };
+  return { pkg, catalogue, document: result.document, resolve };
+}
+
+type LoadedRetentionRow = Extract<LoadedRetentionEntry, { kind: "retention" }>;
+
+function retentionRows(document: {
+  readonly retention: readonly LoadedRetentionEntry[];
+}): LoadedRetentionRow[] {
+  return document.retention.filter((entry): entry is LoadedRetentionRow => entry.kind === "retention");
+}
+
+describe.skipIf(!packagePresent)("minimax ref2v: structured sections", () => {
+  it("reads the guide's complete example into structure and writes it back byte for byte", async () => {
+    const { document, resolve } = await structured(GUIDE_EXAMPLE, guideExampleInputs());
+
+    expect(document.definitions.map((entry) => entry.kind)).toEqual([
+      "definition", "definition", "definition", "definition", "definition",
+    ]);
+    expect(document.summary.categories).toEqual(["reference generation", "audio reference"]);
+    // Scope that matches the shots is derived and will follow them; scope the
+    // shots do not bear out (Subject 1 is only cited in Shot 1) is the author's.
+    expect(
+      retentionRows(document).map((entry) => [entry.targetId, entry.marker, entry.scope.mode]),
+    ).toEqual([
+      ["subject:subject-1", "fully_preserved", "custom"],
+      ["subject:subject-2", "fully_preserved", "derived"],
+      ["subject:subject-3", "fully_preserved", "derived"],
+      ["subject:subject-4", "fully_preserved", "derived"],
+      ["audio:media-S1", "reference", "none"],
+    ]);
+    expect(resolve(document)).toBe(GUIDE_EXAMPLE);
+  });
+
+  it("parses picture roles only in the guide's own phrasing, and keeps anything else as prose", async () => {
+    const prompt = [
+      "subject_definitions:",
+      "<Picture 1> is the first frame of [Shot 1] and a keyframe of [Shot 2] and [Shot 3], showing a woman seated by a window.",
+      "<Picture 2> is the opening frame of [Shot 1].",
+      "<Video 1> is the source video for the target video edit.",
+      "A note that is not a definition.",
+      "",
+      "detailed_description:",
+      "[Shot 1] One.",
+      "[Shot 2] At 00:01.000, two.",
+      "[Shot 3] At 00:02.000, three.",
+    ].join("\n");
+    const { document, resolve } = await structured(prompt);
+    const [first, second, video, note] = document.definitions as readonly LoadedDefinitionShape[];
+
+    expect(first).toMatchObject({
+      kind: "definition",
+      targetId: "visual:media-A",
+      roles: [
+        { kind: "first-frame", shotIds: ["shot-1"] },
+        { kind: "keyframe", shotIds: ["shot-2", "shot-3"] },
+      ],
+    });
+    expect(second).toMatchObject({ kind: "definition", targetId: "visual:media-B", roles: [] });
+    expect(video).toMatchObject({ kind: "definition", targetId: "visual:media-V1", roles: [] });
+    expect(note.kind).toBe("raw");
+    expect(resolve(document)).toBe(prompt);
+
+    // Out of shot order is not the phrasing this codec writes, so it is prose.
+    const reordered = await structured(prompt.replace("[Shot 2] and [Shot 3]", "[Shot 3] and [Shot 2]"));
+    expect((reordered.document.definitions[0] as LoadedDefinitionShape).roles).toEqual([]);
+    expect(reordered.resolve(reordered.document)).toContain("a keyframe of [Shot 3] and [Shot 2]");
+  });
+
+  it("drafts one editable retention line for a frame role, and follows role changes without losing edits", async () => {
+    const { pkg, document, resolve } = await structured("detailed_description:\n[Shot 1] One.\n[Shot 2] At 00:01.000, two.");
+    const withDefinition = pkg.addDefinition(document, {
+      kind: "definition",
+      id: "def-B",
+      targetId: "visual:media-B",
+      roles: [],
+      body: pkg.inlineDocument([]),
+    });
+    const firstFrame = { id: "role-1", kind: "first-frame", shotIds: ["shot-1"] };
+    const framed = pkg.setPictureRoles(withDefinition, "def-B", [firstFrame]);
+
+    // The plan's own example (§5.1), exactly.
+    expect(resolve(framed)).toContain(
+      "retention_analysis:\n<Picture 2> ([Shot 1] first frame): fully_preserved - the frame layout is retained.",
+    );
+    expect(retentionRows(framed)).toMatchObject([{ fromFrameRole: true, edited: false }]);
+
+    // More roles, and a role moved to another shot, never add a second line.
+    const more = pkg.setPictureRoles(framed, "def-B", [
+      { ...firstFrame, shotIds: ["shot-2"] },
+      { id: "role-2", kind: "last-frame", shotIds: ["shot-2"] },
+    ]);
+    expect(retentionRows(more)).toHaveLength(1);
+    expect(resolve(more)).toContain("<Picture 2> ([Shot 2] first frame, [Shot 2] last frame): fully_preserved");
+
+    // An untouched drafted line goes when the last frame role goes...
+    expect(retentionRows(pkg.setPictureRoles(more, "def-B", []))).toEqual([]);
+    // ...and a storyboard is not a frame anchor, so it drafts nothing.
+    const storyboard = pkg.setPictureRoles(more, "def-B", [{ id: "role-3", kind: "storyboard", shotIds: ["shot-1"] }]);
+    expect(retentionRows(storyboard)).toEqual([]);
+
+    // An edited one stays, marker and all, for review.
+    const row = retentionRows(more)[0];
+    const partial = pkg.setRetentionMarker(more, row.id, "partially_preserved");
+    const cleared = pkg.setPictureRoles(partial, "def-B", []);
+    expect(retentionRows(cleared)).toMatchObject([{ marker: "partially_preserved", edited: true }]);
+    expect(pkg.retentionReview(retentionRows(cleared)[0] as never, cleared)).toMatch(/frame role that has since been removed/);
+  });
+
+  it("remembers a deleted drafted line until the author restores it", async () => {
+    const { pkg, document } = await structured("detailed_description:\n[Shot 1] One.");
+    const framed = pkg.setPictureRoles(
+      pkg.addDefinition(document, {
+        kind: "definition",
+        id: "def-A",
+        targetId: "visual:media-A",
+        roles: [],
+        body: pkg.inlineDocument([]),
+      }),
+      "def-A",
+      [{ id: "role-1", kind: "keyframe", shotIds: ["shot-1"] }],
+    );
+    const deleted = pkg.removeRetention(framed, retentionRows(framed)[0].id);
+    expect(deleted.suppressedRetention).toEqual(["visual:media-A"]);
+
+    // Another role edit does not bring it back...
+    const edited = pkg.setPictureRoles(deleted, "def-A", [
+      { id: "role-1", kind: "keyframe", shotIds: ["shot-1"] },
+      { id: "role-2", kind: "last-frame", shotIds: ["shot-1"] },
+    ]);
+    expect(retentionRows(edited)).toEqual([]);
+    // ...restoring does.
+    expect(retentionRows(pkg.restoreSuggestedRetention(edited, "visual:media-A"))).toMatchObject([
+      { targetId: "visual:media-A", marker: "fully_preserved", fromFrameRole: true },
+    ]);
+  });
+
+  it("keeps markers within their family, and accepts retention that covers only some objects", async () => {
+    const { pkg, document, resolve } = await structured(
+      [
+        "subject_definitions:",
+        "<Subject 1> is the woman in <Picture 1>.",
+        "",
+        "retention_analysis:",
+        "<Audio 1>: fully_preserved - a visual marker on a soundtrack.",
+        "<Picture 2>: fully_copy - an audio marker on a picture.",
+        "<Video 2> (cut and pacing structure): weak_reference - only the rhythm.",
+        "",
+        "detailed_description:",
+        "[Shot 1] <Subject 1> walks past <Video 3>.",
+      ].join("\n"),
+    );
+    expect(pkg.markersFor("Audio")).toEqual(["fully_copy", "partially_copy", "reference", "weak_reference"]);
+    expect(pkg.markersFor("Picture")).toEqual([
+      "fully_preserved", "partially_preserved", "attribute_transfer", "weak_reference",
+    ]);
+    // The wrong family is not a retention line; it is kept, verbatim, as text.
+    expect(document.retention.map((entry) => entry.kind)).toEqual(["raw", "retention"]);
+    expect(retentionRows(document)[0]).toMatchObject({ targetId: "visual:media-V2", scope: { mode: "custom" } });
+
+    // Subject 1 and Video 3 have no line, and that is a valid prompt.
+    expect(() => resolve(document)).not.toThrow();
+    const labeller = pkg.createReferenceLabeller(document, pkg.buildReferenceCatalogue(workedExample(), REFERENCE_IDS));
+    expect(pkg.availableForRetention(document, labeller).map((entry) => entry.targetId)).toEqual([
+      "subject:subject-1",
+      "visual:media-V3",
+    ]);
+  });
+
+  it("recovers scope from the shots when the parentheses were deleted outside the composer, through reorders", async () => {
+    const committed = [
+      "subject_definitions:",
+      "<Subject 1> is the woman in <Picture 1>.",
+      "",
+      "retention_analysis:",
+      "<Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved - the blue coat is retained.",
+      "",
+      "detailed_description:",
+      "[Shot 1] <Subject 1> enters.",
+      "[Shot 2] At 00:02.000, <Picture 2> fills the frame.",
+      "[Shot 3] At 00:04.000, <Subject 1> leaves.",
+    ].join("\n");
+    const first = await structured(committed);
+    expect(retentionRows(first.document)[0].scope.mode).toBe("derived");
+    expect(first.resolve(first.document)).toBe(committed);
+
+    // Parentheses deleted in the main panel, then reopened with no cache.
+    const edited = committed.replace(" (appears in [Shot 1], [Shot 3])", "");
+    const { pkg, document } = await structured(edited);
+    const [row] = retentionRows(document);
+    expect(row.scope.mode).toBe("none");
+
+    // Reorder subjects and media, then commit: every reference still resolves,
+    // and the annotation stays as optional as the author left it.
+    const withSecond = pkg.createSubject(document, {
+      id: "subject-dog",
+      name: "Dog",
+      description: "a dog",
+      sourceIds: [],
+      definitionId: "def-dog",
+    });
+    const dogFirst = pkg.moveSubject(withSecond, "subject-dog", -1);
+    const [images, videos, audios] = workedExample() as unknown as GenerationInputSnapshot[];
+    const reordered = pkg.buildReferenceCatalogue(
+      asExtension([{ ...images, media: [...images.media!].reverse() }, videos, audios]),
+      REFERENCE_IDS,
+    );
+    const resolution = pkg.resolveReferenceDocument(dogFirst, reordered);
+    if (!resolution.ok) throw new Error(JSON.stringify(resolution));
+    expect(resolution.text).toContain("<Subject 2> is the woman in <Picture 2>.");
+    expect(resolution.text).toContain("<Subject 2>: fully_preserved - the blue coat is retained.");
+    expect(resolution.text).toContain("[Shot 2] At 00:02.000, <Picture 1> fills the frame.");
+
+    // "Use derived scope" bakes it back, from the shots as they now stand.
+    const baked = pkg.setRetentionScope(pkg.moveShot(dogFirst, "shot-3", -1), row.id, { mode: "derived" });
+    const bakedText = pkg.resolveReferenceDocument(baked, reordered);
+    expect(bakedText.ok && bakedText.text).toContain(
+      "<Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - the blue coat is retained.",
+    );
+
+    // And with the retention line removed outright, the subject is offered
+    // back with its scope rather than silently re-added.
+    const noRow = await structured(
+      edited.replace("<Subject 1>: fully_preserved - the blue coat is retained.\n", ""),
+    );
+    expect(noRow.document.retention).toEqual([]);
+    const labeller = pkg.createReferenceLabeller(noRow.document, noRow.catalogue);
+    const offered = pkg.availableForRetention(noRow.document, labeller);
+    expect(offered.map((entry) => entry.targetId)).toEqual(["subject:subject-1", "visual:media-B"]);
+  });
+
+  it("toggles task types without reshuffling an imported order, and suggests only from roles", async () => {
+    const { pkg, document, resolve } = await structured(
+      "summary:\n[audio reuse + video editing] The target video is an edited version of <Video 1>.",
+    );
+    expect(document.summary.categories).toEqual(["audio reuse", "video editing"]);
+    const added = pkg.toggleSummaryCategory(document, "keyframe completion");
+    expect(resolve(added)).toContain("summary:\n[audio reuse + video editing + keyframe completion] The target");
+    expect(resolve(pkg.toggleSummaryCategory(added, "audio reuse"))).toContain(
+      "summary:\n[video editing + keyframe completion] The target",
+    );
+
+    const unknown = await structured("summary:\n[image editing] A still is retouched.");
+    expect(unknown.document.summary.categories).toEqual([]);
+    expect(unknown.resolve(unknown.document)).toBe("summary:\n[image editing] A still is retouched.");
+
+    // Attached media alone suggests nothing; a frame role does.
+    const plain = await structured("detailed_description:\n[Shot 1] One.");
+    expect(pkg.suggestedCategories(plain.document)).toEqual([]);
+    const framed = pkg.setPictureRoles(
+      pkg.addDefinition(plain.document, {
+        kind: "definition", id: "d", targetId: "visual:media-A", roles: [], body: pkg.inlineDocument([]),
+      }),
+      "d",
+      [{ id: "r", kind: "first-frame", shotIds: ["shot-1"] }],
+    );
+    expect(pkg.suggestedCategories(framed)).toEqual(["keyframe completion"]);
+    expect(pkg.suggestedCategories(pkg.dismissSummarySuggestion(framed, "keyframe completion"))).toEqual([]);
+
+    const opened = pkg.insertEditingOpener(plain.document, "visual:media-V2");
+    expect(plain.resolve(opened)).toContain("summary:\nThe target video is an edited version of <Video 2>.");
+  });
+
+  it("refuses a picture role with no shot, and gives guide checks without blocking", async () => {
+    const { pkg, document, catalogue } = await structured(
+      [
+        "summary:",
+        "<Video 1> is shown.",
+        "",
+        "retention_analysis:",
+        "<Picture 1>: fully_preserved - a.",
+        "<Picture 1>: weak_reference - b.",
+        "",
+        "detailed_description:",
+        "[Shot 1] At 00:01.000, she says <d>hello</d>.",
+        "[Shot 2] Then a cut with no time.",
+        "",
+        "overall_soundscape:",
+        "<d>[English] Hi.</d>",
+      ].join("\n"),
+    );
+    const labeller = pkg.createReferenceLabeller(document, catalogue);
+    expect(pkg.guideHints(document, labeller).map((hint) => hint.id)).toEqual([
+      "timestamp-shot-1",
+      "timestamp-shot-2",
+      "dialogue-language",
+      "dialogue-placement",
+      "summary-labels",
+      "retention-duplicate-visual:media-A",
+    ]);
+    // Advice only: it still resolves.
+    expect(pkg.resolveReferenceDocument(document, catalogue).ok).toBe(true);
+
+    const unanchored = pkg.setPictureRoles(
+      pkg.addDefinition(document, {
+        kind: "definition", id: "d", targetId: "visual:media-B", roles: [], body: pkg.inlineDocument([]),
+      }),
+      "d",
+      [{ id: "role-x", kind: "composition", shotIds: [] }],
+    );
+    expect(pkg.resolveReferenceDocument(unanchored, catalogue)).toMatchObject({
+      ok: false,
+      incompleteRoles: ["role-x"],
+    });
+  });
+});
+
+interface LoadedDefinitionShape {
+  readonly kind: "definition" | "raw";
+  readonly targetId?: string;
+  readonly roles?: readonly { readonly kind: string; readonly shotIds: readonly string[] }[];
+}
+
+describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
+  function selectOption(name: string, value: string) {
+    fireEvent.change(screen.getByRole("combobox", { name }), { target: { value } });
+  }
+
+  function speakingInputs(prompt: string): GenerationInputSnapshot[] {
+    return panelInputs(prompt).map((input) =>
+      input.id === VIDEOS
+        ? { ...input, media: input.media!.map((entry) => ({ ...entry, options: { audio: true } })) }
+        : input,
+    );
+  }
+
+  it("authors the plan's completion example and commits it resolved against the reordered media", async () => {
+    const { replaceReferenceText, typeReferenceText } = await loadLoader();
+    const pkg = await loadPackage();
+    session = mountGenerationSession({ nodes: REFERENCE_NODES, inputs: speakingInputs("") });
+    await mount(pkg);
+
+    // A local subject from the portrait and the speaking video's soundtrack.
+    fireEvent.click(screen.getByRole("button", { name: "Add subject" }));
+    const form = screen.getByRole("group", { name: "New subject" });
+    fireEvent.change(within(form).getByLabelText("Subject name"), { target: { value: "Mara" } });
+    fireEvent.change(within(form).getByLabelText("What it is"), {
+      target: { value: "the woman with a red scarf" },
+    });
+    fireEvent.click(within(form).getByRole("button", { name: "<Picture 1> hero" }));
+    fireEvent.click(within(form).getByRole("button", { name: "<Audio 1> talk" }));
+    fireEvent.click(within(form).getByRole("button", { name: "Create subject" }));
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 1>", "<Audio 1>"]);
+
+    // The other picture is Shot 1's first frame, which drafts its retention.
+    selectOption("Define a reference", "visual:media-city");
+    fireEvent.click(screen.getByRole("button", { name: "Add role to <Picture 2>" }));
+    const drafted = screen
+      .getByTestId("retention-section")
+      .querySelector('[data-retention="visual:media-city"]') as HTMLElement;
+    expect(drafted.textContent).toContain("Added from a frame role.");
+    expect(
+      within(drafted).getByRole("combobox", { name: "Scope for <Picture 2>" }),
+    ).toHaveDisplayValue("([Shot 1] first frame)");
+
+    // Task types, from the suggestions the roles raised.
+    fireEvent.click(screen.getByRole("button", { name: "Add suggested keyframe completion" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add suggested reference generation" }));
+    replaceReferenceText(screen.getByRole("textbox", { name: "Summary" }), "Mara walks past the window.");
+
+    // A style opening, and the subject in two shots.
+    replaceReferenceText(screen.getByRole("textbox", { name: "Style opening" }), "Warm, handheld.");
+    const shot1 = screen.getByRole("textbox", { name: "Shot 1" });
+    typeReferenceText(shot1, "The shot begins as ");
+    act(() => shot1.blur());
+    fireEvent.click(screen.getByRole("button", { name: "Insert <Subject 1>" }));
+    typeReferenceText(shot1, " enters.");
+    fireEvent.click(screen.getByRole("button", { name: "Add shot" }));
+    const shot2 = screen.getByRole("textbox", { name: "Shot 2" });
+    typeReferenceText(shot2, "At 00:02.000, ");
+    act(() => shot2.blur());
+    fireEvent.click(screen.getByRole("button", { name: "Insert <Subject 1>" }));
+    typeReferenceText(shot2, " turns.");
+
+    // Offered, not imposed: the subject is available for retention with its
+    // derived scope, and added with an explicit relationship.
+    selectOption("Add retention for <Subject 1>", "fully_preserved");
+    replaceReferenceText(
+      screen.getByRole("textbox", { name: "Retention of <Subject 1>" }),
+      "the red scarf is retained.",
+    );
+
+    // Reverse the pictures: labels move, targets stay.
+    fireEvent.click(screen.getByRole("button", { name: "Move city earlier" }));
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 2>", "<Audio 1>"]);
+    expect(
+      within(screen.getByTestId("retention-section")).getByRole("combobox", { name: "Scope for <Picture 1>" }),
+    ).toBeInTheDocument();
+    expect(session.commit).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Commit to prompt" }));
+    expect(session.commit).toHaveBeenCalledOnce();
+    expect(session.panelInputs().find((input) => input.id === PROMPT)?.value).toBe(
+      [
+        "subject_definitions:",
+        "<Subject 1> is the woman with a red scarf from <Picture 2> and <Audio 1>.",
+        "<Picture 1> is the first frame of [Shot 1].",
+        "",
+        "summary:",
+        "[keyframe completion + reference generation] Mara walks past the window.",
+        "",
+        "retention_analysis:",
+        "<Picture 1> ([Shot 1] first frame): fully_preserved - the frame layout is retained.",
+        "<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - the red scarf is retained.",
+        "",
+        "detailed_description:",
+        "Warm, handheld.",
+        "[Shot 1] The shot begins as <Subject 1> enters.",
+        "[Shot 2] At 00:02.000, <Subject 1> turns.",
+        "",
+        "non_diegetic_music:",
+        "N/A",
+      ].join("\n"),
+    );
+    expect(
+      session.panelInputs().find((input) => input.id === IMAGES)?.media?.map((entry) => entry.itemId),
+    ).toEqual(["media-city", "media-hero"]);
+  });
+
+  it("offers derived scope back after the parentheses were deleted in the panel, and audio only audio markers", async () => {
+    const pkg = await loadPackage();
+    const prompt = [
+      "subject_definitions:",
+      "<Subject 1> is the woman in <Picture 1>.",
+      "",
+      "retention_analysis:",
+      "<Subject 1>: fully_preserved - the scarf is retained.",
+      "",
+      "detailed_description:",
+      "[Shot 1] <Subject 1> enters.",
+      "[Shot 2] At 00:02.000, <Picture 2> fills the frame and <Audio 1> plays.",
+      "[Shot 3] At 00:04.000, <Subject 1> leaves.",
+    ].join("\n");
+    session = mountGenerationSession({ nodes: REFERENCE_NODES, inputs: panelInputs(prompt) });
+    await mount(pkg);
+
+    const retention = screen.getByTestId("retention-section");
+    expect(retention.textContent).toContain("Derived from the shots: (appears in [Shot 1], [Shot 3])");
+    expect(
+      [...within(retention).getByRole("combobox", { name: "Add retention for <Audio 1>" }).querySelectorAll("option")]
+        .map((option) => option.getAttribute("value")),
+    ).toEqual(["", "fully_copy", "partially_copy", "reference", "weak_reference"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Move city earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use derived scope for <Subject 1>" }));
+    fireEvent.click(screen.getByRole("button", { name: "Commit to prompt" }));
+
+    const written = session.panelInputs().find((input) => input.id === PROMPT)?.value as string;
+    expect(written).toContain("<Subject 1> is the woman in <Picture 2>.");
+    expect(written).toContain(
+      "<Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved - the scarf is retained.",
+    );
+    expect(written).toContain("[Shot 2] At 00:02.000, <Picture 1> fills the frame and <Audio 1> plays.");
   });
 });

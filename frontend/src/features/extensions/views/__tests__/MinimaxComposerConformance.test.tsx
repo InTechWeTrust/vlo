@@ -1152,7 +1152,10 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
       harness,
     );
 
-    type("Subject definitions", "<Subject 1> is the person in <Picture 1>.");
+    // Definitions are structured lines now (ref2v plan R2); a line of free
+    // text is still one click away, and is written back verbatim.
+    click("Add line");
+    type("Definition line 1", "<Subject 1> is the person in <Picture 1>.");
     type("Overall soundscape", "Wind, then a roar.");
     click("Commit to prompt");
 
@@ -1167,8 +1170,10 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     ]);
     // Committing drops the draft, so what is on screen afterwards is the
     // committed prompt read back through the parser — the round trip, visible.
-    expect(textAreaFor("Subject definitions").value).toBe(
-      "<Subject 1> is the person in <Picture 1>.",
+    // Read back, the line opens with a label it can bind, so it is a
+    // definition of that subject rather than free text.
+    expect(textAreaFor("Definition of <Subject 1>").value).toBe(
+      "is the person in <Picture 1>.",
     );
     expect(textAreaFor("Summary").value).toBe("");
     view.unmount();
@@ -1186,7 +1191,8 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
       harness,
     );
 
-    type("Subject definitions", "<Subject 1> is the person in <Picture 1>.");
+    click("Add line");
+    type("Definition line 1", "<Subject 1> is the person in <Picture 1>.");
     harness.refuse({
       code: "unavailable",
       message: "Image inputs changed in the panel while you were editing.",
@@ -1200,7 +1206,7 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     // The draft survives a refusal. The panel was never written, so clearing
     // the author's sections would lose an edit that exists nowhere else — the
     // failure mode a commit-then-clear ordering produces.
-    expect(textAreaFor("Subject definitions").value).toBe(
+    expect(textAreaFor("Definition line 1").value).toBe(
       "<Subject 1> is the person in <Picture 1>.",
     );
     view.unmount();
