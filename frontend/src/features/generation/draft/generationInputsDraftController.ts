@@ -28,6 +28,14 @@ export interface GenerationDraftWidgetTarget {
 export interface GenerationInputsDraftRequest {
   readonly inputIds: readonly string[];
   readonly widgetTargets?: readonly GenerationDraftWidgetTarget[];
+  /**
+   * Text inputs held for conflict detection only: `holdText` may name them,
+   * and a panel edit to them is a conflict, but the draft never shows them in
+   * its reading, never renders a field for them, and never writes them. For a
+   * caller that writes the text itself at commit — anything the draft offered
+   * to edit there would be silently replaced by that write.
+   */
+  readonly holdInputIds?: readonly string[];
 }
 
 /**
@@ -75,6 +83,32 @@ export interface GenerationDraftReading {
 }
 
 /**
+ * The arrangement one commit writes, handed to `additionalWrites`
+ * (docs/minimax-ref2v-prompt-composer-plan.md §3.3).
+ *
+ * A caller whose text depends on the media — a prompt numbering its reference
+ * tags — must resolve that text against *this*, not against a reading it took
+ * while rendering. It is computed from the session the transaction opens on,
+ * after conflicts were checked, so the numbers the caller assigns and the
+ * arrangement the transaction writes are one arrangement by construction.
+ *
+ * Staged items keep placeholder slot ids here: the reading describes what
+ * the panel will hold, not where to write. Refer to items by `itemId`.
+ */
+export interface GenerationDraftCommitReading {
+  /** The addressed inputs as this commit leaves them. */
+  readonly inputs: readonly GenerationInputSnapshot[];
+  /** The addressed widgets, keyed `nodeId:param`, as this commit leaves them. */
+  readonly widgetValues: ReadonlyMap<string, unknown>;
+  /** The workflow the commit is pinned to. */
+  readonly workflow: {
+    readonly revision: number;
+    readonly fingerprint: string;
+    readonly instanceId: string | null;
+  };
+}
+
+/**
  * A staged editor over some of the generation panel's inputs.
  *
  * Edits are held, not written: the panel is untouched until `commit`, which
@@ -97,7 +131,10 @@ export interface GenerationInputsDraftController {
   revert(): void;
   commit(
     label: string,
-    additionalWrites?: (transaction: GenerationSessionTransaction) => void,
+    additionalWrites?: (
+      transaction: GenerationSessionTransaction,
+      reading: GenerationDraftCommitReading,
+    ) => void,
   ): GenerationTransactionResult;
   /** Change what this draft addresses, keeping the edits it already holds. */
   address(request: GenerationInputsDraftRequest): void;
@@ -206,6 +243,9 @@ export function createGenerationInputsDraft(
   request: GenerationInputsDraftRequest,
 ): GenerationInputsDraftController {
   let selected = new Set(request.inputIds);
+  let held = new Set(
+    (request.holdInputIds ?? []).filter((id) => !selected.has(id)),
+  );
   let widgetTargetKeys = new Set(
     (request.widgetTargets ?? []).map((target) =>
       widgetKey(target.nodeId, target.param),
@@ -308,7 +348,8 @@ export function createGenerationInputsDraft(
     current.ops.filter((op) =>
       op.kind === "setWidget"
         ? widgetTargetKeys.has(widgetKey(op.nodeId, op.param))
-        : selected.has(op.inputId),
+        : selected.has(op.inputId) ||
+          (op.kind === "holdText" && held.has(op.inputId)),
     );
 
   /**
@@ -377,7 +418,10 @@ export function createGenerationInputsDraft(
       // gated on the requested widget targets instead.
       if (op.kind === "setWidget") {
         if (!widgetTargetKeys.has(widgetKey(op.nodeId, op.param))) return;
-      } else if (!selected.has(op.inputId)) {
+      } else if (
+        !selected.has(op.inputId) &&
+        !(op.kind === "holdText" && held.has(op.inputId))
+      ) {
         return;
       }
       // Identity is minted once, here, and stored in the op: the projection is
@@ -475,6 +519,19 @@ export function createGenerationInputsDraft(
           widgetTargetKeys.has(key),
         ),
       );
+      const committedWidgets = new Map(
+        readCommittedWidgets(session, widgetTargetKeys),
+      );
+      for (const [key, value] of widgets) committedWidgets.set(key, value);
+      const commitReading: GenerationDraftCommitReading = Object.freeze({
+        inputs: target,
+        widgetValues: committedWidgets,
+        workflow: Object.freeze({
+          revision: session.workflow.revision,
+          fingerprint: session.workflow.fingerprint,
+          instanceId: session.workflow.instanceId,
+        }),
+      });
       const result = generationSessionService.transaction(
         label,
         (transaction) => {
@@ -484,8 +541,26 @@ export function createGenerationInputsDraft(
           // Returned, so an `additionalWrites` that turns out to be async is
           // still seen by the session and refused. Dropping it here would let
           // half a transaction commit and report success.
-          return additionalWrites?.(transaction);
+          return additionalWrites?.(transaction, commitReading);
         },
+        // What the caller resolved against has to still be what is written.
+        // A text-only `additionalWrites` stages no media, so without this the
+        // session would not notice its inputs moving under the callback — and
+        // the prompt would be numbered against an arrangement nobody commits.
+        additionalWrites
+          ? {
+              dependsOnInputs: [...selected, ...held],
+              // Widgets are in the reading too — a duration the prose cites —
+              // so a widget moving under the callback is the same stale read.
+              dependsOnWidgets: [...widgetTargetKeys].map((key) => {
+                const separator = key.lastIndexOf(":");
+                return {
+                  nodeId: key.slice(0, separator),
+                  widget: key.slice(separator + 1),
+                };
+              }),
+            }
+          : undefined,
       );
       if (!result.ok) {
         error = result.message;
@@ -511,6 +586,9 @@ export function createGenerationInputsDraft(
     address: (next) => {
       if (disposed) return;
       const nextSelected = new Set(next.inputIds);
+      const nextHeld = new Set(
+        (next.holdInputIds ?? []).filter((id) => !nextSelected.has(id)),
+      );
       const nextWidgets = new Set(
         (next.widgetTargets ?? []).map((target) =>
           widgetKey(target.nodeId, target.param),
@@ -519,12 +597,15 @@ export function createGenerationInputsDraft(
       if (
         nextSelected.size === selected.size &&
         [...nextSelected].every((id) => selected.has(id)) &&
+        nextHeld.size === held.size &&
+        [...nextHeld].every((id) => held.has(id)) &&
         nextWidgets.size === widgetTargetKeys.size &&
         [...nextWidgets].every((key) => widgetTargetKeys.has(key))
       ) {
         return;
       }
       selected = nextSelected;
+      held = nextHeld;
       widgetTargetKeys = nextWidgets;
       // The log is left intact. Everything downstream — the reading, the
       // conflicts, the commit target — is narrowed to what is addressed, so a

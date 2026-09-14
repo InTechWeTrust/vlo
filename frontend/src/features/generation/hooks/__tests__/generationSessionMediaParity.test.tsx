@@ -546,7 +546,7 @@ describe("generation media writes: native drop vs SDK attach", () => {
   it("keeps a staged SDK item's id once the draft commits it to the store", () => {
     // The ref2v composer binds prose to `itemId` while an attach is still only
     // staged, so the id it saw has to be the one the panel ends up holding —
-    // through the real store, not a model of it (plan §3.1).
+    // through the real store, not a model of it (plan §3.1, §3.3).
     useAssetStore.setState({ assets: [LOUD_VIDEO, SECOND_VIDEO] as never });
     const rendered = mountPanel();
     const api = createExtensionGenerationApi(createScope());
@@ -575,12 +575,18 @@ describe("generation media writes: native drop vs SDK attach", () => {
       .getState()
       .inputs[0]!.media!.map((item) => item.itemId);
 
+    let readingIds: string[] = [];
     let result;
     act(() => {
-      result = draft!.commit("Attach references");
+      result = draft!.commit("Attach references", (_transaction, reading) => {
+        readingIds = reading.inputs[0]!.media!.map((item) => item.itemId);
+        // Frozen: the reading is what the caller numbers from.
+        expect(Object.isFrozen(reading)).toBe(true);
+      });
     });
 
     expect(result).toMatchObject({ ok: true, changed: true });
+    expect(readingIds).toEqual(stagedIds);
     expect(readReferences(api).map((item) => item.itemId)).toEqual(stagedIds);
     expect(readAttachedIds(api)).toEqual([SECOND_VIDEO.id, LOUD_VIDEO.id]);
     draft!.dispose();

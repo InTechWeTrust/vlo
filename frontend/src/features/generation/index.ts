@@ -3,6 +3,7 @@ export { GenerationInputsDraftFields } from "./components/GenerationInputsDraftF
 export type { GenerationInputsDraftFieldsProps } from "./components/GenerationInputsDraftFields";
 export { createGenerationInputsDraft } from "./draft/generationInputsDraftController";
 export type {
+  GenerationDraftCommitReading,
   GenerationDraftReading,
   GenerationDraftWidgetTarget,
   GenerationInputsDraftController,

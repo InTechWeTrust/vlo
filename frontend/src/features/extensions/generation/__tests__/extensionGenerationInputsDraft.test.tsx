@@ -1,4 +1,6 @@
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ExtensionGenerationDraftFields } from "../ExtensionGenerationDraftFields";
 
 import { createScopedInputsDraft } from "../extensionGenerationInputsDraft";
 import {
@@ -333,6 +335,59 @@ describe("api.generation.createInputsDraft", () => {
       },
     );
 
+    expect(outcome.ok).toBe(false);
+    expect(mounted.commit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Inputs held for conflict detection only
+ * (docs/minimax-ref2v-prompt-composer-plan.md §3.3). A composer that writes the
+ * prompt itself at commit must not be handed an editable field for it: the
+ * staged text would be replaced by that write, silently.
+ */
+describe("createInputsDraft holdInputIds", () => {
+  const IMAGE_INPUT = {
+    id: "10:image",
+    nodeId: "10",
+    param: "image",
+    label: "Start frame",
+    inputType: "image",
+    media: [],
+  } as unknown as GenerationInputSnapshot;
+
+  it("holds a prompt without rendering, staging or writing it", () => {
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT, IMAGE_INPUT] });
+    const draft = createScopedInputsDraft(createScope(), {
+      inputIds: ["10:image"],
+      holdInputIds: ["6:text"],
+    });
+    if (!draft) throw new Error("the draft was refused");
+
+    // The real renderer, not a stub: only the addressed image is a field.
+    render(<ExtensionGenerationDraftFields controller={draft} />);
+    expect(screen.getByTestId("generation-inputs-draft")).toBeInTheDocument();
+    expect(screen.queryAllByRole("textbox")).toHaveLength(0);
+    expect(screen.queryByPlaceholderText("Enter prompt...")).toBeNull();
+    expect(draft.getState().inputs.map((input) => input.id)).toEqual([
+      "10:image",
+    ]);
+
+    // Text cannot be staged into it, only held.
+    draft.stage({ kind: "setText", inputId: "6:text", value: "staged" });
+    expect(draft.getState().hasDraftChanges).toBe(false);
+    draft.stage({ kind: "holdText", inputId: "6:text" });
+    expect(draft.getState().hasDraftChanges).toBe(true);
+
+    act(() => {
+      mounted!.publish({
+        inputs: [{ ...TEXT_INPUT, value: "typed in the panel" }, IMAGE_INPUT],
+      });
+    });
+    expect(draft.getState().hasConflict).toBe(true);
+    const outcome = draft.commit("Compose", (transaction) => {
+      transaction.setTextInput("6:text", "composed");
+    });
     expect(outcome.ok).toBe(false);
     expect(mounted.commit).not.toHaveBeenCalled();
   });

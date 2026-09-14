@@ -283,6 +283,18 @@ export interface GenerationSessionTransaction {
   setMediaOption(slotId: string, optionId: string, value: boolean): void;
 }
 
+export interface GenerationTransactionOptions {
+  /**
+   * Inputs the callback *read* to decide its writes. Any change to them while
+   * the callback runs — contents, arrangement, audio status, text — fails the
+   * transaction `session_changed`, where otherwise only a slot renumbering
+   * under a staged media command would.
+   */
+  readonly dependsOnInputs?: readonly string[];
+  /** Widgets the callback read; a value or constraint change fails the same way. */
+  readonly dependsOnWidgets?: readonly GenerationWidgetTarget[];
+}
+
 export type GenerationTransactionFailureCode =
   | "invalid_label"
   | "unavailable"

@@ -406,9 +406,10 @@ describe("useGenerationInputsDraft commit", () => {
 });
 
 /**
- * Occurrence identity (docs/minimax-ref2v-prompt-composer-plan.md §3.1).
+ * Occurrence identity and the commit reading
+ * (docs/minimax-ref2v-prompt-composer-plan.md §3.1, §3.3).
  */
-describe("createGenerationInputsDraft identity", () => {
+describe("createGenerationInputsDraft identity and commit reading", () => {
   const BATCH = {
     id: "10:images",
     nodeId: "10",
@@ -460,6 +461,127 @@ describe("createGenerationInputsDraft identity", () => {
       ["asset-b", b],
       ["asset-a", a],
     ]);
+    draft.dispose();
+  });
+
+  it("hands additionalWrites the arrangement it commits, staged items included", () => {
+    mounted = mountGenerationSession({
+      inputs: [BATCH, TEXT_INPUT],
+    });
+    const draft = createGenerationInputsDraft({
+      inputIds: ["10:images", "6:text"],
+    });
+    stageTwo(draft);
+    draft.stage({
+      kind: "moveMedia",
+      inputId: "10:images",
+      fromOrdinal: 1,
+      toOrdinal: 0,
+    });
+    const expected = staged(draft).map((item) => [item.itemId, item.ordinal]);
+
+    let seen: unknown = null;
+    const result = draft.commit("Compose", (transaction, reading) => {
+      const batch = reading.inputs.find((input) => input.id === "10:images");
+      seen = batch?.media?.map((item) => [item.itemId, item.ordinal]);
+      transaction.setTextInput(
+        "6:text",
+        `first is ${batch?.media?.[0]?.assetId}`,
+      );
+      expect(reading.workflow.fingerprint).toBe("fingerprint-1");
+    });
+
+    expect(result).toMatchObject({ ok: true, changed: true });
+    expect(seen).toEqual(expected);
+    expect(
+      mounted.panelInputs().find((input) => input.id === "6:text")?.value,
+    ).toBe("first is asset-b");
+    draft.dispose();
+  });
+
+  it("holds a text input without staging it, and conflicts when the panel edits it", () => {
+    mounted = mountGenerationSession({ inputs: [TEXT_INPUT] });
+    const draft = createGenerationInputsDraft({ inputIds: ["6:text"] });
+
+    draft.stage({ kind: "holdText", inputId: "6:text" });
+    // Held, not changed: the reading still shows the panel's text.
+    expect(draft.getSnapshot().inputs[0]?.value).toBe("before");
+    expect(draft.getSnapshot().hasConflict).toBe(false);
+
+    mounted.publish({ inputs: [{ ...TEXT_INPUT, value: "typed in the panel" }] });
+    expect(draft.getSnapshot().hasConflict).toBe(true);
+
+    const result = draft.commit("Compose", (transaction) => {
+      transaction.setTextInput("6:text", "resolved prompt");
+    });
+    expect(result.ok).toBe(false);
+    expect(mounted.commit).not.toHaveBeenCalled();
+    draft.dispose();
+  });
+
+  it("refuses a commit whose inputs move while additionalWrites runs", () => {
+    mounted = mountGenerationSession({ inputs: [BATCH, TEXT_INPUT] });
+    const draft = createGenerationInputsDraft({
+      inputIds: ["10:images", "6:text"],
+    });
+
+    // Text-only writes stage no media, so only the dependency guard can see
+    // the batch change underneath the prompt that was numbered against it.
+    const result = draft.commit("Compose", (transaction) => {
+      mounted!.publish({
+        inputs: [
+          {
+            ...BATCH,
+            media: [
+              {
+                slotId: "10:images",
+                itemId: "media-arrived",
+                ordinal: 0,
+                source: "asset",
+                assetId: "asset-z",
+                displayName: "asset-z.png",
+                mediaType: "image",
+                hasAudio: false,
+                options: {},
+                preparing: false,
+              },
+            ],
+          },
+          TEXT_INPUT,
+        ],
+      });
+      transaction.setTextInput("6:text", "<Picture 1> is nothing");
+    });
+
+    expect(result).toMatchObject({ ok: false, code: "session_changed" });
+    expect(mounted.commit).not.toHaveBeenCalled();
+    draft.dispose();
+  });
+});
+
+describe("createGenerationInputsDraft commit dependencies", () => {
+  it("refuses a commit whose addressed widget moves while additionalWrites runs", () => {
+    mounted = mountGenerationSession({
+      inputs: [TEXT_INPUT],
+      editableWidgets: [lengthWidget(24)],
+    });
+    const draft = createGenerationInputsDraft({
+      inputIds: ["6:text"],
+      widgetTargets: [LENGTH_TARGET],
+    });
+
+    const result = draft.commit("Compose", (transaction, reading) => {
+      const length = reading.widgetValues.get("9:length");
+      mounted!.publish({
+        inputs: [TEXT_INPUT],
+        editableWidgets: [lengthWidget(48)],
+      });
+      transaction.setTextInput("6:text", `lasts ${String(length)} frames`);
+    });
+
+    // The prose says 24; the panel now says 48. Nothing is written.
+    expect(result).toMatchObject({ ok: false, code: "session_changed" });
+    expect(mounted.commit).not.toHaveBeenCalled();
     draft.dispose();
   });
 });

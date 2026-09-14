@@ -109,6 +109,7 @@ export type {
   ExtensionGenerationSubmissionContributorDefinition,
   ExtensionGenerationInputRepeatable,
   ExtensionGenerationDraftFieldsProps,
+  ExtensionGenerationDraftCommitReading,
   ExtensionGenerationDraftOp,
   ExtensionGenerationDraftStatus,
   ExtensionGenerationInputsDraft,

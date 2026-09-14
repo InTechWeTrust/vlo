@@ -1,5 +1,6 @@
 import {
   createGenerationInputsDraft,
+  type GenerationDraftCommitReading,
   type GenerationInputDraftOp,
   type GenerationInputsDraftController,
 } from "../../generation";
@@ -16,6 +17,7 @@ import {
 import { PUBLIC_FAILURE_CODES } from "./ExtensionGenerationBridge";
 import type {
   ExtensionApiScope,
+  ExtensionGenerationDraftCommitReading,
   ExtensionGenerationDraftOp,
   ExtensionGenerationInputsDraft,
   ExtensionGenerationInputsDraftRequest,
@@ -73,6 +75,11 @@ function toNativeOp(op: ExtensionGenerationDraftOp): GenerationInputDraftOp {
         kind: "setText",
         inputId: boundedId(op.inputId, "Generation input IDs"),
         value: boundedTextValue(op.value),
+      };
+    case "holdText":
+      return {
+        kind: "holdText",
+        inputId: boundedId(op.inputId, "Generation input IDs"),
       };
     case "attachAsset": {
       const itemOptions = boundedItemOptions(op.itemOptions);
@@ -220,6 +227,24 @@ function detachJson<T>(value: T): T {
   return Object.freeze(clone) as T;
 }
 
+/**
+ * The commit reading as the SDK publishes it: inputs through the session's
+ * own projection, widget values detached and write-refusing, all frozen — the
+ * caller numbers its prompt from this and must not be able to change it.
+ */
+function projectCommitReading(
+  reading: GenerationDraftCommitReading,
+): ExtensionGenerationDraftCommitReading {
+  return Object.freeze({
+    inputs: projectDraftInputs(reading.inputs),
+    widgetValues: readOnlyMap(reading.widgetValues) as ReadonlyMap<
+      string,
+      never
+    >,
+    workflow: Object.freeze({ ...reading.workflow }),
+  });
+}
+
 function publicResult(
   result: ReturnType<GenerationInputsDraftController["commit"]>,
 ): ExtensionGenerationTransactionResult {
@@ -268,7 +293,14 @@ export function createScopedInputsDraft(
     nodeId: boundedId(target?.nodeId, "Node IDs"),
     param: boundedId(target?.widget, "Widget names"),
   }));
-  const native = createGenerationInputsDraft({ inputIds, widgetTargets });
+  const holdInputIds = (request?.holdInputIds ?? []).map((id) =>
+    boundedId(id, "Generation input IDs"),
+  );
+  const native = createGenerationInputsDraft({
+    inputIds,
+    widgetTargets,
+    holdInputIds,
+  });
 
   /**
    * The published reading, cached against the native one it was built from.
@@ -359,18 +391,27 @@ export function createScopedInputsDraft(
           label: typeof label === "string" ? label.trim() : "",
         };
       }
+      // Passed on only when the caller gave one: the host takes a supplied
+      // callback as a promise to resolve against the commit reading, and
+      // holds the transaction to it.
       return publicResult(
-        native.commit(label, (session) => {
-          if (!additionalWrites) return;
-          // The same port every other extension write crosses, so a bad id or
-          // an oversize value is refused here and rolls the whole staged commit
-          // back rather than reaching the store.
-          //
-          // Returned, not called and discarded: the session refuses an async
-          // callback, and it can only see one if the value travels back through
-          // both this wrapper and the host controller.
-          return additionalWrites(createExtensionTransactionPort(session));
-        }),
+        native.commit(
+          label,
+          additionalWrites
+            ? (session, reading) =>
+                // The same port every other extension write crosses, so a bad
+                // id or an oversize value is refused here and rolls the whole
+                // staged commit back rather than reaching the store.
+                //
+                // Returned, not called and discarded: the session refuses an
+                // async callback, and it can only see one if the value travels
+                // back through both this wrapper and the host controller.
+                additionalWrites(
+                  createExtensionTransactionPort(session),
+                  projectCommitReading(reading),
+                )
+            : undefined,
+        ),
       );
     },
     dispose: () => native.dispose(),

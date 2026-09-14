@@ -2603,6 +2603,21 @@ export interface ExtensionPanelUiRuntime {
 export type ExtensionGenerationDraftOp =
   | { readonly kind: "setText"; readonly inputId: string; readonly value: string }
   | {
+      /**
+       * Hold a text input you will write yourself in `commit`'s
+       * `additionalWrites`, without staging a value. Since SDK 1.26.0.
+       *
+       * For text that can only be resolved at commit — a prompt that numbers
+       * references against the arrangement being committed. Staging this
+       * records the panel's text as it stands, so if the user edits that input
+       * in the panel afterwards the draft reports a conflict and refuses to
+       * commit, instead of your write silently replacing their edit. Stage it
+       * when your editing begins, and again after each successful commit.
+       */
+      readonly kind: "holdText";
+      readonly inputId: string;
+    }
+  | {
       readonly kind: "attachAsset";
       readonly inputId: string;
       readonly assetId: string;
@@ -2654,6 +2669,15 @@ export interface ExtensionGenerationInputsDraftRequest {
    * belongs beside that text, not one panel away.
    */
   readonly widgetTargets?: readonly ExtensionGenerationWidgetTarget[];
+  /**
+   * Text inputs to hold for conflict detection only (SDK 1.26.0). `holdText`
+   * may name them and a panel edit to them becomes a conflict, but the draft
+   * never lists them in `getState().inputs`, `InputsDraftFields` never renders
+   * them, and the draft never writes them. Use this for the prompt you write
+   * yourself in `additionalWrites`: addressing it through `inputIds` instead
+   * would offer an editable field whose staged text your write then replaces.
+   */
+  readonly holdInputIds?: readonly string[];
 }
 
 /** A draft's current reading, projected exactly as a live session is. */
@@ -2699,6 +2723,32 @@ export interface ExtensionGenerationInputsDraftState {
 }
 
 /**
+ * The arrangement one draft commit writes, passed to `additionalWrites`.
+ * Since SDK 1.26.0.
+ *
+ * Resolve anything that depends on the media — reference tag numbers above
+ * all — against this rather than against the last `getState` you rendered.
+ * It is computed after the conflict check from the session the transaction
+ * opens on, so what you number and what is written are one arrangement. If
+ * the addressed inputs change while your callback runs, the commit fails
+ * `session_changed` and nothing is written.
+ *
+ * A staged item's `slotId` here is a placeholder, not a write address; refer
+ * to items by `itemId`, which a staged item keeps once it is committed.
+ */
+export interface ExtensionGenerationDraftCommitReading {
+  /** The addressed inputs as this commit leaves them. */
+  readonly inputs: readonly ExtensionGenerationInputSnapshot[];
+  /** The addressed widgets, keyed `nodeId:param`, as this commit leaves them. */
+  readonly widgetValues: ReadonlyMap<string, JsonValue>;
+  readonly workflow: {
+    readonly revision: number;
+    readonly fingerprint: string;
+    readonly instanceId: string | null;
+  };
+}
+
+/**
  * A staged editor over some of the generation panel's inputs.
  *
  * Edits are held, not written: the panel is untouched until `commit`. Opened
@@ -2724,7 +2774,10 @@ export interface ExtensionGenerationInputsDraft {
    */
   commit(
     label: string,
-    additionalWrites?: (transaction: ExtensionGenerationTransaction) => void,
+    additionalWrites?: (
+      transaction: ExtensionGenerationTransaction,
+      reading: ExtensionGenerationDraftCommitReading,
+    ) => void,
   ): ExtensionGenerationTransactionResult;
   /** Drop the draft and stop tracking the panel. Also done on deactivation. */
   dispose(): void;

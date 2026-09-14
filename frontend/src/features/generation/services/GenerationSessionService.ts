@@ -26,6 +26,7 @@ import type {
   GenerationSessionTransaction,
   GenerationSessionWidgetCommit,
   GenerationTransactionFailureCode,
+  GenerationTransactionOptions,
   GenerationTransactionResult,
   GenerationWidgetTarget,
 } from "./generationSessionTypes";
@@ -409,6 +410,22 @@ function sameInputs(
   });
 }
 
+function pickInputs(
+  inputs: readonly GenerationInputSnapshot[],
+  ids: readonly string[],
+): readonly GenerationInputSnapshot[] {
+  const wanted = new Set(ids);
+  return inputs.filter((input) => wanted.has(input.id));
+}
+
+function pickWidgets(
+  widgets: readonly GenerationEditableWidgetSnapshot[],
+  targets: readonly GenerationWidgetTarget[],
+): readonly GenerationEditableWidgetSnapshot[] {
+  const wanted = new Set(targets.map(widgetKey));
+  return widgets.filter((widget) => wanted.has(widgetKey(widget.target)));
+}
+
 function samePublication(
   snapshot: GenerationSessionSnapshot,
   next: GenerationSessionPublication,
@@ -535,6 +552,7 @@ export class GenerationSessionService {
   transaction(
     label: string,
     callback: (transaction: GenerationSessionTransaction) => void,
+    options: GenerationTransactionOptions = {},
   ): GenerationTransactionResult {
     if (typeof label !== "string") {
       return failure("", "invalid_label", "Generation labels must be strings.");
@@ -707,6 +725,29 @@ export class GenerationSessionService {
         normalizedLabel,
         "session_changed",
         "The panel's inputs changed while the transaction ran; re-read the session and try again.",
+      );
+    }
+
+    // A caller that read inputs to decide what to write — prompt text numbered
+    // against a media arrangement — is refused on any change to them, not just
+    // a slot renumbering: a toggled soundtrack or an edited prompt invalidates
+    // what it resolved as surely as a reorder does.
+    if (
+      (options.dependsOnInputs &&
+        !sameInputs(
+          pickInputs(startSnapshot.inputs, options.dependsOnInputs),
+          pickInputs(snapshot.inputs, options.dependsOnInputs),
+        )) ||
+      (options.dependsOnWidgets &&
+        !sameEditableWidgets(
+          pickWidgets(startSnapshot.editableWidgets, options.dependsOnWidgets),
+          pickWidgets(snapshot.editableWidgets, options.dependsOnWidgets),
+        ))
+    ) {
+      return failure(
+        normalizedLabel,
+        "session_changed",
+        "The inputs or widgets this write depends on changed while it was prepared; re-read the session and try again.",
       );
     }
 

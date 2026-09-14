@@ -66,6 +66,19 @@ export type GenerationInputDraftOp =
       readonly slotId: string;
     }
   | {
+      /**
+       * Holds a text input the caller will write itself at commit, without
+       * staging a value for it.
+       *
+       * A composer resolves its prompt only once it knows the arrangement being
+       * committed, so it has no string to stage — but it still edits the prompt,
+       * and an edit made in the panel meanwhile must conflict rather than be
+       * overwritten by `additionalWrites`. This captures that baseline.
+       */
+      readonly kind: "holdText";
+      readonly inputId: string;
+    }
+  | {
       readonly kind: "moveMedia";
       readonly inputId: string;
       readonly fromOrdinal: number;
@@ -151,6 +164,7 @@ function applyToInput(
   if (op.kind === "setText") {
     return { ...input, value: op.value };
   }
+  if (op.kind === "holdText") return input;
   const media = input.media ?? [];
   if (op.kind === "attachAsset" || op.kind === "replaceMedia") {
     const at = op.kind === "replaceMedia" ? op.at : null;

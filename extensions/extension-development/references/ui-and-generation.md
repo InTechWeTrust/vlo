@@ -618,12 +618,50 @@ return h(
   say.
 - The draft clears only after a successful transaction, so a failed commit
   leaves your edits in place rather than showing a panel that never took them.
-- `stage(op)` edits it programmatically — `setText`, `attachAsset`,
-  `replaceMedia`, `removeMedia`, `moveMedia`, `setMediaOption`, `setWidget` — so
-  you can preview a preset without a rendered field. `attachAsset` appends;
-  `replaceMedia` overwrites the position `at`. A staged attach carries its
-  `itemId` from the moment it is staged and keeps it once committed
-  (SDK 1.26.0).
+- `stage(op)` edits it programmatically — `setText`, `holdText`,
+  `attachAsset`, `replaceMedia`, `removeMedia`, `moveMedia`, `setMediaOption`,
+  `setWidget` — so you can preview a preset without a rendered field.
+  `attachAsset` appends; `replaceMedia` overwrites the position `at`. A staged
+  attach carries its `itemId` from the moment it is staged and keeps it once
+  committed (SDK 1.26.0).
+
+### Resolve text against what the commit writes
+
+Text that depends on the media — a prompt numbering its reference tags — must
+not be built while rendering and committed later: the user can reorder between
+the two, and the panel can move underneath. Since SDK 1.26.0 `additionalWrites`
+receives a second argument, the **commit reading**, which is the addressed
+inputs exactly as that commit leaves them. Resolve there:
+
+```ts
+// Open the draft with the prompt *held*, not addressed. An addressed input is
+// rendered by `InputsDraftFields` as an editable field — and your commit would
+// silently replace whatever the user staged there.
+const draft = api.generation.createInputsDraft({
+  inputIds: [referenceInputId],
+  holdInputIds: [promptInputId],
+});
+
+// When editing begins — and again after each successful commit — hold the
+// prompt, so a panel edit meanwhile is a conflict instead of being overwritten.
+draft.stage({ kind: "holdText", inputId: promptInputId });
+
+draft.commit("Compose prompt", (tx, reading) => {
+  const refs = reading.inputs.find((input) => input.id === referenceInputId);
+  const resolved = resolve(document, refs); // by itemId, never by slotId
+  if (!resolved.ok) throw new Error("A cited reference is gone."); // rolls back
+  tx.setTextInput(promptInputId, resolved.text);
+});
+```
+
+- Throwing inside the callback fails the whole commit with `callback_failed`;
+  nothing is written and the staged edits stay.
+- If the addressed or held inputs, or the addressed widgets, change while the
+  callback runs, the commit fails
+  `session_changed` rather than writing text numbered against an arrangement
+  nobody commits.
+- A staged item's `slotId` in the reading is a placeholder. Refer to items by
+  `itemId`.
 
 **Only what the transaction can express can be staged.** Timeline capture,
 external file drops and media editing each start real work — a render, an
