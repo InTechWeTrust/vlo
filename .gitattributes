@@ -156,6 +156,10 @@
 /frontend/src/features/generation/utils/audioSlotAssets.ts extension-surface=adapter
 /frontend/src/features/generation/utils/mediaInputItemOptions.ts extension-surface=adapter
 /frontend/src/features/generation/store/mediaInputActions.ts extension-surface=adapter
+# Occurrence identity (docs/minimax-ref2v-prompt-composer-plan.md §3.1): the
+# `itemId` an extension binds authored references to is minted and carried
+# here, so a change to its lifecycle silently retargets extension prose.
+/frontend/src/features/generation/utils/mediaItemIds.ts extension-surface=adapter
 # The staged inputs editor (docs/staged-generation-editor-plan.md). Split so a
 # draft's lifetime can be owned: the controller is what `api.generation
 # .createInputsDraft` hands an activation, and the field renderers are what

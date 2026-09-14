@@ -404,3 +404,62 @@ describe("useGenerationInputsDraft commit", () => {
     expect(mounted.commit).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Occurrence identity (docs/minimax-ref2v-prompt-composer-plan.md §3.1).
+ */
+describe("createGenerationInputsDraft identity", () => {
+  const BATCH = {
+    id: "10:images",
+    nodeId: "10",
+    param: "images",
+    label: "Reference images",
+    inputType: "image",
+    repeatable: { max: 4, optionIds: [] },
+    media: [],
+  } as unknown as GenerationInputSnapshot;
+
+  function stageTwo(draft: ReturnType<typeof createGenerationInputsDraft>) {
+    useAssetStore.setState({
+      assets: [libraryAsset("asset-a"), libraryAsset("asset-b")] as never,
+    });
+    mounted!.assets.set("asset-a", libraryAsset("asset-a") as never);
+    mounted!.assets.set("asset-b", libraryAsset("asset-b") as never);
+    draft.stage({ kind: "attachAsset", inputId: "10:images", assetId: "asset-a" });
+    draft.stage({ kind: "attachAsset", inputId: "10:images", assetId: "asset-b" });
+  }
+
+  const staged = (draft: ReturnType<typeof createGenerationInputsDraft>) =>
+    draft.getSnapshot().inputs.find((input) => input.id === "10:images")
+      ?.media ?? [];
+
+  it("names a staged item once, and keeps the name through a staged reorder and the commit", () => {
+    mounted = mountGenerationSession({ inputs: [BATCH] });
+    const draft = createGenerationInputsDraft({ inputIds: ["10:images"] });
+    stageTwo(draft);
+
+    const [a, b] = staged(draft).map((item) => item.itemId);
+    expect(a).toMatch(/^media-/);
+    expect(b).toMatch(/^media-/);
+    expect(a).not.toBe(b);
+    // The projection is recomputed on every publish, and must not re-mint.
+    mounted.publish({ inputs: [BATCH] });
+    expect(staged(draft).map((item) => item.itemId)).toEqual([a, b]);
+
+    draft.stage({
+      kind: "moveMedia",
+      inputId: "10:images",
+      fromOrdinal: 1,
+      toOrdinal: 0,
+    });
+    expect(staged(draft).map((item) => item.itemId)).toEqual([b, a]);
+
+    expect(draft.commit("Attach references")).toMatchObject({ ok: true });
+    const panel = mounted.panelInputs()[0]?.media ?? [];
+    expect(panel.map((item) => [item.assetId, item.itemId])).toEqual([
+      ["asset-b", b],
+      ["asset-a", a],
+    ]);
+    draft.dispose();
+  });
+});

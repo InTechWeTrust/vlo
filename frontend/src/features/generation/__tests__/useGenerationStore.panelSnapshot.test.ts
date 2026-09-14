@@ -108,6 +108,48 @@ describe("useGenerationStore panel snapshot restore", () => {
     });
   });
 
+  it("restores each attachment under the occurrence id it was saved with", async () => {
+    const snapshot: GenerationPanelSnapshot = {
+      version: 1,
+      workflowId: "wan.json",
+      inputs: [
+        {
+          nodeId: "145",
+          kind: "draggedAsset",
+          parentAssetId: sourceAsset.id,
+          itemId: "media-saved-occurrence",
+        },
+      ],
+    };
+
+    useGenerationStore.getState().setPendingPanelSnapshot(snapshot);
+    await useGenerationStore.getState().restorePanelSnapshot(snapshot);
+
+    // Reopening continues the same panel, so a reference authored against the
+    // attachment before the project closed still names it.
+    expect(useGenerationStore.getState().mediaInputs["145:image"]).toMatchObject({
+      asset: { id: sourceAsset.id },
+      itemId: "media-saved-occurrence",
+    });
+  });
+
+  it("mints an id once for a legacy saved input that has none", async () => {
+    const snapshot: GenerationPanelSnapshot = {
+      version: 1,
+      workflowId: "wan.json",
+      inputs: [
+        { nodeId: "145", kind: "draggedAsset", parentAssetId: sourceAsset.id },
+      ],
+    };
+
+    useGenerationStore.getState().setPendingPanelSnapshot(snapshot);
+    await useGenerationStore.getState().restorePanelSnapshot(snapshot);
+
+    expect(
+      useGenerationStore.getState().mediaInputs["145:image"]?.itemId,
+    ).toMatch(/^media-/);
+  });
+
   it("keeps the saved state pending when the workflow cannot be loaded", async () => {
     const snapshot: GenerationPanelSnapshot = {
       version: 1,

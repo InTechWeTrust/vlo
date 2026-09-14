@@ -45,6 +45,8 @@ export type GeneratedCreationInput =
       miniEditorEdit?: GeneratedMiniEditorEdit;
       /** Per-item audio inclusion for a batch reference video. */
       includeEmbeddedAudio?: boolean;
+      /** See the `draggedAsset` variant's `itemId`. */
+      itemId?: string;
     }
   | {
       nodeId: string;
@@ -53,6 +55,13 @@ export type GeneratedCreationInput =
       parentAssetId: string;
       /** Per-item audio inclusion for a batch reference video. */
       includeEmbeddedAudio?: boolean;
+      /**
+       * The attachment's occurrence id. Written only into the project's saved
+       * panel state, where reopening continues the same panel; generated-asset
+       * metadata omits it, because a replay is a new panel and must not alias
+       * the attachments of the run it copies.
+       */
+      itemId?: string;
     };
 
 export interface GeneratedCreationWorkflowSelectionConfig {

@@ -4,6 +4,7 @@ import type {
   GeneratedCreationWorkflowInputSnapshot,
 } from "../../../types/Asset";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
+import { isValidMediaItemId } from "../utils/mediaItemIds";
 import { getAssetById } from "../../userAssets/api";
 import { useProjectStore } from "../../project";
 import { replayMiniEditorAssetEdit } from "../services/miniEditorReplay";
@@ -213,6 +214,7 @@ export async function restoreMediaInputsFromMetadata(
     | "setMediaInputFrameWithSelection"
     | "setMediaInputTimelineSelection"
     | "setMediaInputItemOption"
+    | "setMediaInputItemId"
   >,
   options: {
     /**
@@ -251,7 +253,13 @@ export async function restoreMediaInputsFromMetadata(
         : getWorkflowInputId(workflowInput);
 
     // Applied after the value lands, so it survives whichever setter seeded it.
+    // Identity rides along: a later preparation write is the same occurrence
+    // and carries it, and a saved id another slot already holds is refused by
+    // the store rather than aliased.
     const restoreItemOptions = () => {
+      if (input.itemId !== undefined) {
+        actions.setMediaInputItemId(inputId, input.itemId);
+      }
       if (input.includeEmbeddedAudio === true) {
         actions.setMediaInputItemOption(inputId, "audio", true);
       }
@@ -292,6 +300,9 @@ export async function restoreMediaInputsFromMetadata(
               )
           : undefined,
       });
+      // The slot is seeded synchronously; the extraction that finishes later
+      // rewrites the same asset, which keeps this id.
+      restoreItemOptions();
       continue;
     }
 
@@ -374,6 +385,7 @@ export async function restoreMediaInputsFromMetadata(
         frameFile,
         timelineSelection,
       );
+      restoreItemOptions();
       continue;
     }
 
@@ -538,6 +550,13 @@ export async function restoreMediaInputsFromMetadata(
 export function buildGeneratedCreationInputs(
   workflowInputs: WorkflowInput[],
   mediaInputs: Record<string, GenerationMediaInputValue | null>,
+  options: {
+    /**
+     * Record each attachment's occurrence id. Only the project's saved panel
+     * state wants this: see `GeneratedCreationInput.itemId`.
+     */
+    includeItemIds?: boolean;
+  } = {},
 ): GeneratedCreationMetadata["inputs"] {
   const inputs: GeneratedCreationMetadata["inputs"] = [];
   const inputById = buildWorkflowInputLookup(workflowInputs);
@@ -557,9 +576,14 @@ export function buildGeneratedCreationInputs(
         workflowInput.presentation?.repeatable ? { inputId } : {};
       // Per-item switches are part of what was generated, so a replay has to
       // restore them alongside the media they belong to.
-      const itemOptions = readIncludeEmbeddedAudio(value)
-        ? { includeEmbeddedAudio: true as const }
-        : {};
+      const itemOptions = {
+        ...(readIncludeEmbeddedAudio(value)
+          ? { includeEmbeddedAudio: true as const }
+          : {}),
+        ...(options.includeItemIds && isValidMediaItemId(value.itemId)
+          ? { itemId: value.itemId }
+          : {}),
+      };
 
       if (value.kind === "timelineSelection") {
         inputs.push({
@@ -579,6 +603,7 @@ export function buildGeneratedCreationInputs(
         inputs.push({
           nodeId: workflowInput.nodeId,
           ...repeatableIdentity,
+          ...itemOptions,
           kind: "timelineSelection",
           timelineSelection: cloneTimelineSelectionForMetadata(
             value.timelineSelection,

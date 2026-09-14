@@ -1,6 +1,7 @@
 import { useAssetStore } from "../../userAssets";
 import { generationSessionService } from "../services/GenerationSessionService";
 import { simulateAttachedItem } from "../services/generationSessionValidation";
+import { createMediaItemId } from "../utils/mediaItemIds";
 import type {
   GenerationInputSnapshot,
   GenerationSessionSnapshot,
@@ -378,6 +379,14 @@ export function createGenerationInputsDraft(
         if (!widgetTargetKeys.has(widgetKey(op.nodeId, op.param))) return;
       } else if (!selected.has(op.inputId)) {
         return;
+      }
+      // Identity is minted once, here, and stored in the op: the projection is
+      // recomputed on every read, so an id minted there would change each time.
+      if (
+        (op.kind === "attachAsset" || op.kind === "replaceMedia") &&
+        op.itemId === undefined
+      ) {
+        op = { ...op, itemId: createMediaItemId() };
       }
       const session = generationSessionService.getSnapshot();
       if (!session) {

@@ -4,6 +4,7 @@ import { createExtensionGenerationApi } from "../../../extensions/generation/Ext
 import type { ExtensionApiScope, ExtensionResource } from "../../../extensions";
 import { resetGenerationSessionProjectionCache } from "../../../extensions/generation/generationSessionProjection";
 import { useGenerationStore } from "../../useGenerationStore";
+import { useAssetStore } from "../../../userAssets";
 import { useMediaInputPreparationStore } from "../../store/useMediaInputPreparationStore";
 import { buildRepeatableInputSlotId } from "../../utils/workflowInputs";
 import { resetZustandStore } from "../../../../testUtils/zustand";
@@ -121,6 +122,8 @@ function mountPanel() {
         useGenerationStore.getState().moveMediaInput(slotId, toOrdinal),
       removeMediaItem: (slotId) =>
         useGenerationStore.getState().clearMediaInput(slotId),
+      setMediaItemId: (slotId, itemId) =>
+        useGenerationStore.getState().setMediaInputItemId(slotId, itemId),
       setMediaItemOption: (slotId, optionId, value) =>
         useGenerationStore
           .getState()
@@ -148,6 +151,23 @@ function slotIdForNativeDrop(from: number): string {
 
 function readMediaInputs() {
   return useGenerationStore.getState().mediaInputs;
+}
+
+/**
+ * The store state with occurrence ids set aside. Each attach mints its own id,
+ * so two separate attaches of the same asset are *meant* to differ there; the
+ * parity being asserted is everything else about the value.
+ */
+function withoutItemIds(
+  mediaInputs: ReturnType<typeof readMediaInputs>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(mediaInputs).map(([key, value]) => {
+      if (!value) return [key, value];
+      const { itemId: _itemId, ...rest } = value;
+      return [key, rest];
+    }),
+  );
 }
 
 /**
@@ -202,7 +222,12 @@ describe("generation media writes: native drop vs SDK attach", () => {
       });
     });
     expect(result).toMatchObject({ ok: true, changed: true });
-    expect(readMediaInputs()).toEqual(afterDrop);
+    expect(withoutItemIds(readMediaInputs())).toEqual(withoutItemIds(afterDrop));
+    // Both paths name the occurrence, and the SDK sees the id the store holds.
+    expect(afterDrop[REFERENCE_ID]?.itemId).toMatch(/^media-/);
+    expect(readReferences(api)[0]?.itemId).toBe(
+      readMediaInputs()[REFERENCE_ID]?.itemId,
+    );
     viaSdk.unmount();
   });
 
@@ -517,5 +542,49 @@ describe("generation media writes: native drop vs SDK attach", () => {
     });
     expect(single).toMatchObject({ ok: false, code: "input_not_repeatable" });
     rendered.unmount();
+  });
+  it("keeps a staged SDK item's id once the draft commits it to the store", () => {
+    // The ref2v composer binds prose to `itemId` while an attach is still only
+    // staged, so the id it saw has to be the one the panel ends up holding —
+    // through the real store, not a model of it (plan §3.1).
+    useAssetStore.setState({ assets: [LOUD_VIDEO, SECOND_VIDEO] as never });
+    const rendered = mountPanel();
+    const api = createExtensionGenerationApi(createScope());
+    const draft = api.createInputsDraft({ inputIds: [REFERENCE_ID] });
+    expect(draft).not.toBeNull();
+
+    act(() => {
+      draft!.stage({
+        kind: "attachAsset",
+        inputId: REFERENCE_ID,
+        assetId: LOUD_VIDEO.id,
+      });
+      draft!.stage({
+        kind: "attachAsset",
+        inputId: REFERENCE_ID,
+        assetId: SECOND_VIDEO.id,
+      });
+      draft!.stage({
+        kind: "moveMedia",
+        inputId: REFERENCE_ID,
+        fromOrdinal: 1,
+        toOrdinal: 0,
+      });
+    });
+    const stagedIds = draft!
+      .getState()
+      .inputs[0]!.media!.map((item) => item.itemId);
+
+    let result;
+    act(() => {
+      result = draft!.commit("Attach references");
+    });
+
+    expect(result).toMatchObject({ ok: true, changed: true });
+    expect(readReferences(api).map((item) => item.itemId)).toEqual(stagedIds);
+    expect(readAttachedIds(api)).toEqual([SECOND_VIDEO.id, LOUD_VIDEO.id]);
+    draft!.dispose();
+    rendered.unmount();
+    useAssetStore.setState({ assets: [] as never });
   });
 });

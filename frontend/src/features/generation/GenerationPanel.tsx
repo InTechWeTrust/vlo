@@ -747,6 +747,8 @@ export function GenerationPanel() {
     ],
   );
 
+  const setMediaInputItemId = useGenerationStore((s) => s.setMediaInputItemId);
+
   const { commitTextValue, commitWidgetValue } = useGenerationSessionMount({
     nodes: generationNodes,
     workflowInputs,
@@ -765,6 +767,7 @@ export function GenerationPanel() {
     attachAssetToSlot: handleAttachAssetById,
     moveMediaItem: handleMoveMediaInput,
     removeMediaItem: handleInputClear,
+    setMediaItemId: setMediaInputItemId,
     setMediaItemOption: handleToggleMediaInputOption,
     resolveAsset: resolveLibraryAsset,
   });

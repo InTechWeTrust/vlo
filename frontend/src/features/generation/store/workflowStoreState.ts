@@ -319,6 +319,7 @@ async function restoreSavedMediaInputs(
         setMediaInputTimelineSelection:
           loadedState.setMediaInputTimelineSelection,
         setMediaInputItemOption: loadedState.setMediaInputItemOption,
+        setMediaInputItemId: loadedState.setMediaInputItemId,
       },
       { getMediaInputs: () => get().mediaInputs },
     );

@@ -234,6 +234,12 @@ export interface GenerationWorkflowState {
       bakedEdit?: GenerationBakedEditOrigin | null;
       /** Carries the per-item audio switch across a value replacement. */
       includeEmbeddedAudio?: boolean;
+      /**
+       * Keeps the attachment's occurrence id across a replacement the carry
+       * rule would read as new media — an edit that narrows the range of the
+       * same attachment. Ignored when another slot holds the id.
+       */
+      itemId?: string;
       extractionError?: string | null;
     },
   ) => void;
@@ -249,6 +255,13 @@ export interface GenerationWorkflowState {
     option: WorkflowInputItemOption,
     active: boolean,
   ) => void;
+  /**
+   * Names the occurrence a slot holds (`utils/mediaItemIds.ts`). For writers
+   * that keep an attachment while replacing its value — a transaction
+   * committing a staged item, a restore, an edit of the same media. Ignored
+   * for an empty slot, a malformed id, or an id another slot already holds.
+   */
+  setMediaInputItemId: (inputId: string, itemId: string) => void;
   clearMediaInput: (inputId: string) => void;
   syncWorkflow: (
     workflow: Record<string, unknown> | null,

@@ -9,6 +9,7 @@ import type { WorkflowMaskCroppingMode } from "../types";
 import type { GenerationAspectRatioSelection } from "../utils/aspectRatioSelection";
 import type { WorkflowRules } from "../services/workflowRules";
 import { TEMP_WORKFLOW_ID } from "../store/constants";
+import { isValidMediaItemId } from "../utils/mediaItemIds";
 import { parseMiniEditorEdit } from "../utils/miniEditorMetadata";
 import {
   buildGeneratedCreationInputs,
@@ -111,6 +112,9 @@ export function buildGenerationPanelSnapshot(
     inputs: buildGeneratedCreationInputs(
       options.workflowInputs,
       options.mediaInputs,
+      // Reopening a project continues the same panel, so references to its
+      // attachments must keep resolving.
+      { includeItemIds: true },
     ),
     ...(replayState ? { replayState } : {}),
   };
@@ -125,8 +129,14 @@ function parseInput(value: unknown): GeneratedCreationInput | null {
     return null;
   }
   const inputId = typeof value.inputId === "string" ? value.inputId : undefined;
-  const includeEmbeddedAudio =
-    value.includeEmbeddedAudio === true ? { includeEmbeddedAudio: true } : {};
+  const includeEmbeddedAudio = {
+    ...(value.includeEmbeddedAudio === true
+      ? { includeEmbeddedAudio: true }
+      : {}),
+    // A malformed id is dropped, not rejected: the attachment still restores,
+    // and gets a fresh identity as a legacy input would.
+    ...(isValidMediaItemId(value.itemId) ? { itemId: value.itemId } : {}),
+  };
 
   if (value.kind === "draggedAsset" && typeof value.parentAssetId === "string") {
     return {

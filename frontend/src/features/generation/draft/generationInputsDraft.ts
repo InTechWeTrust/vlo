@@ -4,6 +4,7 @@ import type {
   GenerationSessionSnapshot,
   GenerationSessionTransaction,
 } from "../services/generationSessionTypes";
+import { isValidMediaItemId } from "../utils/mediaItemIds";
 
 /**
  * One staged edit, as the editing surface performs it.
@@ -41,6 +42,13 @@ export type GenerationInputDraftOp =
       readonly inputId: string;
       readonly assetId: string;
       readonly itemOptions?: Readonly<Record<string, boolean>>;
+      /**
+       * The occurrence id the staged item carries, and keeps once committed.
+       * The controller mints one at `stage` when the caller did not, so an
+       * editor can refer to the item before it exists and the reference
+       * survives the commit.
+       */
+      readonly itemId?: string;
     }
   | {
       /** Overwrites the filled slot at `at`, as a drop on that tile does. */
@@ -49,6 +57,8 @@ export type GenerationInputDraftOp =
       readonly assetId: string;
       readonly at: number;
       readonly itemOptions?: Readonly<Record<string, boolean>>;
+      /** See `attachAsset`. A replacement is a new occurrence, never the old. */
+      readonly itemId?: string;
     }
   | {
       readonly kind: "removeMedia";
@@ -167,6 +177,9 @@ function applyToInput(
     const item: GenerationMediaItemSnapshot = {
       ...simulated,
       slotId: `${STAGED_SLOT_PREFIX}${opIndex}`,
+      // Minted at stage; the fallback is only for a log built by hand, and is
+      // still stable because it is derived from the op's fixed position.
+      itemId: op.itemId ?? `${STAGED_SLOT_PREFIX}${opIndex}`,
       options: { ...simulated.options, ...(op.itemOptions ?? {}) },
     };
     if (!input.repeatable) return { ...input, media: reindex([item]) };
@@ -408,6 +421,9 @@ export function compileDraftCommands(
       );
       transaction.attachAsset(input.id, item.assetId, {
         ...(Object.keys(options).length > 0 ? { itemOptions: options } : {}),
+        // The id the draft has been showing, so a reference made to the staged
+        // item still names it once it is real.
+        ...(isValidMediaItemId(item.itemId) ? { itemId: item.itemId } : {}),
       });
     }
 

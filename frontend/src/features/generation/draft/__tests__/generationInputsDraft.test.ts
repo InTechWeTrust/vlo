@@ -67,6 +67,7 @@ function videoAsset(id: string): GenerationSessionAssetCandidate {
 function mediaItem(slotId: string, assetId: string, ordinal: number) {
   return {
     slotId,
+    itemId: `item-${assetId}`,
     ordinal,
     source: "asset" as const,
     assetId,
@@ -81,6 +82,7 @@ function mediaItem(slotId: string, assetId: string, ordinal: number) {
 function clipItem(slotId: string, assetId: string, ordinal: number) {
   return {
     slotId,
+    itemId: `item-${assetId}`,
     ordinal,
     source: "asset" as const,
     assetId,

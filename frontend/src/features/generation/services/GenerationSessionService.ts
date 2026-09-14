@@ -11,6 +11,7 @@ import {
   widgetValueMatchesSnapshot,
   type ValidationResult,
 } from "./generationSessionValidation";
+import { createMediaItemId } from "../utils/mediaItemIds";
 import type {
   GenerationEditableWidgetSnapshot,
   GenerationInputRepeatableSnapshot,
@@ -60,6 +61,7 @@ interface StagedAttachCommand {
   readonly assetId: string;
   readonly at?: number;
   readonly itemOptions?: Readonly<Record<string, boolean>>;
+  readonly itemId?: string;
 }
 
 interface StagedMoveCommand {
@@ -237,6 +239,7 @@ function sameMediaArrangement(
       before.every(
         (item, slot) =>
           item.slotId === after[slot].slotId &&
+          item.itemId === after[slot].itemId &&
           item.assetId === after[slot].assetId,
       )
     );
@@ -343,6 +346,7 @@ function sameMediaItems(
     const optionIds = Object.keys(item.options);
     return (
       item.slotId === other.slotId &&
+      item.itemId === other.itemId &&
       item.ordinal === other.ordinal &&
       item.source === other.source &&
       item.assetId === other.assetId &&
@@ -606,12 +610,17 @@ export class GenerationSessionService {
             }
           }
         }
+        const itemId = options?.itemId;
+        if (itemId !== undefined && typeof itemId !== "string") {
+          throw new Error("Generation media item IDs must be strings.");
+        }
         staged.push({
           kind: "attach",
           inputId: normalizedInputId,
           assetId: normalizedAssetId,
           ...(at === undefined ? {} : { at }),
           ...(itemOptions === undefined ? {} : { itemOptions }),
+          ...(itemId === undefined ? {} : { itemId }),
         });
       },
       moveMedia: (inputId, fromOrdinal, toOrdinal) => {
@@ -886,7 +895,12 @@ export class GenerationSessionService {
     switch (command.kind) {
       case "attach": {
         const asset = host.resolveAsset(command.assetId);
-        const result = validateAttachAssetCommand(working, asset, command);
+        // Minted here rather than by the store so the working snapshot, the
+        // commit, and the item the panel ends up holding all carry one id.
+        const result = validateAttachAssetCommand(working, asset, {
+          ...command,
+          itemId: command.itemId ?? createMediaItemId(),
+        });
         if (!result.ok) return result;
         return {
           ok: true,

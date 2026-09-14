@@ -1879,6 +1879,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     (inputId: string) => {
       const { input, value } = readSlotValueForEdit(inputId, workflowInputById);
       if (!value) return;
+      // An edit keeps the attachment: whatever refers to this item by identity
+      // still means it after the range is narrowed.
+      const editedItemId = value.itemId;
 
       if (usePlayerStore.getState().isPlaying) {
         usePlayerStore.getState().setIsPlaying(false);
@@ -2016,6 +2019,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
               bakedEdit,
               isExtracting: true,
               extractionRequestId,
+              itemId: editedItemId,
             },
           );
           await extractAudioTimelineSelection({
@@ -2055,6 +2059,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             mediaType: "audio",
             isExtracting: false,
             extractionRequestId,
+            itemId: editedItemId,
             preparedAudioFile: trimmedFile,
             bakedEdit: { assetId: bakeOriginAssetId, spec: structuredClone(spec) },
           },
@@ -2084,6 +2089,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       }
       const { input, value } = readSlotValueForEdit(inputId, workflowInputById);
       if (!value) return;
+      // An edit keeps the attachment: whatever refers to this item by identity
+      // still means it after the range is narrowed.
+      const editedItemId = value.itemId;
 
       if (usePlayerStore.getState().isPlaying) {
         usePlayerStore.getState().setIsPlaying(false);
@@ -2228,6 +2236,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
               bakedEdit,
               isExtracting: true,
               extractionRequestId,
+              itemId: editedItemId,
             },
           );
           await extractVideoTimelineSelection({
@@ -2276,6 +2285,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             mediaType: "video",
             isExtracting: false,
             extractionRequestId,
+            itemId: editedItemId,
             ...prepared,
             bakedEdit: { assetId: bakeOriginAssetId, spec: structuredClone(spec), render: dims },
             includeEmbeddedAudio,

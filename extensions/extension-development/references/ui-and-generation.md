@@ -621,7 +621,9 @@ return h(
 - `stage(op)` edits it programmatically — `setText`, `attachAsset`,
   `replaceMedia`, `removeMedia`, `moveMedia`, `setMediaOption`, `setWidget` — so
   you can preview a preset without a rendered field. `attachAsset` appends;
-  `replaceMedia` overwrites the position `at`.
+  `replaceMedia` overwrites the position `at`. A staged attach carries its
+  `itemId` from the moment it is staged and keeps it once committed
+  (SDK 1.26.0).
 
 **Only what the transaction can express can be staged.** Timeline capture,
 external file drops and media editing each start real work — a render, an
@@ -667,6 +669,14 @@ Four things about this list decide whether your code is correct:
 `repeatable` on the input tells you the batch ceiling and which per-item switch
 ids it offers; each item's `options` tells you which of them apply to *that*
 item, with their current state.
+
+**Hold `itemId`, not `slotId` or `ordinal`, for anything you author about an
+item** (SDK 1.26.0). `slotId` is a write address that changes whenever the batch
+repacks, and `ordinal` is a position. `itemId` names the attachment: it survives
+reorders, compaction, option changes, preparation, and a project reload. The
+same asset attached twice has two ids, and replacing or removing an item ends
+its id — a reference to it should then show as unresolved, never move onto
+whatever took its place. Re-attaching the same asset is a new occurrence.
 
 ## Write media inputs
 

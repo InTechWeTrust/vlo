@@ -82,6 +82,7 @@ function mountPanelSession(
   const attachAssetToSlot = vi.fn();
   const moveMediaItem = vi.fn();
   const removeMediaItem = vi.fn();
+  const setMediaItemId = vi.fn();
   const setMediaItemOption = vi.fn();
   const rendered = renderHook(() =>
     useGenerationSessionMount({
@@ -97,6 +98,7 @@ function mountPanelSession(
       attachAssetToSlot,
       moveMediaItem,
       removeMediaItem,
+      setMediaItemId,
       setMediaItemOption,
       resolveAsset: () => null,
       ...overrides,
@@ -109,6 +111,7 @@ function mountPanelSession(
     attachAssetToSlot,
     moveMediaItem,
     removeMediaItem,
+    setMediaItemId,
     setMediaItemOption,
   };
 }

@@ -12,6 +12,11 @@ import {
   resolveWorkflowInputKeys,
   resolveWorkflowInputForSlot,
 } from "../utils/workflowInputs";
+import {
+  collectMediaItemIds,
+  createMediaItemId,
+  isValidMediaItemId,
+} from "../utils/mediaItemIds";
 import { revokePreviewUrl } from "./mediaInputState";
 import type {
   GenerationStoreSet,
@@ -153,16 +158,47 @@ function isSameTimelineSelection(
 }
 
 /**
- * A batch item's per-item switches belong to the media, not to the slot it
- * happens to occupy. Preparation rewrites a value in place (an extraction
- * finishing, a selection re-rendered), so carry the switches across whenever
- * the replacement is the same media.
+ * Is `next` the same attachment as `previous`, rewritten?
+ *
+ * Preparation rewrites a value in place — an extraction finishing, a selection
+ * re-rendered — and that must not read as the user replacing the media. The
+ * same asset, or the same selection over the same clips, is the same
+ * occurrence. A different asset, a different range, or a new frame capture is
+ * a replacement, and gets a new identity and none of the old switches.
+ *
+ * An edit that deliberately keeps the attachment while changing its range (the
+ * mini editor) passes its `itemId` explicitly; this rule cannot
+ * tell that apart from picking a new range.
+ */
+function isSameOccurrence(
+  previous: GenerationMediaInputValue,
+  next: GenerationMediaInputValue,
+): boolean {
+  if (previous.kind === "asset" && next.kind === "asset") {
+    return previous.asset.id === next.asset.id;
+  }
+  return (
+    previous.kind === "timelineSelection" &&
+    next.kind === "timelineSelection" &&
+    previous.mediaType === next.mediaType &&
+    isSameTimelineSelection(previous.timelineSelection, next.timelineSelection)
+  );
+}
+
+/**
+ * A batch item's per-item switches — and its identity — belong to the media,
+ * not to the slot it happens to occupy. Carry them across whenever the
+ * replacement is the same occurrence; mint a fresh identity otherwise.
  */
 function carryForwardItemOptions(
   previous: GenerationMediaInputValue | null,
   next: GenerationMediaInputValue,
 ): GenerationMediaInputValue {
-  if (!previous) return next;
+  if (!previous || !isSameOccurrence(previous, next)) {
+    return isValidMediaItemId(next.itemId)
+      ? next
+      : { ...next, itemId: createMediaItemId() };
+  }
 
   // Extraction completion/error replaces the value, but its edit recipe still
   // describes the same request. Do not inherit it for a newly selected range.
@@ -177,28 +213,24 @@ function carryForwardItemOptions(
     next = { ...next, bakedEdit: previous.bakedEdit };
   }
 
-  const carry = (includeEmbeddedAudio: boolean | undefined) =>
-    typeof includeEmbeddedAudio === "boolean"
-      ? { ...next, includeEmbeddedAudio }
-      : next;
+  const itemId = isValidMediaItemId(next.itemId)
+    ? next.itemId
+    : isValidMediaItemId(previous.itemId)
+      ? previous.itemId
+      : createMediaItemId();
+  next = { ...next, itemId };
 
-  if (
-    previous.kind === "asset" &&
-    next.kind === "asset" &&
-    previous.asset.id === next.asset.id
-  ) {
-    return carry(previous.includeEmbeddedAudio);
-  }
-  if (
-    previous.kind === "timelineSelection" &&
-    previous.mediaType === "video" &&
-    next.kind === "timelineSelection" &&
-    next.mediaType === "video" &&
-    isSameTimelineSelection(previous.timelineSelection, next.timelineSelection)
-  ) {
-    return carry(previous.includeEmbeddedAudio);
-  }
-  return next;
+  // Same occurrence implies the same kind, so only the kinds that carry the
+  // switch have one to hand on.
+  const includeEmbeddedAudio =
+    "includeEmbeddedAudio" in previous
+      ? previous.includeEmbeddedAudio
+      : undefined;
+  return typeof includeEmbeddedAudio === "boolean" &&
+    (next.kind === "asset" ||
+      (next.kind === "timelineSelection" && next.mediaType === "video"))
+    ? { ...next, includeEmbeddedAudio }
+    : next;
 }
 
 export function buildMediaInputActions(
@@ -213,6 +245,7 @@ export function buildMediaInputActions(
   | "reassignMediaInput"
   | "moveMediaInput"
   | "setMediaInputItemOption"
+  | "setMediaInputItemId"
   | "clearMediaInput"
 > {
   return {
@@ -269,6 +302,7 @@ export function buildMediaInputActions(
                 extractionRequestId: options?.extractionRequestId ?? 0,
                 preparedAudioFile: options?.preparedAudioFile ?? null,
                 bakedEdit: options?.bakedEdit ?? null,
+                ...(options?.itemId ? { itemId: options.itemId } : {}),
                 extractionError: options?.extractionError ?? null,
               }
             : {
@@ -290,6 +324,7 @@ export function buildMediaInputActions(
                 ...(typeof options?.includeEmbeddedAudio === "boolean"
                   ? { includeEmbeddedAudio: options.includeEmbeddedAudio }
                   : {}),
+                ...(options?.itemId ? { itemId: options.itemId } : {}),
                 extractionError: options?.extractionError ?? null,
               },
         ),
@@ -369,6 +404,25 @@ export function buildMediaInputActions(
       });
     },
 
+    setMediaInputItemId: (inputId, itemId) => {
+      if (!isValidMediaItemId(itemId)) return;
+      const { workflowInputs, mediaInputs } = get();
+      const inputById = buildWorkflowInputLookup(workflowInputs);
+      const keys = resolveWorkflowInputKeys(inputId, inputById);
+      const existingKey = keys.find((key) =>
+        Object.prototype.hasOwnProperty.call(mediaInputs, key),
+      );
+      const value = existingKey ? mediaInputs[existingKey] : null;
+      if (!existingKey || !value || value.itemId === itemId) return;
+      // Identity is unique panel-wide. A second slot claiming an id another
+      // slot holds would make every reference to it ambiguous, so the claim
+      // is refused and the slot keeps the id it has.
+      if (collectMediaItemIds(mediaInputs).has(itemId)) return;
+      set({
+        mediaInputs: { ...mediaInputs, [existingKey]: { ...value, itemId } },
+      });
+    },
+
     clearMediaInput: (inputId) => {
       const { workflowInputs, mediaInputs } = get();
       const inputById = buildWorkflowInputLookup(workflowInputs);
@@ -424,8 +478,15 @@ function updateMediaInputs(
   const inputKeys = resolveWorkflowInputKeys(inputId, inputById);
   const canonicalInputId = inputKeys[0] ?? inputId;
   const previous = getExistingMediaInputValue(mediaInputs, inputKeys);
+  const remaining = removeMediaInputEntries(mediaInputs, inputKeys);
+  // An explicit id another slot still holds would alias two attachments; the
+  // write goes ahead as new media instead.
+  if (value.itemId !== undefined && collectMediaItemIds(remaining).has(value.itemId)) {
+    const { itemId: _taken, ...unnamed } = value;
+    value = unnamed as GenerationMediaInputValue;
+  }
   return {
-    ...removeMediaInputEntries(mediaInputs, inputKeys),
+    ...remaining,
     [canonicalInputId]: carryForwardItemOptions(previous, value),
   };
 }

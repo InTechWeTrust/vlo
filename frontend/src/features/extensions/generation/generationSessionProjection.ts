@@ -466,6 +466,7 @@ function projectMediaItem(
   }
   return {
     slotId: item.slotId,
+    itemId: item.itemId,
     ordinal: item.ordinal,
     source: item.source,
     ...(item.assetId !== undefined ? { assetId: item.assetId } : {}),

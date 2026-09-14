@@ -204,7 +204,20 @@ export interface WorkflowDefinition {
   name: string;
 }
 
-export interface GenerationAssetInputValue {
+/**
+ * Fields every attached value carries, whatever its kind.
+ *
+ * `itemId` is occurrence identity (`utils/mediaItemIds.ts`): minted on attach,
+ * carried through moves and preparation, replaced when the slot's media is.
+ * Optional in the type only because values can be placed in state without the
+ * store actions; readers go through `readMediaItemId`.
+ */
+interface GenerationMediaInputValueIdentity {
+  itemId?: string;
+}
+
+export interface GenerationAssetInputValue
+  extends GenerationMediaInputValueIdentity {
   kind: "asset";
   asset: Asset;
   /**
@@ -223,14 +236,16 @@ export interface GenerationAssetInputValue {
   extractionError?: string | null;
 }
 
-export interface GenerationFrameInputValue {
+export interface GenerationFrameInputValue
+  extends GenerationMediaInputValueIdentity {
   kind: "frame";
   file: File;
   previewUrl: string;
   timelineSelection?: TimelineSelection | null;
 }
 
-interface BaseGenerationTimelineSelectionInputValue {
+interface BaseGenerationTimelineSelectionInputValue
+  extends GenerationMediaInputValueIdentity {
   kind: "timelineSelection";
   timelineSelection: TimelineSelection;
   thumbnailFile: File;

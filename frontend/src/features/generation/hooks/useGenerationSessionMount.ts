@@ -68,6 +68,8 @@ export interface GenerationSessionMountOptions {
   readonly attachAssetToSlot: (slotId: string, assetId: string) => void;
   readonly moveMediaItem: (slotId: string, toOrdinal: number) => void;
   readonly removeMediaItem: (slotId: string) => void;
+  /** Names the occurrence a slot holds; see `setMediaInputItemId`. */
+  readonly setMediaItemId: (slotId: string, itemId: string) => void;
   readonly setMediaItemOption: (
     slotId: string,
     optionId: GenerationMediaItemOptionId,
@@ -144,6 +146,7 @@ export function useGenerationSessionMount(
     attachAssetToSlot,
     moveMediaItem,
     removeMediaItem,
+    setMediaItemId,
     setMediaItemOption,
     resolveAsset,
   } = options;
@@ -300,6 +303,10 @@ export function useGenerationSessionMount(
         switch (media.kind) {
           case "attach":
             attachAssetToSlot(media.slotId, media.assetId);
+            // Named straight after the value lands and before anything moves
+            // it, so the id the transaction planned is the one the panel holds
+            // — the panel's own drop path mints one of its own.
+            setMediaItemId(media.slotId, media.itemId);
             // Before any reorder: the switches belong to the media and the
             // store carries them across a move, but they are addressed by the
             // slot the asset just landed in.
@@ -329,6 +336,7 @@ export function useGenerationSessionMount(
     moveMediaItem,
     removeMediaItem,
     resolveAsset,
+    setMediaItemId,
     setMediaItemOption,
   ]);
   const host = useMemo(

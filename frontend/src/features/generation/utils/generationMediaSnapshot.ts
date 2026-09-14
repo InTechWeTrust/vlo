@@ -7,6 +7,7 @@ import {
   canValueCarryAudio,
   readIncludeEmbeddedAudio,
 } from "./mediaInputItemOptions";
+import { readMediaItemId } from "./mediaItemIds";
 import {
   buildRepeatableInputSlotId,
   getWorkflowInputSlotValue,
@@ -135,6 +136,7 @@ export function buildGenerationMediaItems(
     items.push(
       Object.freeze({
         slotId,
+        itemId: readMediaItemId(value),
         // Position among *filled* slots. The panel front-packs its batches, so
         // this normally equals the slot index; it is derived rather than
         // assumed so a transient gap cannot publish a wrong delivery position.

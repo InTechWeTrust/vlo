@@ -149,6 +149,7 @@ describe("openDroppedVideoFrameExtraction", () => {
         setMediaInputFrameWithSelection: vi.fn(),
         setMediaInputTimelineSelection: vi.fn(),
         setMediaInputItemOption: vi.fn(),
+        setMediaInputItemId: vi.fn(),
       },
     );
     expect(setMediaInputAsset).toHaveBeenCalledWith(inputId, savedFrame);

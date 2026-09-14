@@ -94,6 +94,16 @@ export interface GenerationMediaItemSnapshot {
    */
   readonly slotId: string;
   /**
+   * Occurrence identity — **stable, not an address**
+   * (docs/minimax-ref2v-prompt-composer-plan.md §3.1).
+   *
+   * Minted when the media is attached and kept through reorders, compaction,
+   * option changes and preparation. Replacing the slot's media mints a new
+   * one, and the same asset attached twice has two. Never a write address:
+   * writes still take `slotId`, resolved against the transaction's snapshot.
+   */
+  readonly itemId: string;
+  /**
    * Position among *filled* slots — the delivery position, and the number a
    * reference tag's ordinal counts. Never infer this from `slotId`.
    */
@@ -218,6 +228,13 @@ export interface GenerationSessionPublication {
 export interface GenerationAttachAssetOptions {
   readonly at?: number;
   readonly itemOptions?: Readonly<Record<string, boolean>>;
+  /**
+   * The occurrence id the new item takes. For a caller that already named it
+   * — a staged draft whose editor has been referring to the item before it
+   * exists. Must not collide with an id the panel holds. Omitted, the host
+   * mints one.
+   */
+  readonly itemId?: string;
 }
 
 /**
@@ -329,6 +346,8 @@ export type GenerationSessionMediaCommit =
       /** The slot the asset lands in before any reorder. */
       readonly slotId: string;
       readonly assetId: string;
+      /** The occurrence id the attached item takes, minted when not supplied. */
+      readonly itemId: string;
       /** Set when the asset must then move up the batch to reach `at`. */
       readonly moveTo: number | null;
       /**

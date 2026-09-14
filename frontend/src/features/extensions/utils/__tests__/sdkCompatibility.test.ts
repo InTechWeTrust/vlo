@@ -9,13 +9,13 @@ import { VLO_EXTENSION_SDK_VERSION } from "../../constants";
 // should force a deliberate review of what it makes (in)compatible.
 describe("evaluateExtensionSdkCompatibility", () => {
   it.each([
-    "1.25.0",
-    "=1.25.0",
+    "1.26.0",
+    "=1.26.0",
     ">=1.0.0 <2.0.0",
     ">= 1.0.0 < 2.0.0",
-    ">1.0.0 <=1.25.0",
-    // Was a rejection at 1.24.0; the generationUi bump satisfies it.
-    ">1.24.0",
+    ">1.0.0 <=1.26.0",
+    // Was a rejection at 1.25.0; the occurrence identity bump satisfies it.
+    ">1.25.0",
   ])("accepts compatible v1 ranges: %s", (range) => {
     expect(evaluateExtensionSdkCompatibility(range)).toMatchObject({
       compatible: true,
@@ -26,7 +26,7 @@ describe("evaluateExtensionSdkCompatibility", () => {
 
   // An exact pin to a superseded SDK no longer activates: the batch is
   // pre-release, so ranges — not pins — are the supported declaration.
-  it.each(["1.0.0", "1.23.0", "1.24.0", "<=1.24.0", ">1.25.0", ">=2.0.0"])(
+  it.each(["1.0.0", "1.24.0", "1.25.0", "<=1.25.0", ">1.26.0", ">=2.0.0"])(
     "rejects incompatible ranges: %s",
     (range) => {
       expect(evaluateExtensionSdkCompatibility(range)).toMatchObject({

@@ -509,6 +509,7 @@ describe("ExtensionGenerationBridge session reads", () => {
       { length: GENERATION_SNAPSHOT_LIMITS.mediaPerInput + 1 },
       (_unused, index) => ({
         slotId: `10:images::repeat::${index}`,
+        itemId: `item-${index}`,
         ordinal: index,
         source: "asset" as const,
         assetId: `asset-${index}`,

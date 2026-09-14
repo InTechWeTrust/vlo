@@ -3558,6 +3558,21 @@ export interface ExtensionGenerationMediaItem {
    */
   readonly slotId: string;
   /**
+   * The attachment's identity — **stable, and never an address**. Since SDK
+   * 1.26.0.
+   *
+   * Minted when the media is attached and kept while it is reordered,
+   * compacted, toggled or prepared, so anything you author that refers to
+   * "this reference" should hold the `itemId`, not the slot or the ordinal.
+   * Replacing the slot's media is a new attachment with a new id, and the same
+   * asset attached twice has two — a reference to a removed item stays
+   * unresolved rather than moving onto whatever took its place.
+   *
+   * Writes still take `slotId`. In a staged draft, an attached item carries
+   * its id from the moment it is staged and keeps it once committed.
+   */
+  readonly itemId: string;
+  /**
    * Position among *filled* slots — the delivery position, and the number a
    * reference tag's ordinal counts. Never infer order from `slotId`.
    */

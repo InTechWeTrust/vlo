@@ -2,6 +2,7 @@ import { serializeFiniteJson } from "../utils/finiteJson";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import { isVideoAssetWithAudio } from "../utils/audioSlotAssets";
 import { canAttachAssetToMediaInput } from "../utils/mediaInputAssets";
+import { isValidMediaItemId } from "../utils/mediaItemIds";
 import { buildRepeatableInputSlotId } from "../utils/workflowInputs";
 import type {
   GenerationEditableWidgetSnapshot,
@@ -393,12 +394,15 @@ export interface AttachAssetCommand {
   readonly at?: number;
   /** Per-item switches to apply to the item this attach creates. */
   readonly itemOptions?: Readonly<Record<string, boolean>>;
+  /** The occurrence id the item takes; see `GenerationAttachAssetOptions`. */
+  readonly itemId: string;
 }
 
 export interface AttachAssetPlan {
   readonly inputId: string;
   readonly slotId: string;
   readonly assetId: string;
+  readonly itemId: string;
   readonly moveTo: number | null;
   readonly itemOptions: readonly {
     readonly optionId: GenerationMediaItemOptionId;
@@ -491,6 +495,25 @@ export function validateAttachAssetCommand(
     );
   }
 
+  // Identity is unique panel-wide. The one id an attach may reuse is that of
+  // the item it displaces, since that item is leaving in the same breath.
+  if (!isValidMediaItemId(command.itemId)) {
+    return failure(
+      "invalid_command",
+      `'${String(command.itemId)}' is not a valid media item id.`,
+    );
+  }
+  const displaced = input.repeatable ? null : (media[0] ?? null);
+  const holder = snapshot.inputs
+    .flatMap((candidate) => candidate.media ?? [])
+    .find((item) => item.itemId === command.itemId);
+  if (holder && holder !== displaced) {
+    return failure(
+      "invalid_command",
+      `Media item id '${command.itemId}' already names an attached item.`,
+    );
+  }
+
   // A single-slot input replaces rather than fills up, exactly as a drop on an
   // occupied slot does; only a batch can actually run out of room.
   const slotId = input.repeatable
@@ -553,6 +576,7 @@ export function validateAttachAssetCommand(
       inputId: input.id,
       slotId,
       assetId: asset.id,
+      itemId: command.itemId,
       moveTo,
       itemOptions,
     },
@@ -716,6 +740,7 @@ export function applyMediaCommitToSnapshot(
       const item: GenerationMediaItemSnapshot = {
         ...base,
         slotId: commit.slotId,
+        itemId: commit.itemId,
         options: commit.itemOptions.reduce<Record<string, boolean>>(
           (options, option) => ({ ...options, [option.optionId]: option.value }),
           { ...base.options },
@@ -836,6 +861,7 @@ export function simulateAttachedItem(
     replaced?.assetId === asset.id ? replaced.options.audio === true : false;
   return {
     slotId: "",
+    itemId: "",
     ordinal: 0,
     source: "asset",
     assetId: asset.id,
