@@ -22,6 +22,13 @@ import type {
   MinimaxPromptPackage,
 } from "./minimaxPromptPackageLoader";
 
+/**
+ * The full-reference composer's editor helpers, loaded with the package.
+ * Its prose fields are the package's own inline reference editor, so they are
+ * driven through the package's DOM mapping rather than a host one.
+ */
+let referenceText: typeof import("./minimaxRef2vLoader") | null = null;
+
 const EXTENSION_ID = "vlo.minimax-prompt";
 
 /**
@@ -48,6 +55,7 @@ const PACKAGE_ENTRY_PATH = resolve(
 const packagePresent = existsSync(PACKAGE_ENTRY_PATH);
 
 async function loadPackage(): Promise<MinimaxPromptPackage> {
+  referenceText ??= await import("./minimaxRef2vLoader");
   return (await import("./minimaxPromptPackageLoader")).minimaxPromptPackage;
 }
 
@@ -420,8 +428,23 @@ function mountComposer(
   );
 }
 
-function textAreaFor(label: string): HTMLTextAreaElement {
-  return screen.getByLabelText(label) as HTMLTextAreaElement;
+/**
+ * A section field by its accessible name, as a value reader.
+ *
+ * Base-guide fields are textareas; full-reference fields are the package's
+ * inline reference editor, a `contenteditable`. Both are read the way a user
+ * sees them, so a test can assert on either without knowing which it is.
+ */
+function textAreaFor(label: string): {
+  readonly value: string;
+  readonly disabled: boolean;
+} {
+  const element = screen.getByLabelText(label) as HTMLElement;
+  if (element instanceof HTMLTextAreaElement) return element;
+  return {
+    value: referenceText!.readReferenceText(element),
+    disabled: element.getAttribute("aria-disabled") === "true",
+  };
 }
 
 /** The shot boxes on screen, in order, by their accessible names. */
@@ -432,9 +455,14 @@ function shotBoxLabels(): string[] {
 }
 
 function type(label: string, value: string): void {
-  act(() => {
-    fireEvent.change(textAreaFor(label), { target: { value } });
-  });
+  const element = screen.getByLabelText(label) as HTMLElement;
+  if (element instanceof HTMLTextAreaElement) {
+    act(() => {
+      fireEvent.change(element, { target: { value } });
+    });
+    return;
+  }
+  referenceText!.replaceReferenceText(element, value);
 }
 
 function click(name: string): void {
@@ -1767,9 +1795,10 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
       ],
       length: 124,
     });
+    const session = createComposerSession();
     const { unmount } = mountComposer(
       createComposerView as never,
-      createComposerSession(),
+      session,
       harness,
     );
 
@@ -1788,11 +1817,16 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     const fields = screen.getByTestId("staged-fields");
     expect(fields.getAttribute("data-controller")).toBe("bound");
 
-    // The draft writes to the panel, so it belongs to the mount that opened it.
+    // The draft belongs to the composer session, not the mount: closing the
+    // composer keeps the staged media beside the authored text that cites it
+    // (docs/minimax-ref2v-prompt-composer-plan.md §6), and the activation
+    // ending is what disposes it.
     expect(harness.openedDrafts[0].disposed).toBe(false);
     act(() => {
       unmount();
     });
+    expect(harness.openedDrafts[0].disposed).toBe(false);
+    session.dispose();
     expect(harness.openedDrafts[0].disposed).toBe(true);
   });
 

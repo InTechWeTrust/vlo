@@ -364,9 +364,10 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     expect(manifest.manifestVersion).toBe(1);
     expect(manifest.id).toBe(EXTENSION_ID);
     expect(manifest.capabilities).toContain("ui.custom");
-    // The composer's anchored entry point needs the slot families and the
-    // contribution-level `when` that landed in SDK 1.23.0.
-    expect(manifest.sdk).toBe(">=1.23.0 <2.0.0");
+    // The full-reference composer binds prose to media `itemId`s, resolves in
+    // the draft commit reading and holds its prompt with `holdInputIds` — all
+    // SDK 1.26.0.
+    expect(manifest.sdk).toBe(">=1.26.0 <2.0.0");
 
     const entry = (manifest.frontend as { entry: string }).entry;
     expect(

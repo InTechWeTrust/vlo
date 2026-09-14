@@ -136,6 +136,8 @@ export interface LoadedComposerSession {
   getDraft(key: string): LoadedParsedPrompt | null;
   setDraft(key: string, parsed: LoadedParsedPrompt): void;
   clear(key: string): void;
+  /** Disposes every staged draft the session holds; the activation's end. */
+  dispose(): void;
   subscribe(listener: () => void): () => void;
   getRevision(): number;
 }

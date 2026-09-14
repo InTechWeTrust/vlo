@@ -40,6 +40,12 @@
 /frontend/src/features/extensions/views/__tests__/MinimaxComposerConformance.test.tsx extension-surface=fixture
 /frontend/src/features/extensions/views/__tests__/minimaxPromptPackageLoader.ts extension-surface=fixture
 /frontend/src/features/extensions/views/__tests__/minimaxHostStubs.tsx extension-surface=fixture
+/frontend/src/features/extensions/views/__tests__/MinimaxRef2vConformance.test.tsx extension-surface=fixture
+/frontend/src/features/extensions/views/__tests__/minimaxRef2vLoader.ts extension-surface=fixture
+# The tracked, provider-neutral staged-editor fixture's suite: occurrence
+# identity and the draft commit reading, runnable in a clean checkout, unlike
+# the MiniMax suites above.
+/frontend/src/features/extensions/ui/__tests__/ReferencePromptConformance.test.tsx extension-surface=fixture
 
 # Distributed frontend adapters that dispatch or persist extension behaviour.
 # gradeSchema owns the V1 grade parameter contract that `api.color.grade` mirrors;
