@@ -403,12 +403,50 @@ function isTimelineClip(value: unknown): value is TimelineClip {
   );
 }
 
+/**
+ * Generation metadata written before shared references survived serialization
+ * saved a mask clip's inherited speed transform — the parent's object — as
+ * `null`. Drop such holes, and give a damaged mask back the speed it inherits
+ * from a parent that is in the same snapshot.
+ */
+function repairClipTransformations(clips: TimelineClip[]): TimelineClip[] {
+  const clipById = new Map(clips.map((clip) => [clip.id, clip]));
+  return clips.map((clip) => {
+    const rawTransforms: unknown[] = Array.isArray(clip.transformations)
+      ? clip.transformations
+      : [];
+    const transformations = rawTransforms.filter(
+      (transform): transform is TimelineClip["transformations"][number] =>
+        typeof transform === "object" && transform !== null,
+    );
+    if (transformations.length === rawTransforms.length) {
+      return Array.isArray(clip.transformations)
+        ? clip
+        : { ...clip, transformations };
+    }
+
+    const parent =
+      clip.type === "mask" && clip.parentClipId
+        ? clipById.get(clip.parentClipId)
+        : undefined;
+    const presentIds = new Set(transformations.map((transform) => transform.id));
+    const inheritedSpeed = (parent?.transformations ?? []).filter(
+      (transform) =>
+        transform?.type === "speed" && !presentIds.has(transform.id),
+    );
+    return {
+      ...clip,
+      transformations: [...transformations, ...inheritedSpeed],
+    } as TimelineClip;
+  });
+}
+
 export function normalizeTimelineSelection(
   selection: TimelineSelection,
   availableClips: TimelineClip[] = [],
 ): TimelineSelection {
   const rawClips = Array.isArray(selection.clips) ? selection.clips : [];
-  const validClips = rawClips.filter(isTimelineClip);
+  const validClips = repairClipTransformations(rawClips.filter(isTimelineClip));
   const availableTracks = Array.isArray(selection.tracks)
     ? selection.tracks
     : [];

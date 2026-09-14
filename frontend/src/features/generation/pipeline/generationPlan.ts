@@ -548,8 +548,11 @@ function cloneSerializableRecord(
 ): Record<string, unknown> | null {
   if (!value) return null;
 
-  const seen = new WeakSet<object>();
-  const serialized = JSON.stringify(value, (_key, candidate) => {
+  // Only true cycles are dropped. Shared references are legitimate — a mask
+  // clip carries its parent's inherited speed transform by reference — and
+  // dropping a repeat turns it into `null` inside arrays.
+  const ancestors: object[] = [];
+  const serialized = JSON.stringify(value, function (_key, candidate) {
     if (typeof candidate === "function" || typeof candidate === "symbol") {
       return undefined;
     }
@@ -557,10 +560,18 @@ function cloneSerializableRecord(
       return undefined;
     }
     if (typeof candidate === "object" && candidate !== null) {
-      if (seen.has(candidate)) {
+      // The replacer is called with the holder as `this`, so unwinding to it
+      // leaves exactly the chain of objects enclosing `candidate`.
+      while (
+        ancestors.length > 0 &&
+        ancestors[ancestors.length - 1] !== this
+      ) {
+        ancestors.pop();
+      }
+      if (ancestors.includes(candidate)) {
         return undefined;
       }
-      seen.add(candidate);
+      ancestors.push(candidate);
     }
     return candidate;
   });

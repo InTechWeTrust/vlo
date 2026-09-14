@@ -245,6 +245,55 @@ describe("timelineSelection helpers", () => {
     ).toEqual([]);
   });
 
+  it("repairs a saved mask whose inherited speed transform was written as null", () => {
+    const speed = {
+      id: "speed",
+      type: "speed" as const,
+      isEnabled: true,
+      parameters: { factor: 2 },
+    };
+    const position = {
+      id: "mask:position",
+      type: "position" as const,
+      isEnabled: true,
+      parameters: { x: 0, y: 0 },
+    };
+    const clipBase = {
+      trackId: "track",
+      sourceDuration: null,
+      transformedDuration: 100,
+      transformedOffset: 0,
+      start: 0,
+      timelineDuration: 100,
+      croppedSourceDuration: 100,
+      offset: 0,
+    };
+    const parent = {
+      ...clipBase,
+      id: "parent",
+      type: "image" as const,
+      name: "Parent",
+      assetId: "asset",
+      transformations: [speed],
+    };
+    const mask = {
+      ...clipBase,
+      id: "parent::mask::mask",
+      type: "mask" as const,
+      name: "Mask",
+      parentClipId: "parent",
+      transformations: [position, null],
+    };
+
+    const clips = normalizeDetachedTimelineSelection({
+      start: 0,
+      clips: [parent, mask] as never,
+    }).clips;
+
+    expect(clips[0]).toBe(parent);
+    expect(clips[1].transformations).toEqual([position, speed]);
+  });
+
   it("preserves valid saved clips so metadata-backed transforms survive normalization", () => {
     const savedClip = {
       id: "saved-clip",

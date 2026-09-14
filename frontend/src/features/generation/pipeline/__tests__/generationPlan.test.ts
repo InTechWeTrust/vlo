@@ -717,6 +717,50 @@ describe("generationPlan cache media extraction", () => {
     );
   });
 
+  it("keeps shared references that are not cycles", () => {
+    // A mask clip holds its parent's inherited speed transform by reference;
+    // treating the repeat as a cycle saved it as `null` in the transform list.
+    const speed = { id: "speed", type: "speed", isEnabled: true };
+    const cyclic: Record<string, unknown> = {
+      parent: { transformations: [speed] },
+      mask: { transformations: [{ id: "position" }, speed] },
+    };
+    cyclic.cycle = cyclic;
+    const plan = createGenerationPlan({
+      workflow: {},
+      graphData: {},
+      workflowId: null,
+      workflowRules: null,
+      workflowInputs: [],
+      workflowName: "Workflow",
+      mediaInputs: {},
+      slotValues: {},
+      derivedMaskMappings: [],
+      exactAspectRatio: true,
+      aspectRatioSelection: "auto",
+      targetResolution: 1080,
+      maskCropMode: "full",
+      maskCropDilation: 0.2,
+      widgetInputs: {},
+      frontendStateWidgetValues: cyclic,
+      widgetModes: {},
+      derivedWidgetInputs: {},
+      bypassNodeIds: [],
+      contributedEffects: [],
+      postprocessConfig: {
+        mode: "stitch_frames_with_audio",
+        panel_preview: "replace_outputs",
+        on_failure: "show_error",
+      },
+      workflowWarnings: [],
+      projectConfig: { fps: 30, aspectRatio: "16:9" },
+    });
+    expect(plan.submission.frontendStateWidgetValues).toEqual({
+      parent: { transformations: [speed] },
+      mask: { transformations: [{ id: "position" }, speed] },
+    });
+  });
+
   it("builds submitted mask/aspect metadata and decoded mask files", () => {
     const plan = makePlan("SaveImageWebsocket");
     plan.workflow.workflowRules = {
