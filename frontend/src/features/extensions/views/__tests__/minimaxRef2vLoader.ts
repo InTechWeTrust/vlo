@@ -53,6 +53,12 @@ export interface LoadedInlineDocument {
   readonly nodes: readonly LoadedInlineNodeInput[];
 }
 
+export interface LoadedLabeller {
+  label(targetId: string): string | null;
+  display(targetId: string): string | null;
+  target(token: string): string | null;
+}
+
 export interface LoadedInlineRange {
   readonly start: number;
   readonly end: number;
@@ -172,10 +178,18 @@ export interface MinimaxRef2vPackage {
   createReferenceLabeller(
     document: Pick<LoadedReferenceDocument, "subjects" | "shots">,
     catalogue: LoadedCatalogue,
-  ): {
-    label(targetId: string): string | null;
-    target(token: string): string | null;
-  };
+    names?: ReadonlyMap<string, string>,
+  ): LoadedLabeller;
+  bindAuthoredText(text: string, labeller: LoadedLabeller): LoadedInlineDocument;
+  referenceNameError(
+    name: string,
+    objectId: string,
+    names: ReadonlyMap<string, string>,
+  ): string | null;
+  liveReferenceNames(
+    names: ReadonlyMap<string, string>,
+    catalogue: LoadedCatalogue,
+  ): ReadonlyMap<string, string>;
   inlineDocument(nodes: readonly LoadedInlineNodeInput[]): LoadedInlineDocument;
   textDocument(text: string): LoadedInlineDocument;
   subjectTarget(subjectId: string): string;
@@ -269,11 +283,11 @@ export interface MinimaxRef2vPackage {
   suggestedCategories(document: LoadedReferenceDocument): readonly string[];
   availableForRetention(
     document: LoadedReferenceDocument,
-    labeller: { label(targetId: string): string | null; target(token: string): string | null },
+    labeller: LoadedLabeller,
   ): readonly { readonly targetId: string; readonly scope: readonly LoadedInlineNodeInput[] }[];
   guideHints(
     document: LoadedReferenceDocument,
-    labeller: { label(targetId: string): string | null; target(token: string): string | null },
+    labeller: LoadedLabeller,
   ): readonly { readonly id: string; readonly text: string }[];
   markersFor(kind: "Subject" | "Picture" | "Video" | "Audio"): readonly string[];
   retentionReview(entry: never, document: LoadedReferenceDocument): string | null;
@@ -295,6 +309,8 @@ export interface MinimaxRef2vPackage {
   createComposerView(deps: never): unknown;
   createComposerSession(): {
     getReferenceDraft(key: string): LoadedReferenceDocument | null;
+    getReferenceNames(): ReadonlyMap<string, string>;
+    setReferenceName(objectId: string, name: string | null): void;
     dispose(): void;
   };
   composerDraftKey(

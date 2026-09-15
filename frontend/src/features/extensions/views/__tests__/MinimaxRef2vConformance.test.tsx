@@ -427,6 +427,25 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
     expect(pkg.collectUnbound(withUnknown)).toEqual(["<Video 9>"]);
   });
 
+  it("validates names and keeps them out of resolution", async () => {
+    const { pkg, catalogue, document } = await imported();
+    const names = new Map([["visual:media-V2", "chase"], ["gone", "stale"]]);
+    expect(pkg.referenceNameError("chase", "visual:media-P1", names)).toBe("Another reference has this name.");
+    expect(pkg.referenceNameError("stale", "visual:media-P1", pkg.liveReferenceNames(names, catalogue))).toBeNull();
+    expect(pkg.referenceNameError("", "visual:media-V2", names)).toBeNull();
+    expect(pkg.referenceNameError("Shot3", "visual:media-V2", names)).toBe("Too close to a numbered tag.");
+    expect(pkg.referenceNameError("close-up_2", "visual:media-V2", names)).toBeNull();
+
+    const labeller = pkg.createReferenceLabeller(document, catalogue, names);
+    expect(labeller.display("visual:media-V2")).toBe("<chase>");
+    expect(labeller.label("visual:media-V2")).toBe("<Video 2>");
+    expect(pkg.bindAuthoredText("see <chase> and <d>", labeller)).toEqual(
+      pkg.bindReferenceText("see <Video 2> and <d>", labeller.target),
+    );
+    // A prompt never holds names, so importing one leaves it as text.
+    expect(pkg.bindReferenceText("see <chase>", labeller.target)).toEqual(pkg.textDocument("see <chase>"));
+  });
+
   it("keeps every shot body intact through reorder, serialize and reopen, forward citations included", async () => {
     const { pkg, catalogue, document } = await imported();
     // Shot 2 cites shot 1; moved first, that citation now names a *later*
@@ -658,7 +677,7 @@ function chipLabels(field: string): string[] {
   ].map((chip) => chip.textContent ?? "");
 }
 
-/** The object view's rows, in order, with the labels each offers. */
+/** The object view's rows, in order, with the tags each carries. */
 function objectRows(): Array<[string, string[]]> {
   return [
     ...screen.getByTestId("prompt-object-view").querySelectorAll("[data-reference-item]"),
@@ -666,8 +685,8 @@ function objectRows(): Array<[string, string[]]> {
     row.getAttribute("data-reference-item") ?? "",
     [...row.querySelectorAll("button")]
       .map((button) => button.getAttribute("aria-label") ?? "")
-      .filter((name) => name.startsWith("Insert "))
-      .map((name) => name.slice("Insert ".length)),
+      .filter((name) => name.startsWith("Rename "))
+      .map((name) => name.slice("Rename ".length)),
   ]);
 }
 
@@ -1014,27 +1033,74 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
     );
   });
 
-  it("inserts a label at the caret the author left in the prose", async () => {
-    const { typeReferenceText, readReferenceText } = await loadLoader();
+  it("names a tag for display only: chips show the name, the prompt keeps the number", async () => {
+    const { typeReferenceText } = await loadLoader();
     const pkg = await loadPackage();
     session = mountGenerationSession({
       nodes: REFERENCE_NODES,
       inputs: panelInputs(INITIAL_PROMPT),
     });
-    await mount(pkg);
+    const { drafts } = await mount(pkg);
+    const view = screen.getByTestId("prompt-object-view");
+    // Only tags sit under a tile; the file name is not repeated there.
+    expect(within(view).queryByText("hero")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename <Picture 1>" }));
+    const field = screen.getByRole("textbox", { name: "Name for <Picture 1>" });
+    // Refused names say why and are never saved.
+    for (const [name, reason] of [
+      ["d", "<d> is reserved for dialogue."],
+      ["D", "<d> is reserved for dialogue."],
+      ["the hero", "Names cannot contain spaces."],
+      ["Picture2", "Too close to a numbered tag."],
+      ["<hero>", "Use letters, numbers, - or _."],
+    ] as const) {
+      fireEvent.change(field, { target: { value: name } });
+      expect(within(view).getByText(reason)).toBeInTheDocument();
+      fireEvent.keyDown(field, { key: "Enter" });
+      expect(screen.getByRole("textbox", { name: "Name for <Picture 1>" })).toBe(field);
+    }
+    fireEvent.change(field, { target: { value: "hero" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    expect(screen.getByRole("button", { name: "Rename <Picture 1>" })).toHaveTextContent("<hero>");
+    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<hero>"]);
+
+    // A second reference cannot take the same name, in any case.
+    fireEvent.click(screen.getByRole("button", { name: "Rename <Picture 2>" }));
+    const other = screen.getByRole("textbox", { name: "Name for <Picture 2>" });
+    fireEvent.change(other, { target: { value: "HERO" } });
+    expect(within(view).getByText("Another reference has this name.")).toBeInTheDocument();
+    fireEvent.keyDown(other, { key: "Escape" });
+
+    // A typed name binds like a typed tag.
     const summary = screen.getByRole("textbox", { name: "Summary" });
+    typeReferenceText(summary, "[reference generation] Ends on <hero>");
+    expect(chipLabels("Summary")).toEqual(["<hero>"]);
 
-    typeReferenceText(summary, "Ends on ");
-    typeReferenceText(summary, ".");
-    // Back between "on " and "." — then focus leaves for the button.
-    typeReferenceText(summary, "", "Ends on ".length);
-    act(() => {
-      summary.blur();
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Insert <Audio 1>" }));
+    // A reorder renumbers what is written, never what is shown.
+    act(() => drafts.at(-1)!.stage({ kind: "moveMedia", inputId: IMAGES, fromOrdinal: 1, toOrdinal: 0 }));
+    expect(screen.getByRole("button", { name: "Rename <Picture 2>" })).toHaveTextContent("<hero>");
+    expect(chipLabels("Summary")).toEqual(["<hero>"]);
 
-    expect(readReferenceText(summary)).toBe("Ends on <Audio 1>.");
-    expect(chipLabels("Summary")).toEqual(["<Audio 1>"]);
+    fireEvent.click(screen.getByRole("button", { name: "Commit to prompt" }));
+    const prompt = session.panelInputs().find((input) => input.id === PROMPT)?.value as string;
+    expect(prompt).toContain("<Subject 1> is the woman in <Picture 2>.");
+    expect(prompt).toContain("[reference generation] Ends on <Picture 2>");
+    expect(prompt).not.toContain("hero>");
+    // The name outlives the commit that cleared the draft: once the panel
+    // publishes what was written, the view reads it back with the name shown.
+    const committed = session.panelInputs();
+    act(() => session!.publish({ nodes: REFERENCE_NODES, inputs: [...committed] }));
+    expect(chipLabels("Summary")).toEqual(["<hero>"]);
+    expect(chipLabels("Shot 1")).toEqual(["<Subject 1>", "<Picture 1>", "<Audio 1>"]);
+
+    // Clearing the name returns the tag to its number.
+    fireEvent.click(screen.getByRole("button", { name: "Rename <Picture 2>" }));
+    const clearing = screen.getByRole("textbox", { name: "Name for <Picture 2>" });
+    fireEvent.change(clearing, { target: { value: "" } });
+    fireEvent.keyDown(clearing, { key: "Enter" });
+    expect(chipLabels("Summary")).toEqual(["<Picture 2>"]);
   });
 
   it("refuses rearranging a list the panel is holding slots open in", async () => {
