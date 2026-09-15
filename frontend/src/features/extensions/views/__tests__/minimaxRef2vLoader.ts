@@ -190,6 +190,15 @@ export interface MinimaxRef2vPackage {
     names: ReadonlyMap<string, string>,
     catalogue: LoadedCatalogue,
   ): ReadonlyMap<string, string>;
+  subjectNameToken(name: string): string | null;
+  inactiveReferenceNames(
+    names: ReadonlyMap<string, string>,
+    catalogue: LoadedCatalogue,
+    attachedItemIds: ReadonlySet<string>,
+  ): ReadonlyMap<string, string>;
+  subjectNameReservations(
+    subjects: readonly { readonly id: string; readonly name: string }[],
+  ): ReadonlyMap<string, string>;
   inlineDocument(nodes: readonly LoadedInlineNodeInput[]): LoadedInlineDocument;
   textDocument(text: string): LoadedInlineDocument;
   subjectTarget(subjectId: string): string;
@@ -310,6 +319,8 @@ export interface MinimaxRef2vPackage {
   createComposerSession(): {
     getReferenceDraft(key: string): LoadedReferenceDocument | null;
     getReferenceNames(): ReadonlyMap<string, string>;
+    getSubjectNames(key: string, promptText: string): readonly string[] | null;
+    setSubjectNames(key: string, promptText: string, names: readonly string[]): void;
     setReferenceName(objectId: string, name: string | null): void;
     dispose(): void;
   };

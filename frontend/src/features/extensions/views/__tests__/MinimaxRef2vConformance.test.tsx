@@ -444,6 +444,47 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
     );
     // A prompt never holds names, so importing one leaves it as text.
     expect(pkg.bindReferenceText("see <chase>", labeller.target)).toEqual(pkg.textDocument("see <chase>"));
+
+    // Subjects answer to a name that follows the tag-name rules, besides their
+    // number. A tag's name wins a collision; a name with a space is not typed.
+    const withSubjects = pkg.addSubject(
+      pkg.addSubject(pkg.addSubject(document, { id: "amelia", name: " Amelia " }), { id: "clash", name: "chase" }),
+      { id: "spaced", name: "young woman" },
+    );
+    const both = pkg.createReferenceLabeller(withSubjects, catalogue, names);
+    const amelia = pkg.subjectTarget("amelia");
+    expect(both.target("<Amelia>")).toBe(amelia);
+    expect(both.target(`<Subject ${withSubjects.subjects.length - 2}>`)).toBe(amelia);
+    expect(both.target("<chase>")).toBe("visual:media-V2");
+    expect(both.target("<Video 2>")).toBe("visual:media-V2");
+    expect(both.target("<young woman>")).toBeNull();
+    // A subject shows the name it can be typed as; one it cannot, its number.
+    expect(both.display(amelia)).toBe("<Amelia>");
+    expect(both.display(pkg.subjectTarget("clash"))).toBe(`<Subject ${withSubjects.subjects.length - 1}>`);
+    expect(both.display(pkg.subjectTarget("spaced"))).toBe(`<Subject ${withSubjects.subjects.length}>`);
+    expect([...pkg.subjectNameReservations(withSubjects.subjects)]).toEqual([
+      [amelia, "Amelia"],
+      [pkg.subjectTarget("clash"), "chase"],
+    ]);
+
+    // A name on a soundtrack that is switched off stays reserved while its
+    // video is attached, and is released when the video leaves.
+    const muted = catalogue.objects.find(
+      (object) => object.kind === "Video" && !catalogue.byId.has(`audio:${object.itemId}`),
+    )!;
+    const offAir = new Map([
+      [`audio:${muted.itemId}`, "voice"],
+      ["audio:gone", "echo"],
+      ["visual:media-V2", "chase"],
+    ]);
+    const attached = new Set(catalogue.objects.map((object) => object.itemId));
+    expect([...pkg.inactiveReferenceNames(offAir, catalogue, attached)]).toEqual([[`audio:${muted.itemId}`, "voice"]]);
+
+    // Subject names are remembered against the exact prompt they were committed with.
+    const composerSession = pkg.createComposerSession();
+    composerSession.setSubjectNames("k", "prompt A", ["Amelia"]);
+    expect(composerSession.getSubjectNames("k", "prompt A")).toEqual(["Amelia"]);
+    expect(composerSession.getSubjectNames("k", "prompt B")).toBeNull();
   });
 
   it("keeps every shot body intact through reorder, serialize and reopen, forward citations included", async () => {
@@ -1073,34 +1114,57 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
     expect(within(view).getByText("Another reference has this name.")).toBeInTheDocument();
     fireEvent.keyDown(other, { key: "Escape" });
 
-    // A typed name binds like a typed tag.
+    // A subject answers to its name as well as its number, so a tag cannot
+    // take that name.
+    fireEvent.change(screen.getByRole("textbox", { name: "Subject 1 name" }), { target: { value: "Amelia" } });
+    fireEvent.click(screen.getByRole("button", { name: "Rename <Picture 2>" }));
+    const taken = screen.getByRole("textbox", { name: "Name for <Picture 2>" });
+    fireEvent.change(taken, { target: { value: "amelia" } });
+    expect(within(view).getByText("Another reference has this name.")).toBeInTheDocument();
+    fireEvent.keyDown(taken, { key: "Escape" });
+
+    // A named tag binds by its name or its number; a subject by its name or
+    // `<Subject N>`. Each lands on the same chip.
     const summary = screen.getByRole("textbox", { name: "Summary" });
     typeReferenceText(summary, "[reference generation] Ends on <hero>");
-    expect(chipLabels("Summary")).toEqual(["<hero>"]);
+    typeReferenceText(summary, " or <Picture 1>");
+    typeReferenceText(summary, " for <Amelia>");
+    typeReferenceText(summary, " and <Subject 1>");
+    expect(chipLabels("Summary")).toEqual(["<hero>", "<hero>", "<Amelia>", "<Amelia>"]);
 
     // A reorder renumbers what is written, never what is shown.
     act(() => drafts.at(-1)!.stage({ kind: "moveMedia", inputId: IMAGES, fromOrdinal: 1, toOrdinal: 0 }));
     expect(screen.getByRole("button", { name: "Rename <Picture 2>" })).toHaveTextContent("<hero>");
-    expect(chipLabels("Summary")).toEqual(["<hero>"]);
+    expect(chipLabels("Summary")).toEqual(["<hero>", "<hero>", "<Amelia>", "<Amelia>"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Commit to prompt" }));
     const prompt = session.panelInputs().find((input) => input.id === PROMPT)?.value as string;
     expect(prompt).toContain("<Subject 1> is the woman in <Picture 2>.");
-    expect(prompt).toContain("[reference generation] Ends on <Picture 2>");
+    expect(prompt).toContain("[reference generation] Ends on <Picture 2> or <Picture 2> for <Subject 1> and <Subject 1>");
     expect(prompt).not.toContain("hero>");
+    expect(prompt).not.toContain("Amelia");
     // The name outlives the commit that cleared the draft: once the panel
     // publishes what was written, the view reads it back with the name shown.
     const committed = session.panelInputs();
     act(() => session!.publish({ nodes: REFERENCE_NODES, inputs: [...committed] }));
-    expect(chipLabels("Summary")).toEqual(["<hero>"]);
-    expect(chipLabels("Shot 1")).toEqual(["<Subject 1>", "<Picture 1>", "<Audio 1>"]);
+    // Subject names come back by position, since the prompt holds only numbers.
+    expect(chipLabels("Summary")).toEqual(["<hero>", "<hero>", "<Amelia>", "<Amelia>"]);
+    expect(chipLabels("Shot 1")).toEqual(["<Amelia>", "<Picture 1>", "<Audio 1>"]);
 
     // Clearing the name returns the tag to its number.
     fireEvent.click(screen.getByRole("button", { name: "Rename <Picture 2>" }));
     const clearing = screen.getByRole("textbox", { name: "Name for <Picture 2>" });
     fireEvent.change(clearing, { target: { value: "" } });
     fireEvent.keyDown(clearing, { key: "Enter" });
-    expect(chipLabels("Summary")).toEqual(["<Picture 2>"]);
+    expect(chipLabels("Summary")).toEqual(["<Picture 2>", "<Picture 2>", "<Amelia>", "<Amelia>"]);
+
+    // Once the prompt changes outside the composer, position no longer says
+    // which subject a remembered name belonged to, so none is applied.
+    const edited = session.panelInputs().map((input) =>
+      input.id === PROMPT ? { ...input, value: String(input.value).replace("Ends on", "Closes on") } : input,
+    );
+    act(() => session!.publish({ nodes: REFERENCE_NODES, inputs: [...edited] }));
+    expect(chipLabels("Summary")).toEqual(["<Picture 2>", "<Picture 2>", "<Subject 1>", "<Subject 1>"]);
   });
 
   it("refuses rearranging a list the panel is holding slots open in", async () => {
@@ -1810,7 +1874,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
     fireEvent.click(within(form).getByRole("button", { name: "<Picture 1>" }));
     fireEvent.click(within(form).getByRole("button", { name: "<Audio 1>" }));
     fireEvent.click(within(form).getByRole("button", { name: "Create subject" }));
-    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 1>", "<Audio 1>"]);
+    expect(chipLabels("Definition of <Mara>")).toEqual(["<Picture 1>", "<Audio 1>"]);
 
     // The other picture is Shot 1's first frame, which drafts its retention.
     fireEvent.click(screen.getByRole("button", { name: "Add definition" }));
@@ -1848,13 +1912,13 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
     selectOption("Add retention for another reference", (screen.getByRole("option", { name: /<Subject 1>/ }) as HTMLOptionElement).value);
     selectOption("Relationship for new retention", "fully_preserved");
     replaceReferenceText(
-      screen.getByRole("textbox", { name: "Retention of <Subject 1>" }),
+      screen.getByRole("textbox", { name: "Retention of <Mara>" }),
       "the red scarf is retained.",
     );
 
     // Reverse the pictures: labels move, targets stay.
     act(() => drafts[0].stage({ kind: "moveMedia", inputId: IMAGES, fromOrdinal: 1, toOrdinal: 0 }));
-    expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 2>", "<Audio 1>"]);
+    expect(chipLabels("Definition of <Mara>")).toEqual(["<Picture 2>", "<Audio 1>"]);
     expect(
       within(screen.getByTestId("retention-section")).getByRole("combobox", {
         name: "Relationship for <Picture 1>",

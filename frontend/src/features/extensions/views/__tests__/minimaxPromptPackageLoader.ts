@@ -76,6 +76,7 @@ export interface LoadedSubject {
   readonly label: string;
   readonly assets: readonly LoadedSubjectAsset[];
   readonly lines: readonly string[];
+  readonly names?: Readonly<Record<string, string>>;
   readonly updatedAt: number;
 }
 
@@ -95,7 +96,6 @@ export interface LoadedEditorSession {
   setSubjectId(id: string | null): void;
   getDraft(subjectId: string): {
     readonly text: string;
-    readonly tags: readonly LoadedTag[] | null;
     readonly editing: unknown;
   };
   updateDraft(subjectId: string, next: Record<string, unknown>): void;
@@ -236,6 +236,16 @@ export interface MinimaxPromptPackage {
   attachAsset(assetId: string): SubjectCommand;
   attachAssetAt(assetId: string, index: number): SubjectCommand;
   renameSubject(label: string): SubjectCommand;
+  detachAsset(assetId: string): SubjectCommand;
+  setTagName(referenceId: string, name: string | null): SubjectCommand;
+  setAssetAudio(assetId: string, include: boolean): SubjectCommand;
+  tagReferenceId(kind: "Picture" | "Video" | "Audio", key: string): string;
+  lineToInlineNodes(
+    stored: string,
+  ): readonly ({ kind: "text"; text: string } | { kind: "reference"; targetId: string })[];
+  inlineNodesToLine(
+    nodes: readonly ({ kind: "text"; text: string } | { kind: "reference"; targetId: string })[],
+  ): string;
   appendLines(lines: readonly string[]): SubjectCommand;
   replaceLine(index: number, lines: readonly string[]): SubjectCommand;
   removeLine(index: number): SubjectCommand;

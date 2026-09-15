@@ -173,7 +173,18 @@ function mountEditor(
       panelUi: {
         AssetBatchDropSlot: (props: Record<string, unknown>) => {
           capture(props);
-          return null;
+          // Tiles are host-owned; the footer beneath each is this package's.
+          const items = props.items as readonly { slotId: string }[];
+          const footer = props.renderItemFooter as
+            | ((item: unknown, index: number) => React.ReactNode)
+            | undefined;
+          return React.createElement(
+            "div",
+            { "data-testid": "subject-strip" },
+            ...items.map((item, index) =>
+              React.createElement(React.Fragment, { key: item.slotId }, footer?.(item, index)),
+            ),
+          );
         },
       },
     },
@@ -856,7 +867,8 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     );
   });
 
-  it("edits a committed line through the view", async () => {
+  it("edits a committed line through the view, references as chips", async () => {
+    const { typeReferenceText, readReferenceText } = await import("./minimaxRef2vLoader");
     const {
       createSubjectStore,
       createSubjectEditorView,
@@ -887,37 +899,249 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     );
 
     // The stored line is displayed with its ordinal resolved.
-    expect(view.getByText("Shown in <Picture 1>.")).toBeTruthy();
+    expect(view.container.textContent).toContain("Shown in <Picture 1>.");
 
-    // The pencil button itself, not the tooltip wrapping it: a click on the
-    // parent does not reach a child's handler.
     await act(async () => {
       fireEvent.click(view.getByText("\u270e"));
     });
-    // Several text boxes are on screen (the subject label, the draft box);
-    // the edit box is the one seeded with the line's resolved text.
-    const boxes = [
-      ...view.container.querySelectorAll("textarea"),
-    ] as HTMLTextAreaElement[];
-    const box = boxes.find((candidate) => candidate.value === "Shown in <Picture 1>.");
-    expect(box).toBeDefined();
+    const box = view.getByRole("textbox", { name: "Edit line" });
+    expect(readReferenceText(box)).toBe("Shown in <Picture 1>.");
+    expect(box.querySelectorAll("[data-reference-id]")).toHaveLength(1);
 
-    await act(async () => {
-      fireEvent.change(box!, {
-        target: { value: "Clearly shown in <Picture 1>." },
-      });
-    });
+    typeReferenceText(box, "Clearly ", 0);
     await act(async () => {
       fireEvent.click(view.getByText("Save"));
     });
 
     // Stored bound, displayed resolved.
     expect(store.getState().subjects[0].lines).toEqual([
-      "Clearly shown in {{ref:Picture:asset-1}}.",
+      "Clearly Shown in {{ref:Picture:asset-1}}.",
     ]);
-    expect(view.getByText("Clearly shown in <Picture 1>.")).toBeTruthy();
+    expect(view.container.textContent).toContain("Clearly Shown in <Picture 1>.");
     view.unmount();
     store.dispose();
+  });
+
+  it("names a tag under its tile, shows the name in lines and chips, and persists it", async () => {
+    const { typeReferenceText } = await import("./minimaxRef2vLoader");
+    const {
+      createSubjectStore,
+      createSubjectEditorView,
+      createEditorSession,
+      attachAssetAt,
+      appendLines,
+    } = await loadPackage();
+    const values = new Map<string, JsonValue>();
+    const store = createSubjectStore(createStoreApi(createScope(values)));
+    await whenReady(store);
+    await store.create("Amelia");
+    const id = store.getState().subjects[0].id;
+    await store.update(id, attachAssetAt("asset-1", 0));
+    await store.update(id, attachAssetAt("asset-2", 1));
+    await store.update(id, appendLines(["Wearing {{ref:Picture:asset-2}}."]));
+
+    let dropSlotProps: Record<string, unknown> | undefined;
+    const view = mountEditor(createSubjectEditorView, store, createEditorSession(), id, (props) => {
+      dropSlotProps = props;
+    });
+    const strip = view.getByTestId("subject-strip");
+    // Each tile carries its tag; nothing else is written beneath it.
+    expect(strip.textContent).toBe("<Picture 1><Picture 2>");
+
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Rename <Picture 2>" }));
+    });
+    const field = view.container.querySelector('textarea[placeholder="name"]')!;
+    // A refused name is never stored — one with a space, or the subject's own
+    // name, which `<Amelia>` already answers to.
+    for (const refused of ["pink shirt", "amelia"]) {
+      await act(async () => {
+        fireEvent.change(field, { target: { value: refused } });
+        fireEvent.keyDown(field, { key: "Enter" });
+      });
+      expect(store.getState().subjects[0].names).toBeUndefined();
+    }
+    await act(async () => {
+      fireEvent.change(field, { target: { value: "shirt" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+    });
+    expect(store.getState().subjects[0].names).toEqual({ "ref:Picture:asset-2": "shirt" });
+    expect(strip.textContent).toBe("<Picture 1><shirt>");
+    expect(view.container.textContent).toContain("Wearing <shirt>.");
+
+    // The subject binds as `<Subject 1>` or `<Amelia>`, the tag as `<shirt>` or
+    // `<Picture 2>`: each pair lands on one chip and one stored marker.
+    const compose = view.getByRole("textbox", { name: "New line" });
+    // Promotion reads the token that ends each typed insertion.
+    typeReferenceText(compose, "<Subject 1>");
+    typeReferenceText(compose, " or <Amelia>");
+    typeReferenceText(compose, " wears <shirt>");
+    typeReferenceText(compose, " or <Picture 2>");
+    // Chips show names: the subject's, and the tag's.
+    expect(
+      [...compose.querySelectorAll("[data-reference-id]")].map((chip) => chip.textContent?.replace(/\uFEFF/g, "")),
+    ).toEqual(["<Amelia>", "<Amelia>", "<shirt>", "<shirt>"]);
+    expect(
+      [...compose.querySelectorAll("[data-reference-id]")].map((chip) => chip.getAttribute("data-reference-id")),
+    ).toEqual(["subject", "subject", "ref:Picture:asset-2", "ref:Picture:asset-2"]);
+    await act(async () => {
+      fireEvent.click(view.getByText("Commit line"));
+    });
+    expect(store.getState().subjects[0].lines[1]).toBe(
+      "{{subject}} or {{subject}} wears {{ref:Picture:asset-2}} or {{ref:Picture:asset-2}}",
+    );
+
+    // A reorder renumbers the tag; the name and the lines stay with the asset.
+    await act(async () => {
+      (dropSlotProps?.onReorder as (slotId: string, to: number) => void)("asset-2", 0);
+    });
+    expect(view.getByRole("button", { name: "Rename <Picture 1>" })).toHaveTextContent("<shirt>");
+    store.dispose();
+
+    const reopened = createSubjectStore(createStoreApi(createScope(values)));
+    await whenReady(reopened);
+    expect(reopened.getState().subjects[0].names).toEqual({ "ref:Picture:asset-2": "shirt" });
+    view.unmount();
+    reopened.dispose();
+  });
+
+  it("binds a tag finished by an IME when it is written, never later against a reordered strip", async () => {
+    const { minimaxRef2vPackage: editorPkg } = await import("./minimaxRef2vLoader");
+    const {
+      createSubjectStore,
+      createSubjectEditorView,
+      createEditorSession,
+      attachAssetAt,
+    } = await loadPackage();
+    const values = new Map<string, JsonValue>();
+    const store = createSubjectStore(createStoreApi(createScope(values)));
+    await whenReady(store);
+    await store.create("Amelia");
+    const id = store.getState().subjects[0].id;
+    await store.update(id, attachAssetAt("asset-1", 0));
+    await store.update(id, attachAssetAt("asset-2", 1));
+    let dropSlotProps: Record<string, unknown> | undefined;
+    const session = createEditorSession();
+    const view = mountEditor(createSubjectEditorView, store, session, id, (props) => {
+      dropSlotProps = props;
+    });
+    const compose = view.getByRole("textbox", { name: "New line" });
+
+    // The IME edits the DOM itself; `beforeinput` promotion never sees it.
+    act(() => {
+      compose.focus();
+      compose.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    });
+    const typed = "Shown in <Picture 1>";
+    act(() => {
+      compose.replaceChildren(document.createTextNode(typed));
+      editorPkg.writeInlineSelection(compose, { start: typed.length, end: typed.length });
+      compose.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+    });
+    expect(
+      [...compose.querySelectorAll("[data-reference-id]")].map((chip) => chip.getAttribute("data-reference-id")),
+    ).toEqual(["ref:Picture:asset-1"]);
+
+    // A tag that is still text when saved is kept as text, not bound against
+    // the strip as it is by then.
+    await act(async () => {
+      session.updateDraft(id, { text: `${session.getDraft(id).text} beside <Picture 2>` });
+    });
+    await act(async () => {
+      (dropSlotProps?.onReorder as (slotId: string, to: number) => void)("asset-1", 1);
+    });
+    await act(async () => {
+      fireEvent.click(view.getByText("Commit line"));
+    });
+    expect(store.getState().subjects[0].lines).toEqual([
+      "Shown in {{ref:Picture:asset-1}} beside <Picture 2>",
+    ]);
+    view.unmount();
+    store.dispose();
+  });
+
+  it("keeps a switched-off soundtrack's name reserved until its video leaves", async () => {
+    const {
+      createSubjectStore,
+      createSubjectEditorView,
+      createEditorSession,
+      attachAssetAt,
+      setAssetAudio,
+      setTagName,
+    } = await loadPackage();
+    const values = new Map<string, JsonValue>();
+    const store = createSubjectStore(createStoreApi(createScope(values)));
+    await whenReady(store);
+    await store.create("Amelia");
+    const id = store.getState().subjects[0].id;
+    await store.update(id, attachAssetAt("pic", 0));
+    await store.update(id, attachAssetAt("clip", 1));
+    await store.update(id, setAssetAudio("clip", true));
+    await store.update(id, setTagName("ref:Audio:clip", "voice"));
+    const lookup: AssetLookup = (assetId) =>
+      assetId === "clip"
+        ? { id: assetId, hash: "h", name: "clip.mp4", type: "video", src: "blob:clip", hasAudio: true }
+        : DEFAULT_ASSET_LOOKUP(assetId);
+    let dropSlotProps: Record<string, unknown> | undefined;
+    const view = mountEditor(createSubjectEditorView, store, createEditorSession(), id, (props) => {
+      dropSlotProps = props;
+    }, lookup);
+    const strip = view.getByTestId("subject-strip");
+    expect(strip.textContent).toBe("<Picture 1><voice><Video 1>");
+
+    await act(async () => {
+      (dropSlotProps?.onToggleOption as (slotId: string, optionId: string, on: boolean) => void)("clip", "audio", false);
+    });
+    expect(strip.textContent).toBe("<Picture 1><Video 1>");
+
+    // Another tag cannot take the name while the soundtrack is off…
+    await act(async () => {
+      fireEvent.click(view.getByRole("button", { name: "Rename <Picture 1>" }));
+    });
+    const field = view.container.querySelector('textarea[placeholder="name"]')!;
+    await act(async () => {
+      fireEvent.change(field, { target: { value: "voice" } });
+      fireEvent.keyDown(field, { key: "Enter" });
+    });
+    expect(store.getState().subjects[0].names).toEqual({ "ref:Audio:clip": "voice" });
+
+    // …so switching it back on brings back one `<voice>`, not two.
+    await act(async () => {
+      fireEvent.keyDown(field, { key: "Escape" });
+      (dropSlotProps?.onToggleOption as (slotId: string, optionId: string, on: boolean) => void)("clip", "audio", true);
+    });
+    expect(strip.textContent).toBe("<Picture 1><voice><Video 1>");
+    view.unmount();
+    store.dispose();
+  });
+
+  it("round-trips stored lines through chips and drops names with their asset", async () => {
+    const { lineToInlineNodes, inlineNodesToLine, detachAsset, setTagName, tagReferenceId } =
+      await loadPackage();
+    const stored = "{{subject}} is in {{ref:Picture:a}} with {{ref:Audio:gone}}.";
+    expect(lineToInlineNodes(stored)).toEqual([
+      { kind: "reference", targetId: "subject" },
+      { kind: "text", text: " is in " },
+      { kind: "reference", targetId: "ref:Picture:a" },
+      { kind: "text", text: " with " },
+      { kind: "reference", targetId: "ref:Audio:gone" },
+      { kind: "text", text: "." },
+    ]);
+    expect(inlineNodesToLine(lineToInlineNodes(stored))).toBe(stored);
+
+    const subject = {
+      id: "s",
+      label: "S",
+      assets: [{ assetId: "a" }, { assetId: "v", includeAudio: true }],
+      lines: [],
+      updatedAt: 0,
+    };
+    const named = setTagName(tagReferenceId("Audio", "v"), "voice")(
+      setTagName(tagReferenceId("Picture", "a"), "hero")(subject),
+    );
+    expect(named.names).toEqual({ "ref:Picture:a": "hero", "ref:Audio:v": "voice" });
+    expect(detachAsset("v")(named).names).toEqual({ "ref:Picture:a": "hero" });
+    expect(setTagName("ref:Picture:a", null)(detachAsset("v")(named)).names).toBeUndefined();
   });
 
   it("keeps an edit bound to its own asset when the strip is reordered mid-edit", async () => {
