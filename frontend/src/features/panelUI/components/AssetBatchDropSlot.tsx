@@ -3,6 +3,8 @@ import { Box, Typography, IconButton, CircularProgress, Tooltip } from "@mui/mat
 import { styled } from "@mui/material/styles";
 import { useDroppable, useDndContext, useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
+import ImageIcon from "@mui/icons-material/Image";
+import MovieIcon from "@mui/icons-material/Movie";
 import MusicNoteIcon from "@mui/icons-material/MusicNote";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import CloseIcon from "@mui/icons-material/Close";
@@ -424,9 +426,9 @@ function BatchTile({
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
           ) : (
-            <Typography variant="caption" sx={{ color: "#555", fontSize: "0.55rem" }}>
-              No Preview
-            </Typography>
+            item.value.type === "video"
+              ? <MovieIcon sx={{ fontSize: 26, color: "#888" }} />
+              : <ImageIcon sx={{ fontSize: 26, color: "#888" }} />
           )}
           <OrdinalBadge variant="caption">{index + 1}</OrdinalBadge>
           {item.editable && onEdit && !editRefused && (
@@ -508,6 +510,7 @@ function AssetBatchDropSlotComponent({
   items,
   max,
   itemLabel,
+  renderItemFooter,
   onDrop,
   onExternalDrop,
   onSelect,
@@ -571,8 +574,8 @@ function AssetBatchDropSlotComponent({
         }}
       >
         {visibleItems.map((item, index) => (
+          <Box key={item.slotId} sx={{ width: renderItemFooter ? 112 : TILE_SIZE, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5 }}>
           <BatchTile
-            key={item.slotId}
             surfaceId={surfaceId}
             index={index}
             item={item}
@@ -591,6 +594,8 @@ function AssetBatchDropSlotComponent({
             ownSlotIds={ownSlotIds}
             onToggleOption={onToggleOption}
           />
+          {renderItemFooter?.(item, index)}
+          </Box>
         ))}
         {hasAddTile && (
           <BatchTile

@@ -3,6 +3,7 @@ import type {
   GenerationWidgetTarget,
 } from "../pipeline/types";
 import type { WidgetValueType } from "../types";
+import type { GenerationCapturedMedia } from "../utils/capturedMedia";
 import type { Asset } from "../../../types/Asset";
 
 /**
@@ -112,6 +113,8 @@ export interface GenerationMediaItemSnapshot {
   /** Library assets only; absent for a frame capture or a timeline selection. */
   readonly assetId?: string;
   readonly displayName: string;
+  /** Preview URL owned by the source asset or capture. */
+  readonly thumbnail?: string;
   /** What the slot delivers: a video on an audio slot presents as `audio`. */
   readonly mediaType: "image" | "video" | "audio";
   /**
@@ -276,6 +279,8 @@ export interface GenerationSessionTransaction {
     assetId: string,
     options?: GenerationAttachAssetOptions,
   ): void;
+  /** Attach native captured media without creating a library asset. Host-only payload. */
+  attachCapturedMedia(inputId: string, capture: GenerationCapturedMedia, options?: GenerationAttachAssetOptions): void;
   /** Reorder within one repeatable input. Ordinals are delivery positions. */
   moveMedia(inputId: string, fromOrdinal: number, toOrdinal: number): void;
   removeMedia(inputId: string, slotId: string): void;
@@ -351,9 +356,8 @@ export interface GenerationSessionWidgetCommit {
  * asset against the input, so the commit side is a direct call into the store
  * actions the panel's own batch strip uses — it re-derives nothing.
  */
-export type GenerationSessionMediaCommit =
-  | {
-      readonly kind: "attach";
+interface GenerationSessionAssetAttachCommit {
+  readonly kind: "attach";
       readonly inputId: string;
       /** The slot the asset lands in before any reorder. */
       readonly slotId: string;
@@ -372,6 +376,13 @@ export type GenerationSessionMediaCommit =
         readonly value: boolean;
       }[];
     }
+
+export type GenerationSessionMediaCommit =
+  | (Omit<GenerationSessionAssetAttachCommit, "kind" | "assetId"> & {
+    readonly kind: "attach-capture";
+    readonly capture: GenerationCapturedMedia;
+  })
+  | GenerationSessionAssetAttachCommit
   | {
       readonly kind: "move";
       readonly inputId: string;

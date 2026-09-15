@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { AssetDropSlotDisabledActions } from "./assetDropSlotTypes";
 import type { Asset, AssetType } from "../../../types/Asset";
 import type { AssetDropSlotValue } from "./assetDropSlotTypes";
@@ -66,6 +67,8 @@ export interface AssetBatchDropSlotProps {
   acceptExternal?: AssetType[];
   /** Occupied positions, in the order the nodes will receive them. */
   items: readonly AssetBatchSlotItem[];
+  /** Content beneath each tile, kept with it as the strip wraps. */
+  renderItemFooter?: (item: AssetBatchSlotItem, index: number) => ReactNode;
   /** Hard ceiling on positions; the `+` hides once `items` reaches it. */
   max: number;
   /** Label for the position at `index`, used as the tile's caption. */

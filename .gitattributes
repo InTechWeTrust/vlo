@@ -339,3 +339,10 @@
 /package.json extension-surface=governance
 /scripts/check-extension-surface.mjs extension-surface=governance
 /scripts/check-extension-surface.test.mjs extension-surface=governance
+/frontend/src/features/generation/services/GenerationInputCapture.ts extension-surface=host
+/frontend/src/features/extensions/generation/ExtensionGenerationDraftCapture.tsx extension-surface=adapter
+/frontend/src/features/extensions/generation/__tests__/ExtensionGenerationDraftCapture.test.tsx extension-surface=adapter
+/frontend/src/features/generation/utils/mediaInputThumbnail.ts extension-surface=host
+/frontend/src/features/generation/utils/__tests__/mediaInputThumbnail.test.ts extension-surface=host
+
+/frontend/src/features/generation/utils/capturedMedia.ts extension-surface=host

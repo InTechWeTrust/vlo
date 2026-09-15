@@ -1,3 +1,4 @@
+import { describeCapturedMedia, type GenerationCapturedMedia } from "../utils/capturedMedia";
 import type {
   GenerationInputSnapshot,
   GenerationMediaItemSnapshot,
@@ -22,10 +23,11 @@ import { isValidMediaItemId } from "../utils/mediaItemIds";
  *
  * The vocabulary is still a constraint on the surface: an interaction with no
  * op here cannot be staged, and must be refused rather than dropped at commit.
- * External file drops, timeline capture and frame capture are the notable
- * absences — they start real work and produce values no id can name yet.
+ * Captures are staged as native in-memory values after extraction finishes.
+ * External file drops still require an explicit ingest path.
  */
 export type GenerationInputDraftOp =
+  | { readonly kind: "captureMedia"; readonly inputId: string; readonly capture: GenerationCapturedMedia; readonly previewUrl: string; readonly at?: number; readonly itemId?: string; readonly itemOptions?: Readonly<Record<string, boolean>> }
   | { readonly kind: "setText"; readonly inputId: string; readonly value: string }
   | {
       /**
@@ -166,27 +168,29 @@ function applyToInput(
   }
   if (op.kind === "holdText") return input;
   const media = input.media ?? [];
-  if (op.kind === "attachAsset" || op.kind === "replaceMedia") {
-    const at = op.kind === "replaceMedia" ? op.at : null;
+  if (op.kind === "attachAsset" || op.kind === "replaceMedia" || op.kind === "captureMedia") {
+    const at = op.kind === "replaceMedia" || op.kind === "captureMedia" ? (op.at ?? null) : null;
     // A single slot always replaces; a batch replaces only where told to.
     const replaced = !input.repeatable
       ? (media[0] ?? null)
       : at !== null
         ? (media[at] ?? null)
         : null;
-    if (op.kind === "replaceMedia" && replaced === null) return input;
+    if (at !== null && replaced === null) return input;
     // A batch that is full — or whose remaining slots are spoken for by media
     // still being produced — refuses an append, exactly as the transaction
     // would. Without this a draft can show an item it can never commit.
     if (
-      op.kind === "attachAsset" &&
+      at === null &&
       input.repeatable &&
       media.length + (input.reservedSlotIds?.length ?? 0) >=
         input.repeatable.max
     ) {
       return input;
     }
-    const simulated = resolveAsset(input, op.assetId, replaced);
+    const simulated = op.kind === "captureMedia"
+      ? describeCapturedMedia(input, op.capture, op.previewUrl)
+      : resolveAsset(input, op.assetId, replaced);
     if (!simulated) return input;
     const item: GenerationMediaItemSnapshot = {
       ...simulated,
@@ -320,7 +324,9 @@ export function findDraftConflicts(
     }
     const changed =
       before.value !== input.value ||
-      JSON.stringify(before.media ?? []) !== JSON.stringify(input.media ?? []) ||
+      // Preview hydration changes presentation, not the attachment being edited.
+      JSON.stringify((before.media ?? []).map((item) => ({ ...item, thumbnail: undefined }))) !==
+      JSON.stringify((input.media ?? []).map((item) => ({ ...item, thumbnail: undefined }))) ||
       // Capacity is part of the disagreement, not just contents. The
       // projection re-derives against the live session on every read, so a
       // slot reserved after an append was staged makes that append refuse —
@@ -392,6 +398,7 @@ export function compileDraftCommands(
    * and there is no arrangement to reconstruct.
    */
   widgets: ReadonlyMap<string, unknown> = new Map(),
+  captures: ReadonlyMap<string, GenerationCapturedMedia> = new Map(),
 ): void {
   for (const [key, value] of widgets) {
     const separator = key.lastIndexOf(":");
@@ -429,16 +436,20 @@ export function compileDraftCommands(
     const survivors = beforeMedia.filter((item) => targetSlots.has(item.slotId));
     const appended = targetMedia.filter((item) => isStagedSlotId(item.slotId));
     for (const item of appended) {
-      if (!item.assetId) continue;
+      const capture = captures.get(item.itemId);
+      const initialOptions = capture ? describeCapturedMedia(input, capture).options : {};
       const options = Object.fromEntries(
-        Object.entries(item.options).filter(([, value]) => value === true),
+        Object.entries(item.options).filter(([key, value]) => value !== (initialOptions[key] ?? false)),
       );
-      transaction.attachAsset(input.id, item.assetId, {
+      const attachOptions = {
         ...(Object.keys(options).length > 0 ? { itemOptions: options } : {}),
         // The id the draft has been showing, so a reference made to the staged
         // item still names it once it is real.
         ...(isValidMediaItemId(item.itemId) ? { itemId: item.itemId } : {}),
-      });
+      };
+      if (capture) transaction.attachCapturedMedia(input.id, capture, attachOptions);
+      else if (item.assetId) transaction.attachAsset(input.id, item.assetId, attachOptions);
+      else throw new Error("The staged capture is no longer available.");
     }
 
     // Options on items that already existed; a new item carried its own.

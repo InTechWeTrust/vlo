@@ -1,3 +1,6 @@
+import { createGenerationInputsDraft } from "../../draft/generationInputsDraftController";
+import { createPointTimelineSelection, createTimelineSelection } from "../../../timelineSelection";
+import type { GenerationCapturedMedia } from "../../utils/capturedMedia";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExtensionGenerationApi } from "../../../extensions/generation/ExtensionGenerationBridge";
@@ -199,6 +202,109 @@ describe("generation media writes: native drop vs SDK attach", () => {
     resetZustandStore(useGenerationStore);
     resetZustandStore(useMediaInputPreparationStore);
     resetGenerationSessionProjectionCache();
+  });
+
+  it.each(["image", "video", "audio"] as const)("commits a draft %s capture as the same native value, without a library asset", (type) => {
+    let urlCount = 0;
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:capture-${++urlCount}`);
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    const ingest = vi.spyOn(useAssetStore.getState(), "addLocalAsset");
+    const libraryBefore = useAssetStore.getState().assets;
+    const inputId = type === "image" ? SINGLE_ID : type === "video" ? REFERENCE_ID : AUDIO_ID;
+    const selection = type === "image" ? createPointTimelineSelection(42) : createTimelineSelection(42, 142);
+    const file = new File(["captured media"], `capture.${type === "image" ? "png" : type === "video" ? "mp4" : "wav"}`);
+    const thumbnail = new File(["thumbnail"], "thumbnail.png");
+    const mask = new File(["mask"], "mask.mp4");
+    const capture: GenerationCapturedMedia = type === "image"
+      ? { kind: "frame", file, timelineSelection: selection }
+      : {
+        kind: "timelineSelection", timelineSelection: selection, thumbnailFile: thumbnail,
+        options: {
+          mediaType: type, extractionRequestId: 17, isExtracting: false,
+          ...(type === "video" ? { preparedVideoFile: file, preparedMaskFile: mask, preparedDerivedMaskSignature: "mask-signature" } : { preparedAudioFile: file })
+        }
+      };
+    const panel = mountPanel();
+    // The native setters are the reference, including their option defaults.
+    act(() => {
+      const store = useGenerationStore.getState();
+      if (capture.kind === "frame") store.setMediaInputFrameWithSelection(inputId, file, selection);
+      else store.setMediaInputTimelineSelection(inputId, selection, thumbnail, capture.options);
+    });
+    const nativeValue = readMediaInputs()[inputId]!;
+    act(() => useGenerationStore.getState().clearMediaInput(inputId));
+    const draft = createGenerationInputsDraft({ inputIds: [inputId] });
+    act(() => draft.stageCapture(inputId, 0, capture));
+    const staged = draft.getSnapshot().inputs[0].media![0];
+    expect(staged.assetId).toBeUndefined();
+    expect(readMediaInputs()[inputId]).toBeUndefined();
+    if (type !== "audio") expect(staged.thumbnail).toBeTruthy();
+    expect(ingest).not.toHaveBeenCalled();
+
+    // Another invalid write must not partially commit the capture.
+    act(() => {
+      expect(draft.commit("Invalid prompt", (transaction) => transaction.setTextInput("missing", "prompt")).ok).toBe(false);
+    });
+    expect(readMediaInputs()[inputId]).toBeUndefined();
+    expect(draft.getSnapshot().hasDraftChanges).toBe(true);
+    if (staged.thumbnail) expect(revoke).not.toHaveBeenCalledWith(staged.thumbnail);
+
+    act(() => { expect(draft.commit("Captured reference").ok).toBe(true); });
+    const committed = readMediaInputs()[inputId]!;
+    // Each holder owns its URL and occurrence identity; everything else is identical.
+    const { itemId: _nativeId, ...nativeFields } = nativeValue;
+    const { itemId: _committedId, ...committedFields } = committed;
+    if ("previewUrl" in nativeFields && "previewUrl" in committedFields) {
+      expect(committedFields.previewUrl).not.toBe(staged.thumbnail);
+      nativeFields.previewUrl = committedFields.previewUrl;
+    }
+    if ("thumbnailUrl" in nativeFields && "thumbnailUrl" in committedFields) {
+      nativeFields.thumbnailUrl = committedFields.thumbnailUrl;
+    }
+    expect(committedFields).toEqual(nativeFields);
+    expect(committed.itemId).toBe(staged.itemId);
+    if (staged.thumbnail) expect(revoke).toHaveBeenCalledWith(staged.thumbnail);
+    expect(useAssetStore.getState().assets).toBe(libraryBefore);
+    expect(ingest).not.toHaveBeenCalled();
+    draft.dispose();
+    expect(readMediaInputs()[inputId]).toBe(committed);
+    panel.unmount();
+    vi.restoreAllMocks();
+  });
+
+  it("releases discarded capture previews and commits only the final reordered captures", () => {
+    let urlCount = 0;
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:capture-${++urlCount}`);
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    const panel = mountPanel();
+    const draft = createGenerationInputsDraft({ inputIds: [REFERENCE_ID] });
+    const makeCapture = (name: string): GenerationCapturedMedia => ({
+      kind: "timelineSelection", timelineSelection: createTimelineSelection(0, 100),
+      thumbnailFile: new File([name], `${name}.png`),
+      options: { mediaType: "video", preparedVideoFile: new File([name], `${name}.mp4`) },
+    });
+    act(() => draft.stageCapture(REFERENCE_ID, 0, makeCapture("discarded")));
+    const discardedUrl = draft.getSnapshot().inputs[0].media![0].thumbnail;
+    act(() => draft.revert());
+    expect(revoke).toHaveBeenCalledWith(discardedUrl);
+    expect(readMediaInputs()).toEqual({});
+    act(() => {
+      draft.stageCapture(REFERENCE_ID, 0, makeCapture("first"));
+      draft.stageCapture(REFERENCE_ID, 1, makeCapture("second"));
+      draft.stageCapture(REFERENCE_ID, 0, makeCapture("replacement"));
+      draft.stage({ kind: "moveMedia", inputId: REFERENCE_ID, fromOrdinal: 1, toOrdinal: 0 });
+    });
+    const staged = draft.getSnapshot().inputs[0].media!;
+    act(() => { expect(draft.commit("Reorder captures").ok).toBe(true); });
+    const values = Object.values(readMediaInputs());
+    expect(values.map((value) => value?.itemId)).toEqual(staged.map((item) => item.itemId));
+    expect(values.map((value) => value?.kind === "timelineSelection" && value.mediaType === "video" ? value.preparedVideoFile?.name : null)).toEqual(["second.mp4", "replacement.mp4"]);
+    act(() => draft.stageCapture(REFERENCE_ID, 2, makeCapture("disposed")));
+    const disposedUrl = draft.getSnapshot().inputs[0].media![2].thumbnail;
+    draft.dispose();
+    expect(revoke).toHaveBeenCalledWith(disposedUrl);
+    panel.unmount();
+    vi.restoreAllMocks();
   });
 
   it("leaves the same store state as the drop it stands in for", () => {

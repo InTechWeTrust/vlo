@@ -741,6 +741,8 @@ export interface ExtensionEntityAssetSnapshot {
   readonly name: string;
   readonly type: "video" | "image" | "audio" | "lut";
   readonly src: string;
+  /** Host-generated preview URL, when available. */
+  readonly thumbnail?: string;
   readonly durationSeconds?: number;
   readonly fps?: number;
   readonly hasAudio?: boolean;
@@ -2800,6 +2802,19 @@ export interface ExtensionGenerationDraftFieldsProps {
  * which is the thing your activation owns.
  */
 export interface ExtensionGenerationUiRuntime {
+  /**
+   * Mount for one timeline capture. Uses the panel's selection UI and holds
+   * native captured media in this draft without creating a library asset.
+   * Committing writes the capture to the panel input. Unmount cancels pending
+   * delivery. A changed/disposed draft cannot receive a late result.
+   * Optional for compatibility with hosts predating this renderer.
+   */
+  readonly InputsDraftCapture?: (props: {
+    readonly controller: ExtensionGenerationInputsDraft;
+    readonly inputId: string;
+    readonly at: number;
+    readonly onDone: (error: string | null) => void;
+  }) => unknown;
   readonly InputsDraftFields: (
     props: ExtensionGenerationDraftFieldsProps,
   ) => unknown;
@@ -3634,6 +3649,8 @@ export interface ExtensionGenerationMediaItem {
   /** Library assets only; resolve it through `assets.get`. */
   readonly assetId?: string;
   readonly displayName: string;
+  /** Host-owned preview URL, including timeline captures. */
+  readonly thumbnail?: string;
   /** What the slot delivers: a video on an audio slot presents as `audio`. */
   readonly mediaType: "image" | "video" | "audio";
   /**

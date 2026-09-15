@@ -359,6 +359,14 @@ describe("generation inputs draft", () => {
     expect(calls).toEqual([]);
   });
 
+  it("allows thumbnail hydration while media changes remain staged", () => {
+    const hydrated = { ...BATCH, media: BATCH.media!.map((item) => ({ ...item, thumbnail: "blob:new-preview" })) };
+    const ops: GenerationInputDraftOp[] = [{ kind: "moveMedia", inputId: BATCH.id, fromOrdinal: 0, toOrdinal: 1 }];
+    expect(findDraftConflicts([BATCH], [hydrated], ops)).toEqual([]);
+    const replaced = { ...hydrated, media: hydrated.media.map((item) => ({ ...item, itemId: "replacement" })) };
+    expect(findDraftConflicts([BATCH], [replaced], ops)).toEqual([BATCH.label]);
+  });
+
   it("reports a conflict only on an input the draft is holding", () => {
     const base = [TEXT_INPUT, BATCH];
     const ops: GenerationInputDraftOp[] = [

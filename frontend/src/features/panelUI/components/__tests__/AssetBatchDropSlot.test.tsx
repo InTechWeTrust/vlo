@@ -67,6 +67,21 @@ describe("AssetBatchDropSlot", () => {
     dnd.droppables = [];
   });
 
+  it("keeps footer actions with their tile without triggering extraction", () => {
+    const onSelect = vi.fn();
+    const onInsert = vi.fn();
+    renderStrip({ onSelect, renderItemFooter: (item, index) => (
+      <button onClick={() => onInsert(item.slotId)}>Insert reference {index + 1}</button>
+    ) });
+    const label = screen.getByRole("button", { name: "Insert reference 2" });
+    expect(label.parentElement?.querySelector('[data-drop-slot-id]')).toHaveAttribute("data-drop-slot-id", "142:files::repeat::1");
+    fireEvent.click(label);
+    expect(onInsert).toHaveBeenCalledWith("142:files::repeat::1");
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText("Video 2 — clip-1.mp4"));
+    expect(onSelect).toHaveBeenCalledWith(1);
+  });
+
   it("telescopes to the items it holds and offers one add tile below the ceiling", () => {
     const { container, rerender, props } = renderStrip();
 

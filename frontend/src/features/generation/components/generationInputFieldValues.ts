@@ -1,3 +1,4 @@
+import { mediaInputThumbnail } from "../utils/mediaInputThumbnail";
 import type { Asset, AssetType } from "../../../types/Asset";
 import { resolveAssetType } from "../../../shared/utils/assetTypeDetection";
 import type { AssetDropSlotValue } from "../../panelUI";
@@ -47,11 +48,7 @@ export function toSlotValue(
     return {
       type: isExtractedAudio ? "audio" : assetType,
       name: value.asset.name,
-      thumbnail:
-        isExtractedAudio || status
-          ? undefined
-          : value.asset.thumbnail ||
-            (assetType === "image" ? value.asset.src : undefined),
+      thumbnail: mediaInputThumbnail(value, inputType),
       ...(status ? { status } : {}),
       ...(status === "preparing"
         ? { statusMessage: "Extracting audio…" }
@@ -65,7 +62,7 @@ export function toSlotValue(
     return {
       type: "image",
       name: value.file.name,
-      thumbnail: value.previewUrl,
+      thumbnail: mediaInputThumbnail(value, inputType),
     };
   }
 
@@ -82,7 +79,7 @@ export function toSlotValue(
     type: value.mediaType,
     name: `Timeline selection (${value.timelineSelection.start}-${value.timelineSelection.end ?? value.timelineSelection.start})`,
     ...(value.mediaType === "video" && !selectionStatus
-      ? { thumbnail: value.thumbnailUrl }
+      ? { thumbnail: mediaInputThumbnail(value, inputType) }
       : {}),
     ...(selectionStatus ? { status: selectionStatus } : {}),
     ...(selectionStatus === "preparing"

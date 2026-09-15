@@ -1,3 +1,4 @@
+import { createCapturedMediaValue } from "../utils/capturedMedia";
 import type { Asset } from "../../../types/Asset";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import type {
@@ -291,42 +292,7 @@ export function buildMediaInputActions(
         mediaInputs: updateMediaInputs(
           get,
           inputId,
-          (options?.mediaType ?? "video") === "audio"
-            ? {
-                kind: "timelineSelection",
-                mediaType: "audio",
-                timelineSelection,
-                thumbnailFile,
-                thumbnailUrl: URL.createObjectURL(thumbnailFile),
-                isExtracting: options?.isExtracting ?? false,
-                extractionRequestId: options?.extractionRequestId ?? 0,
-                preparedAudioFile: options?.preparedAudioFile ?? null,
-                bakedEdit: options?.bakedEdit ?? null,
-                ...(options?.itemId ? { itemId: options.itemId } : {}),
-                extractionError: options?.extractionError ?? null,
-              }
-            : {
-                kind: "timelineSelection",
-                mediaType: "video",
-                timelineSelection,
-                thumbnailFile,
-                thumbnailUrl: URL.createObjectURL(thumbnailFile),
-                isExtracting: options?.isExtracting ?? false,
-                extractionRequestId: options?.extractionRequestId ?? 0,
-                preparedVideoFile: options?.preparedVideoFile ?? null,
-                preparedMaskFile: options?.preparedMaskFile ?? null,
-                preparedMasksByKey: options?.preparedMasksByKey ?? null,
-                preparedMaskContentByKey:
-                  options?.preparedMaskContentByKey ?? null,
-                preparedDerivedMaskSignature:
-                  options?.preparedDerivedMaskSignature ?? null,
-                bakedEdit: options?.bakedEdit ?? null,
-                ...(typeof options?.includeEmbeddedAudio === "boolean"
-                  ? { includeEmbeddedAudio: options.includeEmbeddedAudio }
-                  : {}),
-                ...(options?.itemId ? { itemId: options.itemId } : {}),
-                extractionError: options?.extractionError ?? null,
-              },
+          createCapturedMediaValue({ kind: "timelineSelection", timelineSelection, thumbnailFile, options }, URL.createObjectURL(thumbnailFile))
         ),
       }),
 

@@ -1,7 +1,9 @@
+import { copyCapturedMedia, type GenerationCapturedMedia } from "../utils/capturedMedia";
 import {
   applyMediaCommitToSnapshot,
   indexEditableWidgets,
   validateAttachAssetCommand,
+  validateAttachCapturedMediaCommand,
   validateMoveMediaCommand,
   validateRemoveMediaCommand,
   validateSetMediaOptionCommand,
@@ -13,6 +15,7 @@ import {
 } from "./generationSessionValidation";
 import { createMediaItemId } from "../utils/mediaItemIds";
 import type {
+  GenerationAttachAssetOptions,
   GenerationEditableWidgetSnapshot,
   GenerationInputRepeatableSnapshot,
   GenerationInputSnapshot,
@@ -87,6 +90,7 @@ interface StagedMediaOptionCommand {
 
 type StagedMediaCommand =
   | StagedAttachCommand
+  | (Omit<StagedAttachCommand, "kind" | "assetId"> & { readonly kind: "attach-capture"; readonly capture: GenerationCapturedMedia })
   | StagedMoveCommand
   | StagedRemoveCommand
   | StagedMediaOptionCommand;
@@ -95,6 +99,29 @@ type StagedCommand =
   | StagedTextCommand
   | StagedWidgetCommand
   | StagedMediaCommand;
+
+function normalizeAttachOptions(options?: GenerationAttachAssetOptions): GenerationAttachAssetOptions {
+  const at = options?.at;
+  if (at !== undefined && !Number.isInteger(at)) {
+    throw new Error("Generation attach positions must be integers.");
+  }
+  const itemOptions = options?.itemOptions;
+  if (itemOptions !== undefined) {
+    for (const [optionId, value] of Object.entries(itemOptions)) {
+      if (optionId.trim().length === 0) {
+        throw new Error("Generation option IDs must be non-empty strings.");
+      }
+      if (typeof value !== "boolean") {
+        throw new Error("Generation media options take boolean values.");
+      }
+    }
+  }
+  const itemId = options?.itemId;
+  if (itemId !== undefined && typeof itemId !== "string") {
+    throw new Error("Generation media item IDs must be strings.");
+  }
+  return { at, itemId, itemOptions: itemOptions ? { ...itemOptions } : undefined };
+}
 
 function failure(
   label: string,
@@ -184,6 +211,7 @@ function advanceSlotAddressBook(
   const media = input.media ?? [];
   switch (commit.kind) {
     case "attach":
+    case "attach-capture":
       // A single-slot input replaces what it holds, so every previous address
       // is gone; a batch inserts where the commit says it lands.
       if (!input.repeatable) {
@@ -251,6 +279,7 @@ function sameMediaArrangement(
 function isMediaCommand(command: StagedCommand): command is StagedMediaCommand {
   return (
     command.kind === "attach" ||
+    command.kind === "attach-capture" ||
     command.kind === "move" ||
     command.kind === "remove" ||
     command.kind === "media-option"
@@ -613,29 +642,24 @@ export class GenerationSessionService {
         if (!isOpen) throw new Error("The generation transaction is closed.");
         const normalizedInputId = requireId(inputId, "Generation input IDs");
         const normalizedAssetId = requireId(assetId, "Asset IDs");
-        const at = options?.at;
-        if (at !== undefined && !Number.isInteger(at)) {
-          throw new Error("Generation attach positions must be integers.");
-        }
-        const itemOptions = options?.itemOptions;
-        if (itemOptions !== undefined) {
-          for (const [optionId, value] of Object.entries(itemOptions)) {
-            if (optionId.trim().length === 0) {
-              throw new Error("Generation option IDs must be non-empty strings.");
-            }
-            if (typeof value !== "boolean") {
-              throw new Error("Generation media options take boolean values.");
-            }
-          }
-        }
-        const itemId = options?.itemId;
-        if (itemId !== undefined && typeof itemId !== "string") {
-          throw new Error("Generation media item IDs must be strings.");
-        }
+        const { at, itemOptions, itemId } = normalizeAttachOptions(options);
         staged.push({
           kind: "attach",
           inputId: normalizedInputId,
           assetId: normalizedAssetId,
+          ...(at === undefined ? {} : { at }),
+          ...(itemOptions === undefined ? {} : { itemOptions }),
+          ...(itemId === undefined ? {} : { itemId }),
+        });
+      },
+      attachCapturedMedia: (inputId, capture, options) => {
+        if (!isOpen) throw new Error("The generation transaction is closed.");
+        const normalizedInputId = requireId(inputId, "Generation input IDs");
+        const { at, itemOptions, itemId } = normalizeAttachOptions(options);
+        staged.push({
+          kind: "attach-capture",
+          inputId: normalizedInputId,
+          capture: copyCapturedMedia(capture),
           ...(at === undefined ? {} : { at }),
           ...(itemOptions === undefined ? {} : { itemOptions }),
           ...(itemId === undefined ? {} : { itemId }),
@@ -949,6 +973,19 @@ export class GenerationSessionService {
             commit: { kind: "attach", ...result.value },
             asset,
           },
+        };
+      }
+      case "attach-capture": {
+        const result = validateAttachCapturedMediaCommand(working, command.capture, {
+          ...command,
+          itemId: command.itemId ?? createMediaItemId(),
+        });
+        if (!result.ok) return result;
+        return {
+          ok: true, value: {
+            commit: { kind: "attach-capture", ...result.value, capture: command.capture },
+            asset: null,
+          }
         };
       }
       case "move": {

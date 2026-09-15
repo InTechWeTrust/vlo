@@ -1,3 +1,4 @@
+import { ExtensionGenerationDraftCapture } from "../generation/ExtensionGenerationDraftCapture";
 import * as pixi from "pixi.js";
 import * as react from "react";
 import {
@@ -65,6 +66,7 @@ export const extensionHostRuntimeApi: ExtensionHostRuntimeApi = Object.freeze({
    * than an entry in an open map it has to assert its way through.
    */
   generationUi: Object.freeze({
+    InputsDraftCapture: ExtensionGenerationDraftCapture,
     InputsDraftFields:
       ExtensionGenerationDraftFields as unknown as ExtensionHostRuntimeApi["generationUi"]["InputsDraftFields"],
   }),

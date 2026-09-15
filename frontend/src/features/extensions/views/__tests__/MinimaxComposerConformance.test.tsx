@@ -1153,8 +1153,9 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     );
 
     // Definitions are structured lines now (ref2v plan R2); a line of free
-    // text is still one click away, and is written back verbatim.
-    click("Add line");
+    // text remains available from the add menu and is written back verbatim.
+    fireEvent.click(screen.getByRole("button", { name: "Add definition" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Definition type" }), { target: { value: "raw" } });
     type("Definition line 1", "<Subject 1> is the person in <Picture 1>.");
     type("Overall soundscape", "Wind, then a roar.");
     click("Commit to prompt");
@@ -1191,7 +1192,8 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
       harness,
     );
 
-    click("Add line");
+    fireEvent.click(screen.getByRole("button", { name: "Add definition" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Definition type" }), { target: { value: "raw" } });
     type("Definition line 1", "<Subject 1> is the person in <Picture 1>.");
     harness.refuse({
       code: "unavailable",

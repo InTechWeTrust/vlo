@@ -302,7 +302,18 @@ export function useGenerationSessionMount(
       for (const media of update.media) {
         switch (media.kind) {
           case "attach":
-            attachAssetToSlot(media.slotId, media.assetId);
+          case "attach-capture":
+            if (media.kind === "attach") {
+              attachAssetToSlot(media.slotId, media.assetId);
+            } else {
+              const capture = media.capture;
+              const store = useGenerationStore.getState();
+              if (capture.kind === "frame") {
+                store.setMediaInputFrameWithSelection(media.slotId, capture.file, capture.timelineSelection);
+              } else {
+                store.setMediaInputTimelineSelection(media.slotId, capture.timelineSelection, capture.thumbnailFile, capture.options);
+              }
+            }
             // Named straight after the value lands and before anything moves
             // it, so the id the transaction planned is the one the panel holds
             // — the panel's own drop path mints one of its own.

@@ -1,3 +1,4 @@
+import { copyCapturedMedia, type GenerationCapturedMedia } from "../utils/capturedMedia";
 import { useAssetStore } from "../../userAssets";
 import { generationSessionService } from "../services/GenerationSessionService";
 import { simulateAttachedItem } from "../services/generationSessionValidation";
@@ -128,6 +129,7 @@ export interface GenerationInputsDraftController {
   subscribe(listener: () => void): () => void;
   /** Stages one edit. Ignored if it addresses something this draft is not editing. */
   stage(op: GenerationInputDraftOp): void;
+  stageCapture(inputId: string, at: number, capture: GenerationCapturedMedia): void;
   revert(): void;
   commit(
     label: string,
@@ -266,6 +268,20 @@ export function createGenerationInputsDraft(
    */
   let droppedForWorkflowChange = false;
   const listeners = new Set<() => void>();
+  const capturePreviews = new Set<string>();
+  const releaseUnusedPreviews = () => {
+    const session = generationSessionService.getSnapshot();
+    const retainedIds = new Set(session
+      ? projectDraftInputs(session, state.ops, resolveAttach).flatMap((input) => input.media?.map((item) => item.itemId) ?? [])
+      : []);
+    const retained = new Set(state.ops.flatMap((op) =>
+      op.kind === "captureMedia" && op.itemId && retainedIds.has(op.itemId) ? [op.previewUrl] : []));
+    for (const url of capturePreviews) {
+      if (retained.has(url)) continue;
+      URL.revokeObjectURL(url);
+      capturePreviews.delete(url);
+    }
+  };
 
   const notify = () => {
     // Cached because `useSyncExternalStore` compares snapshot identity, and a
@@ -299,6 +315,7 @@ export function createGenerationInputsDraft(
         error = null;
       }
       state = EMPTY;
+      releaseUnusedPreviews();
     }
     return state;
   };
@@ -427,7 +444,7 @@ export function createGenerationInputsDraft(
       // Identity is minted once, here, and stored in the op: the projection is
       // recomputed on every read, so an id minted there would change each time.
       if (
-        (op.kind === "attachAsset" || op.kind === "replaceMedia") &&
+        (op.kind === "attachAsset" || op.kind === "replaceMedia" || op.kind === "captureMedia") &&
         op.itemId === undefined
       ) {
         op = { ...op, itemId: createMediaItemId() };
@@ -463,12 +480,27 @@ export function createGenerationInputsDraft(
             : fresh.base,
         ops: [...fresh.ops, op],
       };
+      releaseUnusedPreviews();
       error = null;
       notify();
+    },
+    stageCapture: (inputId, at, capture) => {
+      if (disposed || !selected.has(inputId)) return;
+      const snapshot = controller.getSnapshot();
+      const input = snapshot.inputs.find((entry) => entry.id === inputId);
+      if (snapshot.status !== "ready" || snapshot.hasConflict || !input || input.inputType === "text") return;
+      const count = input.media?.length ?? 0;
+      if (!Number.isInteger(at) || at < 0 || at > count || (at === count && count >= (input.repeatable?.max ?? 1))) return;
+      const copied = copyCapturedMedia(capture);
+      const previewUrl = URL.createObjectURL(copied.kind === "frame" ? copied.file : copied.thumbnailFile);
+      capturePreviews.add(previewUrl);
+      controller.stage({ kind: "captureMedia", inputId, capture: copied, previewUrl, ...(at < count ? { at } : {}) });
+      releaseUnusedPreviews();
     },
     revert: () => {
       if (disposed) return;
       state = EMPTY;
+      releaseUnusedPreviews();
       error = null;
       droppedForWorkflowChange = false;
       notify();
@@ -494,6 +526,7 @@ export function createGenerationInputsDraft(
       // when it was actually thrown away.
       if (stagedAgainstAnotherWorkflow(session)) {
         state = EMPTY;
+        releaseUnusedPreviews();
         // Reported once. Leaving it set would refuse every later commit,
         // including ones the caller staged fresh against the new workflow.
         droppedForWorkflowChange = false;
@@ -537,7 +570,8 @@ export function createGenerationInputsDraft(
         (transaction) => {
           // Diffed against the session as it is *now*, so the writes describe
           // the panel being written rather than the one editing began against.
-          compileDraftCommands(session.inputs, target, transaction, widgets);
+          compileDraftCommands(session.inputs, target, transaction, widgets,
+            new Map(current.ops.flatMap((op) => op.kind === "captureMedia" && op.itemId ? [[op.itemId, op.capture] as const] : [])));
           // Returned, so an `additionalWrites` that turns out to be async is
           // still seen by the session and refused. Dropping it here would let
           // half a transaction commit and report success.
@@ -579,6 +613,7 @@ export function createGenerationInputsDraft(
       const remaining = current.ops.filter((op) => !consumed.has(op));
       state =
         remaining.length === 0 ? EMPTY : { ...current, ops: remaining };
+      releaseUnusedPreviews();
       error = null;
       notify();
       return result;
@@ -619,6 +654,7 @@ export function createGenerationInputsDraft(
       unsubscribeSession();
       unsubscribeAssets();
       state = EMPTY;
+      releaseUnusedPreviews();
       error = null;
       reading = null;
       /**

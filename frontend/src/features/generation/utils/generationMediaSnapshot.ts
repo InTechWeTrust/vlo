@@ -1,3 +1,4 @@
+import { mediaInputThumbnail } from "./mediaInputThumbnail";
 import {
   assetMatchesType,
   resolveAssetType,
@@ -91,7 +92,7 @@ function resolveDisplayName(value: GenerationMediaInputValue): string {
  * value has to be able to deliver a soundtrack at all.
  */
 function resolveOptions(
-  input: WorkflowInput,
+  input: Pick<WorkflowInput, "inputType" | "presentation">,
   value: GenerationMediaInputValue,
 ): Readonly<Record<string, boolean>> {
   const itemOptions = input.presentation?.repeatable?.itemOptions;
@@ -133,25 +134,7 @@ export function buildGenerationMediaItems(
     );
     if (!value) continue;
 
-    items.push(
-      Object.freeze({
-        slotId,
-        itemId: readMediaItemId(value),
-        // Position among *filled* slots. The panel front-packs its batches, so
-        // this normally equals the slot index; it is derived rather than
-        // assumed so a transient gap cannot publish a wrong delivery position.
-        ordinal: items.length,
-        source: resolveSource(value),
-        ...(value.kind === "asset" ? { assetId: value.asset.id } : {}),
-        displayName: resolveDisplayName(value),
-        mediaType: resolveMediaType(value, input.inputType),
-        hasAudio: resolveHasAudio(value),
-        options: resolveOptions(input, value),
-        preparing:
-          preparingInputIds.has(slotId) ||
-          (value.kind !== "frame" && value.isExtracting === true),
-      }) as GenerationMediaItemSnapshot,
-    );
+    items.push(buildGenerationMediaItem(input, value, slotId, items.length, preparingInputIds.has(slotId)));
   }
   return items;
 }
@@ -200,4 +183,33 @@ export function describeRepeatableInput(
     optionIds:
       input.inputType === "video" ? (repeatable.itemOptions ?? []) : [],
   };
+}
+
+/** Shared value projection for committed inputs and in-memory draft captures. */
+export function buildGenerationMediaItem(
+  input: Pick<WorkflowInput, "inputType" | "presentation">,
+  value: GenerationMediaInputValue,
+  slotId: string,
+  ordinal: number,
+  preparing = false,
+): GenerationMediaItemSnapshot {
+  const thumbnail = mediaInputThumbnail(value, input.inputType);
+  return Object.freeze({
+    slotId,
+    itemId: readMediaItemId(value),
+    // Position among *filled* slots. The panel front-packs its batches, so
+    // this normally equals the slot index; it is derived rather than
+    // assumed so a transient gap cannot publish a wrong delivery position.
+    ordinal,
+    source: resolveSource(value),
+    ...(value.kind === "asset" ? { assetId: value.asset.id } : {}),
+    displayName: resolveDisplayName(value),
+    ...(thumbnail ? { thumbnail } : {}),
+    mediaType: resolveMediaType(value, input.inputType),
+    hasAudio: resolveHasAudio(value),
+    options: resolveOptions(input, value),
+    preparing:
+      preparing ||
+      (value.kind !== "frame" && value.isExtracting === true),
+  });
 }

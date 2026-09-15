@@ -1,3 +1,5 @@
+import type { GenerationCapturedMedia } from "../utils/capturedMedia";
+import { registerGenerationInputCapture, type GenerationCaptureDestination } from "../services/GenerationInputCapture";
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { ChipProps } from "@mui/material";
 import type { Asset } from "../../../types/Asset";
@@ -1629,7 +1631,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   );
 
   const handleClickSelect = useCallback(
-    (inputId: string, inputType: "image" | "video" | "audio") => {
+    (inputId: string, inputType: "image" | "video" | "audio", destination?: GenerationCaptureDestination) => {
       const extractStore = useExtractStore.getState();
       const timelineSelectionStore = useTimelineSelectionStore.getState();
       const playerStore = usePlayerStore.getState();
@@ -1663,21 +1665,26 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             // Rendering the frame out of the timeline can take seconds, and
             // nothing lands in the slot until it is done; mark the slot so the
             // wait is visible rather than looking like the click was ignored.
-            beginMediaInputPreparation(inputId);
+            if (!destination) beginMediaInputPreparation(inputId);
             try {
               const frameFile = await captureFramePngAtTick(
                 selectedTick,
                 "generation-frame",
               );
+              if (destination) {
+                if (destination.active()) await destination.complete({ kind: "frame", file: frameFile, timelineSelection: createPointTimelineSelection(selectedTick) });
+                return;
+              }
               setMediaInputFrameWithSelection(
                 inputId,
                 frameFile,
                 createPointTimelineSelection(selectedTick),
               );
             } catch (error) {
+              destination?.fail(error instanceof Error ? error.message : "Frame capture failed.");
               console.error("Failed to capture generation image frame", error);
             } finally {
-              endMediaInputPreparation(inputId);
+              if (!destination) endMediaInputPreparation(inputId);
             }
           })();
         });
@@ -1767,7 +1774,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           // that precedes the slot's first value takes seconds of its own, and
           // `isExtracting` on that value cannot describe a value that does not
           // exist yet.
-          beginMediaInputPreparation(inputId);
+          if (!destination) beginMediaInputPreparation(inputId);
           try {
             const { selectionStartTick, selectionEndTick } =
               useTimelineSelectionStore.getState();
@@ -1776,6 +1783,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
               selectionConfig,
             );
             closeSelectionMode();
+            if (destination && !destination.active()) return;
             const thumbnailFile =
               inputType === "audio"
                 ? createAudioSelectionPlaceholderFile()
@@ -1784,47 +1792,52 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
                     "generation-selection-thumb",
                     timelineSelection,
                   );
-            const extractionRequestId =
-              (selectionExtractionRequestIdsRef.current[inputId] ?? 0) + 1;
-            selectionExtractionRequestIdsRef.current[inputId] =
-              extractionRequestId;
+            // A held draft owns its extraction; it must not invalidate a native
+            // slot's in-flight request or write a pending value to that slot.
+            const requestIds = destination ? { current: {} as Record<string, number> } : selectionExtractionRequestIdsRef;
+            const extractionRequestId = (requestIds.current[inputId] ?? 0) + 1;
+            requestIds.current[inputId] = extractionRequestId;
+            const captured: { value: GenerationCapturedMedia | null } = { value: null };
+            const writeSelection: typeof setMediaInputTimelineSelection = destination
+              ? (_id, selection, thumbnail, options) => {
+                captured.value = { kind: "timelineSelection", timelineSelection: selection, thumbnailFile: thumbnail, options };
+              }
+              : setMediaInputTimelineSelection;
 
-            setMediaInputTimelineSelection(
-              inputId,
-              timelineSelection,
-              thumbnailFile,
-              {
-                mediaType: inputType === "audio" ? "audio" : "video",
-                isExtracting: true,
-                extractionRequestId,
-              },
-            );
+            writeSelection(inputId, timelineSelection, thumbnailFile, {
+              mediaType: inputType === "audio" ? "audio" : "video",
+              isExtracting: true,
+              extractionRequestId,
+            });
 
             if (inputType === "audio") {
               await extractAudioTimelineSelection({
-                inputId,
-                timelineSelection,
-                thumbnailFile,
-                extractionRequestId,
+                inputId, timelineSelection, thumbnailFile, extractionRequestId,
                 exportFps: recommendedFps ?? undefined,
-                setMediaInputTimelineSelection,
-                selectionExtractionRequestIdsRef,
+                setMediaInputTimelineSelection: writeSelection,
+                selectionExtractionRequestIdsRef: requestIds,
               });
+            } else {
+              await extractVideoTimelineSelection({
+                inputId, inputNodeId: input?.nodeId, timelineSelection, thumbnailFile,
+                extractionRequestId, mode, derivedMaskMappings,
+                setMediaInputTimelineSelection: writeSelection,
+                selectionExtractionRequestIdsRef: requestIds,
+              });
+            }
+            if (destination?.active() && captured.value) {
+              const capture = captured.value;
+              if (capture.kind === "timelineSelection" && capture.options?.extractionError) {
+                destination.fail(capture.options.extractionError);
+              } else {
+                await destination.complete(capture);
+              }
+            }
+          } catch (error) {
+            if (destination) {
+              destination.fail(error instanceof Error ? error.message : "Timeline extraction failed.");
               return;
             }
-
-            await extractVideoTimelineSelection({
-              inputId,
-              inputNodeId: input?.nodeId,
-              timelineSelection,
-              thumbnailFile,
-              extractionRequestId,
-              mode,
-              derivedMaskMappings,
-              setMediaInputTimelineSelection,
-              selectionExtractionRequestIdsRef,
-            });
-          } catch (error) {
             const extractionRequestId =
               selectionExtractionRequestIdsRef.current[inputId] ?? 0;
             const storeMediaInputs = useGenerationStore.getState().mediaInputs;
@@ -1854,7 +1867,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             );
           } finally {
             closeSelectionMode();
-            endMediaInputPreparation(inputId);
+            if (!destination) endMediaInputPreparation(inputId);
           }
         })();
       });
@@ -1867,6 +1880,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       workflowInputById,
     ],
   );
+
+  useEffect(() => registerGenerationInputCapture(handleClickSelect), [handleClickSelect]);
 
   /**
    * Trims an audio slot in the mini editor. Same two shapes the video editor

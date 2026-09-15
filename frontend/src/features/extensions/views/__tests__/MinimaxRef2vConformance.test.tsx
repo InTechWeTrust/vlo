@@ -1,7 +1,12 @@
+import { useGenerationPanel } from "../../../generation/hooks/useGenerationPanel";
+import { useExtractStore } from "../../../../core/extract/useExtractStore";
+import { useTimelineSelectionStore } from "../../../timelineSelection";
+import { useAssetStore } from "../../../userAssets";
+import type { Asset } from "../../../../types/Asset";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import * as React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -609,7 +614,7 @@ function panelInputs(prompt: string): GenerationInputSnapshot[] {
 async function mount(
   pkg: MinimaxRef2vPackage,
   composerSession?: unknown,
-  options: { readonly withoutFields?: boolean } = {},
+  options: { readonly withoutFields?: boolean; readonly strict?: boolean } = {},
 ) {
   const real = createVloExtensionApi(createScope());
   const drafts: ExtensionGenerationInputsDraft[] = [];
@@ -640,7 +645,7 @@ async function mount(
     react: React,
   } as never) as React.FunctionComponent<Record<string, unknown>>;
   const view = render(
-    React.createElement(View, { viewId: "v", region: "editor-overlay", active: true }),
+    React.createElement(options.strict ? React.StrictMode : React.Fragment, null, React.createElement(View, { viewId: "v", region: "editor-overlay", active: true })),
   );
   return { view, drafts, requests, session: heldSession };
 }
@@ -892,6 +897,46 @@ describe.skipIf(!packagePresent)("minimax ref2v: composer", () => {
 });
 
 describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
+  it.each([[IMAGES, "image"], [VIDEOS, "video"], [AUDIOS, "audio"]] as const)("opens the native %s selection from + under StrictMode", async (inputId, type) => {
+    const pkg = await loadPackage();
+    session = mountGenerationSession({ nodes: REFERENCE_NODES, inputs: panelInputs(INITIAL_PROMPT) });
+    const native = renderHook(() => useGenerationPanel());
+    const { view } = await mount(pkg, undefined, { strict: true });
+    try {
+      const add = view.container.querySelector(`[data-reference-list="${inputId}"] [data-drop-slot-id$="-add"]`);
+      expect(add).not.toBeNull();
+      fireEvent.click(add!);
+      expect(useExtractStore.getState().frameSelectionMode).toBe(type === "image");
+      expect(useTimelineSelectionStore.getState().selectionMode).toBe(type !== "image");
+      expect(useExtractStore.getState().onConfirmSelection).toBeTypeOf("function");
+      expect(screen.getByRole("button", { name: "Cancel capture" })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel capture" }));
+      expect(useExtractStore.getState().frameSelectionMode).toBe(false);
+      expect(useTimelineSelectionStore.getState().selectionMode).toBe(false);
+    } finally {
+      view.unmount();
+      native.unmount();
+    }
+  });
+
+  it("shows library video previews and previews from timeline captures", async () => {
+    const pkg = await loadPackage();
+    const inputs = panelInputs(INITIAL_PROMPT);
+    const video = inputs.find((input) => input.id === VIDEOS)!;
+    const assetId = video.media![0].assetId!;
+    const previousAssets = useAssetStore.getState().assets;
+    useAssetStore.setState({ assets: [{ id: assetId, name: "talk", type: "video", thumbnail: "blob:video-preview", src: "blob:video-source" } as Asset] });
+    session = mountGenerationSession({ nodes: REFERENCE_NODES, inputs: inputs.map((input) => input.id === VIDEOS ? {
+      ...input, media: [...input.media!, item(VIDEOS, 1, { itemId: "capture", source: "timeline-selection", assetId: undefined, mediaType: "video", thumbnail: "blob:range-preview" })],
+    } : input) });
+    try {
+      const { view } = await mount(pkg);
+      const previews = [...view.container.querySelectorAll(`[data-reference-list="${VIDEOS}"] img`)].map((img) => img.getAttribute("src"));
+      expect(previews).toEqual(["blob:video-preview", "blob:range-preview"]);
+      view.unmount();
+    } finally { useAssetStore.setState({ assets: previousAssets }); }
+  });
+
   it("lists exactly what the staged reading holds, in emission order, with current labels", async () => {
     const pkg = await loadPackage();
     const [prompt, images, videos, audios] = panelInputs(INITIAL_PROMPT);
@@ -930,12 +975,12 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
       ["media-talk", ["<Audio 1>", "<Video 1>"]],
       ["media-song", ["<Audio 2>"]],
     ]);
-    // A timeline selection cannot be staged, but it is numbered and says where
-    // to change it.
+    // Existing timeline captures retain their labels and keep provenance in help.
     const range = screen
       .getByTestId("prompt-object-view")
       .querySelector('[data-reference-item="media-range"]')!;
-    expect(range.textContent).toContain("change it in the generation panel");
+    fireEvent.click(within(range as HTMLElement).getByRole("button", { name: "About Timeline 00:01-00:03" }));
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Captured from a timeline range.");
   });
 
   it("reorders within a list through the draft, relabelling chips without retargeting them", async () => {
@@ -944,10 +989,10 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
       nodes: REFERENCE_NODES,
       inputs: panelInputs(INITIAL_PROMPT),
     });
-    await mount(pkg);
+    const { drafts } = await mount(pkg);
     expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 1>"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Move city earlier" }));
+    act(() => drafts[0].stage({ kind: "moveMedia", inputId: IMAGES, fromOrdinal: 1, toOrdinal: 0 }));
 
     // Staged, not written: the panel is untouched until commit.
     expect(session.commit).not.toHaveBeenCalled();
@@ -956,7 +1001,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
       ["media-hero", ["<Picture 2>"]],
     ]);
     expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 2>"]);
-    expect(screen.getByRole("button", { name: "Move city earlier" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Move city earlier" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Commit to prompt" }));
     const panel = session.panelInputs();
@@ -1000,7 +1045,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
     session = mountGenerationSession({ nodes: REFERENCE_NODES, inputs });
     await mount(pkg);
 
-    expect(screen.getByRole("button", { name: "Move city earlier" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Move city earlier" })).toBeNull();
     expect(screen.getByText(/1 more is being prepared in the generation panel/)).toBeInTheDocument();
   });
 });
@@ -1686,30 +1731,33 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
     const { replaceReferenceText, typeReferenceText } = await loadLoader();
     const pkg = await loadPackage();
     session = mountGenerationSession({ nodes: REFERENCE_NODES, inputs: speakingInputs("") });
-    await mount(pkg);
+    const { drafts } = await mount(pkg);
 
     // A local subject from the portrait and the speaking video's soundtrack.
-    fireEvent.click(screen.getByRole("button", { name: "Add subject" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add definition" }));
+    selectOption("Definition type", "subject");
     const form = screen.getByRole("group", { name: "New subject" });
     fireEvent.change(within(form).getByLabelText("Subject name"), { target: { value: "Mara" } });
     fireEvent.change(within(form).getByLabelText("What it is"), {
       target: { value: "the woman with a red scarf" },
     });
-    fireEvent.click(within(form).getByRole("button", { name: "<Picture 1> hero" }));
-    fireEvent.click(within(form).getByRole("button", { name: "<Audio 1> talk" }));
+    fireEvent.click(within(form).getByRole("button", { name: "<Picture 1>" }));
+    fireEvent.click(within(form).getByRole("button", { name: "<Audio 1>" }));
     fireEvent.click(within(form).getByRole("button", { name: "Create subject" }));
     expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 1>", "<Audio 1>"]);
 
     // The other picture is Shot 1's first frame, which drafts its retention.
-    selectOption("Define a reference", "visual:media-city");
+    fireEvent.click(screen.getByRole("button", { name: "Add definition" }));
+    selectOption("Definition type", "visual:media-city");
     fireEvent.click(screen.getByRole("button", { name: "Add role to <Picture 2>" }));
     const drafted = screen
       .getByTestId("retention-section")
       .querySelector('[data-retention="visual:media-city"]') as HTMLElement;
-    expect(drafted.textContent).toContain("Added from a frame role.");
-    expect(
-      within(drafted).getByRole("combobox", { name: "Scope for <Picture 2>" }),
-    ).toHaveDisplayValue("([Shot 1] first frame)");
+    expect(drafted.textContent).not.toContain("Added from a frame role.");
+    // Scope is derived from the role and shown, not chosen: there is no
+    // control for it in the composer.
+    expect(drafted.textContent).toContain("[Shot 1] first frame");
+    expect(within(drafted).queryByRole("combobox", { name: /Scope/ })).toBeNull();
 
     // Task types, from the suggestions the roles raised.
     fireEvent.click(screen.getByRole("button", { name: "Add suggested keyframe completion" }));
@@ -1720,29 +1768,31 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
     replaceReferenceText(screen.getByRole("textbox", { name: "Style opening" }), "Warm, handheld.");
     const shot1 = screen.getByRole("textbox", { name: "Shot 1" });
     typeReferenceText(shot1, "The shot begins as ");
-    act(() => shot1.blur());
-    fireEvent.click(screen.getByRole("button", { name: "Insert <Subject 1>" }));
+    typeReferenceText(shot1, "<Subject 1>");
     typeReferenceText(shot1, " enters.");
     fireEvent.click(screen.getByRole("button", { name: "Add shot" }));
     const shot2 = screen.getByRole("textbox", { name: "Shot 2" });
     typeReferenceText(shot2, "At 00:02.000, ");
-    act(() => shot2.blur());
-    fireEvent.click(screen.getByRole("button", { name: "Insert <Subject 1>" }));
+    typeReferenceText(shot2, "<Subject 1>");
     typeReferenceText(shot2, " turns.");
 
     // Offered, not imposed: the subject is available for retention with its
     // derived scope, and added with an explicit relationship.
-    selectOption("Add retention for <Subject 1>", "fully_preserved");
+    fireEvent.click(screen.getByRole("button", { name: "Add retention" }));
+    selectOption("Add retention for another reference", (screen.getByRole("option", { name: /<Subject 1>/ }) as HTMLOptionElement).value);
+    selectOption("Relationship for new retention", "fully_preserved");
     replaceReferenceText(
       screen.getByRole("textbox", { name: "Retention of <Subject 1>" }),
       "the red scarf is retained.",
     );
 
     // Reverse the pictures: labels move, targets stay.
-    fireEvent.click(screen.getByRole("button", { name: "Move city earlier" }));
+    act(() => drafts[0].stage({ kind: "moveMedia", inputId: IMAGES, fromOrdinal: 1, toOrdinal: 0 }));
     expect(chipLabels("Definition of <Subject 1>")).toEqual(["<Picture 2>", "<Audio 1>"]);
     expect(
-      within(screen.getByTestId("retention-section")).getByRole("combobox", { name: "Scope for <Picture 1>" }),
+      within(screen.getByTestId("retention-section")).getByRole("combobox", {
+        name: "Relationship for <Picture 1>",
+      }),
     ).toBeInTheDocument();
     expect(session.commit).not.toHaveBeenCalled();
 
@@ -1775,7 +1825,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
     ).toEqual(["media-city", "media-hero"]);
   });
 
-  it("offers derived scope back after the parentheses were deleted in the panel, and audio only audio markers", async () => {
+  it("offers the shots' scope back after the parentheses were deleted in the panel, and audio only audio markers", async () => {
     const pkg = await loadPackage();
     const prompt = [
       "subject_definitions:",
@@ -1790,17 +1840,24 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
       "[Shot 3] At 00:04.000, <Subject 1> leaves.",
     ].join("\n");
     session = mountGenerationSession({ nodes: REFERENCE_NODES, inputs: panelInputs(prompt) });
-    await mount(pkg);
+    const { drafts } = await mount(pkg);
 
     const retention = screen.getByTestId("retention-section");
-    expect(retention.textContent).toContain("Derived from the shots: (appears in [Shot 1], [Shot 3])");
+    // Read from the prompt as it stands — no parentheses — and shown, with the
+    // one way back to the shots rather than a scope editor.
+    expect(retention.textContent).toContain("No scope written in the prompt.");
     expect(
-      [...within(retention).getByRole("combobox", { name: "Add retention for <Audio 1>" }).querySelectorAll("option")]
+      within(retention).getByRole("button", { name: "Scope <Subject 1> by its shots" }),
+    ).toHaveTextContent("Use shots: (appears in [Shot 1], [Shot 3])");
+    fireEvent.click(screen.getByRole("button", { name: "Add retention" }));
+    selectOption("Add retention for another reference", "audio:media-song");
+    expect(
+      [...within(retention).getByRole("combobox", { name: "Relationship for new retention" }).querySelectorAll("option")]
         .map((option) => option.getAttribute("value")),
     ).toEqual(["", "fully_copy", "partially_copy", "reference", "weak_reference"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Move city earlier" }));
-    fireEvent.click(screen.getByRole("button", { name: "Use derived scope for <Subject 1>" }));
+    act(() => drafts[0].stage({ kind: "moveMedia", inputId: IMAGES, fromOrdinal: 1, toOrdinal: 0 }));
+    fireEvent.click(screen.getByRole("button", { name: "Scope <Subject 1> by its shots" }));
     fireEvent.click(screen.getByRole("button", { name: "Commit to prompt" }));
 
     const written = session.panelInputs().find((input) => input.id === PROMPT)?.value as string;

@@ -40,6 +40,7 @@ function toAssetSnapshot(asset: Asset): ExtensionEntityAssetSnapshot {
     name: asset.name,
     type: asset.type,
     src: asset.src,
+    ...(asset.thumbnail ? { thumbnail: asset.thumbnail } : {}),
     durationSeconds: asset.duration,
     fps: asset.fps,
     hasAudio: asset.hasAudio,

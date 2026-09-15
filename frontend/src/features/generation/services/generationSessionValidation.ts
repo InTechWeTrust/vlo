@@ -1,3 +1,4 @@
+import { describeCapturedMedia, type GenerationCapturedMedia } from "../utils/capturedMedia";
 import { serializeFiniteJson } from "../utils/finiteJson";
 import { assetMatchesType } from "../../../shared/utils/assetTypeDetection";
 import { isVideoAssetWithAudio } from "../utils/audioSlotAssets";
@@ -495,6 +496,33 @@ export function validateAttachAssetCommand(
     );
   }
 
+  const result = validateMediaAttachment(snapshot, input, simulateAttachedItem(input, asset, input.repeatable ? null : (media[0] ?? null)), command);
+  return result.ok ? { ok: true, value: { ...result.value, assetId: asset.id } } : result;
+}
+
+export function validateAttachCapturedMediaCommand(
+  snapshot: GenerationSessionSnapshot,
+  capture: GenerationCapturedMedia,
+  command: Omit<AttachAssetCommand, "assetId">,
+): ValidationResult<Omit<AttachAssetPlan, "assetId">> {
+  const resolved = resolveMediaInput(snapshot, command.inputId);
+  if (!resolved.ok) return resolved;
+  const input = resolved.value;
+  const item = describeCapturedMedia(input, capture);
+  if (input.inputType !== item.mediaType) {
+    return failure("input_type_mismatch", `Input '${input.id}' does not accept this ${item.mediaType} capture.`);
+  }
+  return validateMediaAttachment(snapshot, input, item, command);
+}
+
+/** Assets and native captures share capacity, identity, positioning and option rules. */
+function validateMediaAttachment(
+  snapshot: GenerationSessionSnapshot,
+  input: GenerationInputSnapshot,
+  item: GenerationMediaItemSnapshot,
+  command: Omit<AttachAssetCommand, "assetId">,
+): ValidationResult<Omit<AttachAssetPlan, "assetId">> {
+  const media = input.media ?? [];
   // Identity is unique panel-wide. The one id an attach may reuse is that of
   // the item it displaces, since that item is leaving in the same breath.
   if (!isValidMediaItemId(command.itemId)) {
@@ -540,18 +568,14 @@ export function validateAttachAssetCommand(
   // Judged against the item this attach will create, so a caller can switch on
   // a reference it is attaching in the same breath — it cannot name the slot,
   // because the slot has no item in it yet.
-  const offered = simulateAttachedItem(
-    input,
-    asset,
-    input.repeatable ? null : (media[0] ?? null),
-  ).options;
+  const offered = item.options;
   const itemOptions: { optionId: GenerationMediaItemOptionId; value: boolean }[] =
     [];
   for (const [optionId, value] of Object.entries(command.itemOptions ?? {})) {
     if (!(optionId in offered)) {
       return failure(
         "option_not_available",
-        `Input '${input.id}' does not offer the option '${optionId}' for '${asset.name}'.`,
+        `Input '${input.id}' does not offer the option '${optionId}' for '${item.displayName}'.`,
       );
     }
     if (optionId !== "audio") {
@@ -575,7 +599,6 @@ export function validateAttachAssetCommand(
     value: {
       inputId: input.id,
       slotId,
-      assetId: asset.id,
       itemId: command.itemId,
       moveTo,
       itemOptions,
@@ -733,10 +756,13 @@ export function applyMediaCommitToSnapshot(
   const media = [...(input.media ?? [])];
 
   switch (commit.kind) {
-    case "attach": {
-      if (!asset) return snapshot;
+    case "attach":
+    case "attach-capture": {
+      if (commit.kind === "attach" && !asset) return snapshot;
       const replaced = input.repeatable ? null : (media[0] ?? null);
-      const base = simulateAttachedItem(input, asset, replaced);
+      const base = commit.kind === "attach-capture"
+        ? describeCapturedMedia(input, commit.capture)
+        : simulateAttachedItem(input, asset!, replaced);
       const item: GenerationMediaItemSnapshot = {
         ...base,
         slotId: commit.slotId,

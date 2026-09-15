@@ -471,6 +471,7 @@ function projectMediaItem(
     source: item.source,
     ...(item.assetId !== undefined ? { assetId: item.assetId } : {}),
     displayName: item.displayName,
+    ...(item.thumbnail ? { thumbnail: item.thumbnail } : {}),
     mediaType: item.mediaType,
     hasAudio: item.hasAudio,
     options,
