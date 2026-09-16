@@ -167,6 +167,12 @@ describe("normalizeToSupportedProjectAspectRatio", () => {
     expect(normalizeToSupportedProjectAspectRatio("9/16")).toBe("9:16");
     expect(normalizeToSupportedProjectAspectRatio("1/1")).toBe("1:1");
   });
+
+  it("can include the project's custom ratio as a target", () => {
+    expect(normalizeToSupportedProjectAspectRatio("1.75:1", ["7:4"])).toBe(
+      "7:4",
+    );
+  });
 });
 
 describe("mime + container resolution", () => {

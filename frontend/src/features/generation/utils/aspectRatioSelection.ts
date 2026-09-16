@@ -1,5 +1,5 @@
 import { PROJECT_ASPECT_RATIOS } from "../../project";
-import type { AspectRatio } from "../../project";
+import type { PresetAspectRatio } from "../../project";
 
 /**
  * Probe the supplied media for its aspect ratio, falling back to the open
@@ -14,7 +14,7 @@ export const ASPECT_RATIO_SELECTION_AUTO = "auto";
  */
 export type GenerationAspectRatioSelection =
   | typeof ASPECT_RATIO_SELECTION_AUTO
-  | AspectRatio;
+  | PresetAspectRatio;
 
 export const DEFAULT_ASPECT_RATIO_SELECTION: GenerationAspectRatioSelection =
   ASPECT_RATIO_SELECTION_AUTO;

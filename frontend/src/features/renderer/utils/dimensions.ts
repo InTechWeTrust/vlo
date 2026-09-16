@@ -1,4 +1,9 @@
 import type { AspectRatio } from "../../project/useProjectStore";
+import { parseAspectRatio } from "../../project/aspectRatioOptions";
+import {
+  getProjectOutputDimensionsError,
+  resolveProjectOutputDimensions,
+} from "../../project/projectOutputGeometry";
 
 const FIXED_VERTICAL_RESOLUTION = 1080;
 
@@ -7,22 +12,6 @@ const FIXED_VERTICAL_RESOLUTION = 1080;
  * (phase 2). Matches the export dialog's default and today's landscape sizes.
  */
 export const DEFAULT_RENDER_SHORT_EDGE = 1080;
-
-function parseAspectRatio(
-  ratio: AspectRatio,
-): { widthPart: number; heightPart: number } | null {
-  const [widthPart, heightPart] = ratio.split(":").map(Number);
-
-  if (
-    !Number.isFinite(widthPart) ||
-    !Number.isFinite(heightPart) ||
-    heightPart === 0
-  ) {
-    return null;
-  }
-
-  return { widthPart, heightPart };
-}
 
 /**
  * The project's *logical coordinate space* — a fixed-height (1080) stage that
@@ -67,8 +56,6 @@ export const deriveTrueDimensionsFromShortEdge = (
   };
 };
 
-const toEven = (value: number) => Math.max(2, Math.round(value / 2) * 2);
-
 /**
  * Output pixel size for a render: short edge pinned, long edge from the ratio,
  * both even. The one resolver every render-input builder calls, so selection
@@ -78,10 +65,8 @@ export const resolveRenderOutputDimensions = (
   ratio: AspectRatio,
   shortEdge: number = DEFAULT_RENDER_SHORT_EDGE,
 ) => {
-  const trueDimensions = deriveTrueDimensionsFromShortEdge(ratio, shortEdge);
-
-  return {
-    width: toEven(trueDimensions.width),
-    height: toEven(trueDimensions.height),
-  };
+  const dimensions = resolveProjectOutputDimensions(ratio, shortEdge);
+  const error = getProjectOutputDimensionsError(dimensions);
+  if (error) throw new RangeError(error);
+  return dimensions;
 };

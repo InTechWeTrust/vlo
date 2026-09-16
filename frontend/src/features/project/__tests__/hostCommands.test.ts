@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   verifyPermission: vi.fn(),
   loadProject: vi.fn(),
   updateConfig: vi.fn(),
+  config: { aspectRatio: "16:9", outputResolution: 1080 },
 }));
 
 vi.mock("../services/RecentProjectsService", () => ({
@@ -25,6 +26,7 @@ vi.mock("../useProjectStore", () => ({
     getState: () => ({
       loadProject: mocks.loadProject,
       updateConfig: mocks.updateConfig,
+      config: mocks.config,
     }),
   }),
 }));
@@ -34,6 +36,8 @@ describe("project host commands", () => {
     vi.clearAllMocks();
     mocks.verifyPermission.mockResolvedValue(true);
     mocks.loadProject.mockResolvedValue(undefined);
+    mocks.config.aspectRatio = "16:9";
+    mocks.config.outputResolution = 1080;
   });
 
   it("opens a recent project only through a user-dispatched command", async () => {
@@ -83,24 +87,22 @@ describe("project host commands", () => {
       return { table, registration: installProjectHostCommands(table) };
     }
 
-    it("applies a supported short edge", () => {
+    it.each([720, 768])("applies a valid short edge: %s", (outputResolution) => {
       const { table, registration } = openProjectTable();
 
       expect(
         table.executeCommand("project.set-output-resolution", {
           source: "menu",
-          subject: { outputResolution: 720 },
+          subject: { outputResolution },
         }),
       ).toBe(true);
-      expect(mocks.updateConfig).toHaveBeenCalledWith({ outputResolution: 720 });
+      expect(mocks.updateConfig).toHaveBeenCalledWith({ outputResolution });
 
       registration.dispose();
     });
 
-    // A settings command never partially applies: an unsupported or
-    // wrong-typed subject is a no-op, not a project rendering at 1234px.
     it.each([
-      ["an unsupported value", 1234],
+      ["a value below the minimum", 0],
       ["a numeric string", "720"],
       ["a missing value", undefined],
     ])("ignores %s", (_label, outputResolution) => {
@@ -109,6 +111,66 @@ describe("project host commands", () => {
       table.executeCommand("project.set-output-resolution", {
         source: "menu",
         subject: outputResolution === undefined ? {} : { outputResolution },
+      });
+      expect(mocks.updateConfig).not.toHaveBeenCalled();
+
+      registration.dispose();
+    });
+
+    it("ignores a short edge that makes the combined output too large", () => {
+      mocks.config.aspectRatio = "4:1";
+      const { table, registration } = openProjectTable();
+
+      table.executeCommand("project.set-output-resolution", {
+        source: "menu",
+        subject: { outputResolution: 2160 },
+      });
+      expect(mocks.updateConfig).not.toHaveBeenCalled();
+
+      registration.dispose();
+    });
+  });
+
+  describe("project.set-aspect-ratio", () => {
+    function openProjectTable() {
+      const keys = new HostContextKeyService();
+      keys.set("project.open", true);
+      const table = new HostCommandTable(keys);
+      return { table, registration: installProjectHostCommands(table) };
+    }
+
+    it.each([
+      ["16:9", "16:9"],
+      ["1344:768", "7:4"],
+    ])("applies and canonicalizes %s", (aspectRatio, expected) => {
+      const { table, registration } = openProjectTable();
+      table.executeCommand("project.set-aspect-ratio", {
+        source: "menu",
+        subject: { aspectRatio },
+      });
+      expect(mocks.updateConfig).toHaveBeenCalledWith({
+        aspectRatio: expected,
+      });
+      registration.dispose();
+    });
+
+    it.each(["0:4", "wide", "1:0", 1])("ignores invalid ratio %s", (aspectRatio) => {
+      const { table, registration } = openProjectTable();
+      table.executeCommand("project.set-aspect-ratio", {
+        source: "menu",
+        subject: { aspectRatio },
+      });
+      expect(mocks.updateConfig).not.toHaveBeenCalled();
+      registration.dispose();
+    });
+
+    it("ignores a ratio that makes the combined output too large", () => {
+      mocks.config.outputResolution = 2160;
+      const { table, registration } = openProjectTable();
+
+      table.executeCommand("project.set-aspect-ratio", {
+        source: "menu",
+        subject: { aspectRatio: "4:1" },
       });
       expect(mocks.updateConfig).not.toHaveBeenCalled();
 

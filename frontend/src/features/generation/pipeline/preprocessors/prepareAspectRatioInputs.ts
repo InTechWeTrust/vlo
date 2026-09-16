@@ -137,8 +137,9 @@ export const prepareAspectRatioInputs: Processor<FrontendPreprocessContext> = {
       await resolveRequestedTargetAspectRatio(ctx);
     const targetAspectRatio = ctx.exactAspectRatio
       ? requestedTargetAspectRatio
-      : normalizeToSupportedProjectAspectRatio(requestedTargetAspectRatio) ??
-        requestedTargetAspectRatio;
+      : normalizeToSupportedProjectAspectRatio(requestedTargetAspectRatio, [
+          ctx.projectConfig.aspectRatio,
+        ]) ?? requestedTargetAspectRatio;
 
     ctx.targetAspectRatio = targetAspectRatio;
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { isProjectOutputResolution } from "../project/outputResolutionOptions";
+import { normalizeProjectOutputResolution } from "../project/outputResolutionOptions";
 
 export type TimelineSelectionStage = "range" | "tracks";
 
@@ -127,13 +127,9 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
       selectionFrameStep: toPositiveInteger(options?.frameStep, 1),
       selectionFrameOffset: toPositiveInteger(options?.frameOffset, 1),
       selectionFpsOverride: toPositiveIntegerOrNull(options?.fpsOverride),
-      // Held to the offered rungs here for the same reason the setter is: a
-      // short edge the project config would reject must not reach a render.
-      selectionResolutionOverride: isProjectOutputResolution(
+      selectionResolutionOverride: normalizeProjectOutputResolution(
         options?.resolutionOverride,
-      )
-        ? options.resolutionOverride
-        : null,
+      ),
       selectionIncludeModeEnabled: options?.includeTracks === true,
       selectionAllowIncludeAll:
         options?.includeTracks === true && options?.allowIncludeAll === true,
@@ -198,12 +194,8 @@ export const useTimelineSelectionStore = create<TimelineSelectionState>((set) =>
     set({ selectionFpsOverride: toPositiveIntegerOrNull(fps) }),
   setSelectionResolutionOverride: (resolution) =>
     set({
-      // Only the offered rungs are storable: an arbitrary short edge would be
-      // accepted here and then rejected by the project config it falls back
-      // to, so the two would disagree about what the selection renders at.
-      selectionResolutionOverride: isProjectOutputResolution(resolution)
-        ? resolution
-        : null,
+      selectionResolutionOverride:
+        normalizeProjectOutputResolution(resolution),
     }),
   setSelectionFrameStep: (step) =>
     set({ selectionFrameStep: toPositiveInteger(step, 1) }),

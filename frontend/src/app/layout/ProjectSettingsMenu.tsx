@@ -5,6 +5,7 @@ import ViewSidebarIcon from "@mui/icons-material/ViewSidebar";
 import ViewStreamIcon from "@mui/icons-material/ViewStream";
 import BugReportIcon from "@mui/icons-material/BugReport";
 import { AppMenu } from "../../core/shell/AppMenu";
+import { hostCommandTable } from "../../core/shell/commandTable";
 import type { HostMenuItemDescriptor } from "../../core/shell/menuDescriptors";
 import type { HostMenuSubject } from "../../core/shell/hostMenus";
 import type {
@@ -12,11 +13,16 @@ import type {
   AssetBrowserDisplay,
   ProjectFitMode,
 } from "../../features/project";
+import { isPresetAspectRatio } from "../../features/project";
+import { CustomAspectRatioDialog } from "../../features/project/components/CustomAspectRatioDialog";
+import { CustomOutputResolutionDialog } from "../../features/project/components/CustomOutputResolutionDialog";
 import { useProjectStore } from "../../features/project/useProjectStore";
 import {
   DEFAULT_PROJECT_OUTPUT_RESOLUTION,
   PROJECT_OUTPUT_RESOLUTIONS,
+  isPresetProjectOutputResolution,
 } from "../../features/project/outputResolutionOptions";
+import { isValidProjectOutputGeometry } from "../../features/project/projectOutputGeometry";
 import { useDebugStore } from "../../shared/debug/useDebugStore";
 
 const FPS_OPTIONS = [16, 24, 25, 30, 60];
@@ -72,6 +78,8 @@ export function ProjectSettingsMenu() {
   const currentAssetBrowserDisplay = config.assetBrowserDisplay || "grouped";
   const currentOutputResolution =
     config.outputResolution || DEFAULT_PROJECT_OUTPUT_RESOLUTION;
+  const [customAspectRatioOpen, setCustomAspectRatioOpen] = useState(false);
+  const [customResolutionOpen, setCustomResolutionOpen] = useState(false);
 
   const subject = useMemo<HostMenuSubject<"app.project.settings">>(
     () => ({
@@ -150,8 +158,25 @@ export function ProjectSettingsMenu() {
         label: ratio.label,
         group: "3_aspect",
         selected: currentAspectRatio === ratio.value,
+        disabled: !isValidProjectOutputGeometry(
+          ratio.value,
+          currentOutputResolution,
+        ),
       }),
     ),
+    {
+      kind: "action",
+      id: "aspect-custom",
+      label: isPresetAspectRatio(currentAspectRatio)
+        ? "Custom..."
+        : `Custom (${currentAspectRatio})...`,
+      group: "3_aspect",
+      selected: !isPresetAspectRatio(currentAspectRatio),
+      run: () => {
+        setAnchorEl(null);
+        setCustomAspectRatioOpen(true);
+      },
+    },
     ...PROJECT_OUTPUT_RESOLUTIONS.map(
       (resolution): HostMenuItemDescriptor => ({
         kind: "command",
@@ -161,8 +186,25 @@ export function ProjectSettingsMenu() {
         label: OUTPUT_RESOLUTION_LABELS[resolution] ?? `${resolution}p`,
         group: "3b_resolution",
         selected: currentOutputResolution === resolution,
+        disabled: !isValidProjectOutputGeometry(
+          currentAspectRatio,
+          resolution,
+        ),
       }),
     ),
+    {
+      kind: "action",
+      id: "resolution-custom",
+      label: isPresetProjectOutputResolution(currentOutputResolution)
+        ? "Custom..."
+        : `Custom (${currentOutputResolution}px)...`,
+      group: "3b_resolution",
+      selected: !isPresetProjectOutputResolution(currentOutputResolution),
+      run: () => {
+        setAnchorEl(null);
+        setCustomResolutionOpen(true);
+      },
+    },
     ...FIT_MODE_OPTIONS.map(
       (option): HostMenuItemDescriptor => ({
         kind: "command",
@@ -245,6 +287,34 @@ export function ProjectSettingsMenu() {
           },
         }}
       />
+      {customAspectRatioOpen ? (
+        <CustomAspectRatioDialog
+          value={currentAspectRatio}
+          outputResolution={currentOutputResolution}
+          onClose={() => setCustomAspectRatioOpen(false)}
+          onApply={(aspectRatio) => {
+            hostCommandTable.executeCommand("project.set-aspect-ratio", {
+              subject: { aspectRatio },
+              source: "menu",
+            });
+            setCustomAspectRatioOpen(false);
+          }}
+        />
+      ) : null}
+      {customResolutionOpen ? (
+        <CustomOutputResolutionDialog
+          value={currentOutputResolution}
+          aspectRatio={currentAspectRatio}
+          onClose={() => setCustomResolutionOpen(false)}
+          onApply={(outputResolution) => {
+            hostCommandTable.executeCommand("project.set-output-resolution", {
+              subject: { outputResolution },
+              source: "menu",
+            });
+            setCustomResolutionOpen(false);
+          }}
+        />
+      ) : null}
     </>
   );
 }

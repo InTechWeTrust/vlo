@@ -307,6 +307,41 @@ describe("ProjectManager", () => {
     });
   });
 
+  it("creates a project with a canonical custom aspect ratio", async () => {
+    const parent = createMockDirectoryHandle("Workspace");
+    mocks.getProjectDirectory.mockResolvedValue(parent);
+    render(<ProjectManager />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "New project" }),
+    );
+    await screen.findByText("New Project");
+    fireEvent.change(screen.getByLabelText("Project Name"), {
+      target: { value: "Custom project" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use a custom ratio..." }),
+    );
+    expect(screen.getByLabelText("Width")).toHaveFocus();
+    fireEvent.change(screen.getByLabelText("Width"), {
+      target: { value: "14" },
+    });
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "8" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByRole("button", { name: "Custom: 7:4" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => {
+      expect(mocks.createProject).toHaveBeenCalledWith(
+        "Custom project",
+        parent,
+        { aspectRatio: "7:4", fps: 24 },
+      );
+    });
+  });
+
   it("validates creation and reports create failures", async () => {
     const parent = createMockDirectoryHandle("Workspace");
     mocks.getProjectDirectory.mockResolvedValue(parent);

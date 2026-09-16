@@ -99,7 +99,8 @@ describe("generation pipeline", () => {
       ...state,
       config: {
         ...state.config,
-        aspectRatio: "9:16",
+        aspectRatio: "7:4",
+        outputResolution: 768,
         fps: 30,
       },
     }));
@@ -130,7 +131,7 @@ describe("generation pipeline", () => {
 
     // "auto" is the default, and a text-only run has nothing to probe.
     expect(aspectRatioSpy).not.toHaveBeenCalled();
-    expect(request.targetAspectRatio).toBe("9:16");
+    expect(request.targetAspectRatio).toBe("7:4");
   });
 
   it("pins an explicitly selected aspect ratio over input, project, and exact mode", async () => {

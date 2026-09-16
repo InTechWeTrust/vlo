@@ -433,11 +433,18 @@ describe("useProjectStore", () => {
     expect(useProjectStore.getState().config.outputResolution).toBe(2160);
   });
 
-  // A rung this build does not offer — a project written by a newer vlo, or a
-  // hand-edited manifest — must still open. The manifest is parsed with a
-  // throwing `.parse()`, so pinning the rungs in the schema would brick the
-  // whole project rather than degrade one field.
-  it("falls back to the default for an unsupported stored resolution", async () => {
+  it("does not apply a config update with oversized output geometry", async () => {
+    await useProjectStore.getState().createProject("Project", mockHandle);
+    await useProjectStore.getState().updateConfig({ outputResolution: 2160 });
+    await useProjectStore.getState().updateConfig({ aspectRatio: "4:1" });
+
+    expect(useProjectStore.getState().config).toMatchObject({
+      aspectRatio: "16:9",
+      outputResolution: 2160,
+    });
+  });
+
+  it("loads and canonicalizes a custom ratio and short edge", async () => {
     mockSplitProjectReadFiles({
       manifest: {
         documentType: "vlo.project",
@@ -446,7 +453,7 @@ describe("useProjectStore", () => {
         title: "Loaded Project",
         created_at: 1000,
         last_modified: 1000,
-        config: { outputResolution: 1234 },
+        config: { aspectRatio: "1344:768", outputResolution: 768 },
         files: {
           timeline: "timeline.json",
           assets: "assets.json",
@@ -457,7 +464,62 @@ describe("useProjectStore", () => {
 
     await useProjectStore.getState().loadProject(mockHandle);
 
-    expect(useProjectStore.getState().config.outputResolution).toBe(1080);
+    expect(useProjectStore.getState().config).toMatchObject({
+      aspectRatio: "7:4",
+      outputResolution: 768,
+    });
+  });
+
+  it("keeps a custom ratio but defaults a short edge that makes it too large", async () => {
+    mockSplitProjectReadFiles({
+      manifest: {
+        documentType: "vlo.project",
+        schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION,
+        id: "project-id",
+        title: "Loaded Project",
+        created_at: 1000,
+        last_modified: 1000,
+        config: { aspectRatio: "4:1", outputResolution: 2160 },
+        files: {
+          timeline: "timeline.json",
+          assets: "assets.json",
+          assetMetadataDir: "asset-metadata",
+        },
+      },
+    });
+
+    await useProjectStore.getState().loadProject(mockHandle);
+
+    expect(useProjectStore.getState().config).toMatchObject({
+      aspectRatio: "4:1",
+      outputResolution: 1080,
+    });
+  });
+
+  it("falls back to defaults for invalid custom geometry", async () => {
+    mockSplitProjectReadFiles({
+      manifest: {
+        documentType: "vlo.project",
+        schemaVersion: PROJECT_MANIFEST_SCHEMA_VERSION,
+        id: "project-id",
+        title: "Loaded Project",
+        created_at: 1000,
+        last_modified: 1000,
+        config: { aspectRatio: "0:4", outputResolution: 9000 },
+        files: {
+          timeline: "timeline.json",
+          assets: "assets.json",
+          assetMetadataDir: "asset-metadata",
+        },
+      },
+    });
+
+    await useProjectStore.getState().loadProject(mockHandle);
+
+    expect(useProjectStore.getState().config).toMatchObject({
+      aspectRatio: "16:9",
+      outputResolution: 1080,
+    });
   });
 
   it("should migrate legacy projects and default timeline snapshot when legacy project.json has no timeline", async () => {

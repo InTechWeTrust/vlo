@@ -31,7 +31,10 @@ import { projectPageActions } from "../services/ProjectPageActions";
 import { declareProjectHostViews } from "../projectHostViews";
 import { useProjectStore } from "../useProjectStore";
 import type { AspectRatio } from "../useProjectStore";
+import { isPresetAspectRatio } from "../aspectRatioOptions";
+import { DEFAULT_PROJECT_OUTPUT_RESOLUTION } from "../outputResolutionOptions";
 import { isNonChromiumBrowser } from "../utils/browser";
+import { CustomAspectRatioDialog } from "./CustomAspectRatioDialog";
 
 const BRAND_PRIMARY = "#73CEBD";
 const BRAND_SECONDARY = "#8DA9FF";
@@ -83,6 +86,7 @@ export function ProjectManager() {
     useState<FileSystemDirectoryHandle | null>(null);
   const [selectedAspectRatio, setSelectedAspectRatio] =
     useState<AspectRatio>("16:9");
+  const [customAspectRatioOpen, setCustomAspectRatioOpen] = useState(false);
   const directorySelectedThisSession = useRef(false);
   // UA capability check is stable for the component lifetime; compute it
   // lazily once instead of via a post-mount effect.
@@ -623,6 +627,21 @@ export function ProjectManager() {
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
+            <Button
+              size="small"
+              onClick={() => setCustomAspectRatioOpen(true)}
+              sx={{
+                mt: 1,
+                color: isPresetAspectRatio(selectedAspectRatio)
+                  ? alpha("#FFFFFF", 0.68)
+                  : BRAND_PRIMARY,
+                textTransform: "none",
+              }}
+            >
+              {isPresetAspectRatio(selectedAspectRatio)
+                ? "Use a custom ratio..."
+                : `Custom: ${selectedAspectRatio}`}
+            </Button>
           </Box>
         </DialogContent>
 
@@ -648,6 +667,18 @@ export function ProjectManager() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {customAspectRatioOpen ? (
+        <CustomAspectRatioDialog
+          value={selectedAspectRatio}
+          outputResolution={DEFAULT_PROJECT_OUTPUT_RESOLUTION}
+          onClose={() => setCustomAspectRatioOpen(false)}
+          onApply={(aspectRatio) => {
+            setSelectedAspectRatio(aspectRatio);
+            setCustomAspectRatioOpen(false);
+          }}
+        />
+      ) : null}
 
       {loading && (
         <Box

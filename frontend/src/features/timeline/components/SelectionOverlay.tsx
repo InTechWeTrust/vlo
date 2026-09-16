@@ -15,11 +15,13 @@ import TuneIcon from "@mui/icons-material/Tune";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
-import { useProjectStore } from "../../project";
+import { useProjectStore, type AspectRatio } from "../../project";
 import {
   DEFAULT_PROJECT_OUTPUT_RESOLUTION,
   PROJECT_OUTPUT_RESOLUTIONS,
+  isPresetProjectOutputResolution,
 } from "../../project/outputResolutionOptions";
+import { isValidProjectOutputGeometry } from "../../project/projectOutputGeometry";
 import { useTimelineStore } from "../useTimelineStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { BufferedTextInput } from "../../panelUI/components/BufferedTextInput";
@@ -142,20 +144,18 @@ const RESOLUTION_LABELS: Readonly<Record<number, string>> = {
 interface SelectionResolutionSettingProps {
   value: number | null;
   projectResolution: number;
+  projectAspectRatio: AspectRatio;
   recommended: number | null;
   onChange: (resolution: number | null) => void;
   /** Nothing renders pixels (audio-only), so the short edge means nothing. */
   disabled?: boolean;
 }
 
-/**
- * Short edge every render from this selection uses. Unlike its neighbours this
- * is a fixed set rather than a free number: an arbitrary short edge would be
- * accepted here and then rejected by the project resolution it falls back to.
- */
+/** Short edge every render from this selection uses. */
 function SelectionResolutionSetting({
   value,
   projectResolution,
+  projectAspectRatio,
   recommended,
   onChange,
   disabled = false,
@@ -179,7 +179,10 @@ function SelectionResolutionSetting({
         renderValue={(selected) =>
           selected === ""
             ? `Auto (${RESOLUTION_LABELS[inherited] ?? inherited})`
-            : (RESOLUTION_LABELS[Number(selected)] ?? String(selected))
+            : Number(selected) === projectResolution &&
+                !isPresetProjectOutputResolution(projectResolution)
+              ? `${projectResolution}px (Project)`
+              : (RESOLUTION_LABELS[Number(selected)] ?? `${selected}px`)
         }
         inputProps={{ "aria-label": "Selection render resolution" }}
         data-testid="selection-resolution-setting"
@@ -202,8 +205,19 @@ function SelectionResolutionSetting({
         <MenuItem value="">
           {`Auto (${RESOLUTION_LABELS[inherited] ?? inherited})`}
         </MenuItem>
+        {!isPresetProjectOutputResolution(projectResolution) ? (
+          <MenuItem value={String(projectResolution)}>
+            {`${projectResolution}px (Project)`}
+          </MenuItem>
+        ) : null}
         {PROJECT_OUTPUT_RESOLUTIONS.map((option) => (
-          <MenuItem key={option} value={String(option)}>
+          <MenuItem
+            key={option}
+            value={String(option)}
+            disabled={
+              !isValidProjectOutputGeometry(projectAspectRatio, option)
+            }
+          >
             {RESOLUTION_LABELS[option] ?? `${option}p`}
           </MenuItem>
         ))}
@@ -351,6 +365,9 @@ export function SelectionOverlay({
   const projectFps = useProjectStore((s) => s.config.fps);
   const projectResolution = useProjectStore(
     (s) => s.config.outputResolution ?? DEFAULT_PROJECT_OUTPUT_RESOLUTION,
+  );
+  const projectAspectRatio = useProjectStore(
+    (s) => s.config.aspectRatio ?? "16:9",
   );
   const tracks = useTimelineStore((s) => s.tracks);
   const snappingEnabled = useInteractionStore((s) => s.snappingEnabled);
@@ -1187,6 +1204,7 @@ export function SelectionOverlay({
                 <SelectionResolutionSetting
                   value={selectionResolutionOverride}
                   projectResolution={projectResolution}
+                  projectAspectRatio={projectAspectRatio}
                   recommended={recommendedResolutionFromStore}
                   onChange={setSelectionResolutionOverride}
                   disabled={audioOnly}

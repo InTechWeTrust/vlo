@@ -56,10 +56,16 @@ describe("useTimelineSelectionStore", () => {
       expect(result.current.selectionResolutionOverride).toBe(720);
     });
 
-    // Anything off the ladder would be accepted here and then rejected by the
-    // project config the selection falls back to.
-    it.each([1234, 0, -720, null])(
-      "clears the override for an unsupported value: %s",
+    it("stores a valid custom short edge as the override", () => {
+      const { result } = renderHook(() => useTimelineSelectionStore());
+
+      act(() => result.current.setSelectionResolutionOverride(1234));
+
+      expect(result.current.selectionResolutionOverride).toBe(1234);
+    });
+
+    it.each([1233, 0, -720, null])(
+      "clears the override for an invalid value: %s",
       (value) => {
         const { result } = renderHook(() => useTimelineSelectionStore());
 
@@ -224,9 +230,7 @@ describe("useTimelineSelectionStore", () => {
       expect(result.current.selectionResolutionOverride).toBe(720);
     });
 
-    // Off-ladder short edges are rejected on entry for the same reason the
-    // setter rejects them: the project config would not honour them.
-    it("ignores a resolution off the offered rungs", () => {
+    it("accepts a custom resolution on entry", () => {
       const { result } = renderHook(() => useTimelineSelectionStore());
 
       act(() => {
@@ -235,7 +239,7 @@ describe("useTimelineSelectionStore", () => {
         });
       });
 
-      expect(result.current.selectionResolutionOverride).toBeNull();
+      expect(result.current.selectionResolutionOverride).toBe(1234);
     });
 
     it("does not inherit the previous selection's fps or resolution", () => {

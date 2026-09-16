@@ -300,6 +300,18 @@ describe("ExtractDialog", () => {
       expect(mockOnExport).toHaveBeenCalledWith(2160, MP4_FORMAT);
     });
 
+    it("offers and exports a custom project short edge", () => {
+      setProjectOutputResolution(768);
+      render(<ExtractDialog {...defaultProps} dialogView="export" />);
+
+      expect(screen.getByLabelText("Resolution")).toHaveTextContent(
+        "768px (Project)",
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^Export$/i }));
+
+      expect(mockOnExport).toHaveBeenCalledWith(768, MP4_FORMAT);
+    });
+
     it("keeps a per-export override that differs from the project", () => {
       setProjectOutputResolution(720);
       render(<ExtractDialog {...defaultProps} dialogView="export" />);

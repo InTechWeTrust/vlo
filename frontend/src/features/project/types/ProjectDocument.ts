@@ -14,12 +14,10 @@ export interface TimelineSnapshot {
 }
 
 export interface ProjectDocumentConfig {
-  aspectRatio?: "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+  aspectRatio?: string;
   /**
-   * Short edge in pixels. Absent in projects saved before it existed, and
-   * intentionally untyped by the `ProjectOutputResolution` union: this is the
-   * on-disk shape, which may carry a rung written by a different vlo version.
-   * vlo only ever writes a supported rung; the loader narrows what it reads.
+   * Short edge in pixels. Absent in projects saved before it existed; the
+   * loader validates the on-disk value before placing it in project state.
    */
   outputResolution?: number;
   fps?: number;

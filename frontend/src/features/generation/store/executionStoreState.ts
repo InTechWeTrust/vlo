@@ -426,14 +426,18 @@ function buildGenerationPlanFromState(
     state.selectedWorkflowId,
     workflowId,
   );
+  const currentProjectConfig = useProjectStore.getState().config;
   const projectConfig = {
-    aspectRatio: useProjectStore.getState().config.aspectRatio,
-    fps: useProjectStore.getState().config.fps,
+    aspectRatio: currentProjectConfig.aspectRatio,
+    fps: currentProjectConfig.fps,
   };
   const inputMetadata = buildWorkflowInputMetadataMap(
     state.workflowInputs,
     state.mediaInputs,
-    projectConfig,
+    {
+      ...projectConfig,
+      outputResolution: currentProjectConfig.outputResolution,
+    },
   );
   const providedInputIds = collectProvidedInputIdsFromSlotValues(
     state.workflowInputs,

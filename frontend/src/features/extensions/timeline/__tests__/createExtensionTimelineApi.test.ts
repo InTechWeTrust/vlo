@@ -886,6 +886,24 @@ describe("createExtensionTimelineApi", () => {
       });
     });
 
+    it("reports a custom ratio and short edge through the same snapshot", () => {
+      useProjectStore.setState({
+        config: {
+          ...baseConfig(),
+          aspectRatio: "7:4",
+          outputResolution: 768,
+        },
+      });
+      const api = createExtensionTimelineApi(createScope("example.tracker"));
+
+      expect(api.getProject()).toMatchObject({
+        width: 1890,
+        height: 1080,
+        outputWidth: 1344,
+        outputHeight: 768,
+      });
+    });
+
     it("signals a revision change when the resolution changes", () => {
       const api = createExtensionTimelineApi(createScope("example.tracker"));
       const before = api.getRevision();

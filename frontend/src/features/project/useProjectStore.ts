@@ -11,18 +11,22 @@ import { projectPersistenceService } from "./services/ProjectPersistenceService"
 import { projectTemporaryFileService } from "./services/ProjectTemporaryFileService";
 import { recentProjectsService } from "./services/RecentProjectsService";
 import { VLO_APP_VERSION } from "./constants";
-import { PROJECT_ASPECT_RATIOS } from "./aspectRatioOptions";
+import {
+  normalizeAspectRatio,
+  type AspectRatio,
+} from "./aspectRatioOptions";
 import {
   DEFAULT_PROJECT_OUTPUT_RESOLUTION,
-  isProjectOutputResolution,
+  normalizeProjectOutputResolution,
   type ProjectOutputResolution,
 } from "./outputResolutionOptions";
+import { isValidProjectOutputGeometry } from "./projectOutputGeometry";
 import type {
   ProjectDocumentConfig,
   TimelineSnapshot,
 } from "./types/ProjectDocument";
 
-export type AspectRatio = "16:9" | "4:3" | "1:1" | "3:4" | "9:16";
+export type { AspectRatio } from "./aspectRatioOptions";
 export type AssetBrowserDisplay = "grouped" | "ungrouped";
 export type ProjectFitMode = "contain" | "cover";
 
@@ -32,7 +36,8 @@ export interface ProjectConfig {
    * Short edge, in pixels, of every render this project produces — selection
    * extraction, project export and frame capture alike. Distinct from the
    * logical canvas (`getProjectDimensions`), which is a fixed-height
-   * coordinate space and is not a resolution.
+   * coordinate space and is not a resolution. Presets are offered in the UI,
+   * but a project may store any validated even short edge.
    */
   outputResolution: ProjectOutputResolution;
   fps: number;
@@ -50,8 +55,6 @@ const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   assetBrowserDisplay: "grouped",
 };
 
-const VALID_ASPECT_RATIOS = new Set<AspectRatio>(PROJECT_ASPECT_RATIOS);
-
 const VALID_FIT_MODES = new Set<ProjectFitMode>(["contain", "cover"]);
 const VALID_LAYOUT_MODES = new Set<NonNullable<ProjectConfig["layoutMode"]>>([
   "full-height",
@@ -65,9 +68,9 @@ const VALID_ASSET_BROWSER_DISPLAY_MODES = new Set<AssetBrowserDisplay>([
 const getProjectConfigFromDocument = (
   value: ProjectDocumentConfig | undefined,
 ): ProjectConfig => {
-  const aspectRatio = VALID_ASPECT_RATIOS.has(value?.aspectRatio as AspectRatio)
-    ? (value?.aspectRatio as AspectRatio)
-    : DEFAULT_PROJECT_CONFIG.aspectRatio;
+  const aspectRatio =
+    normalizeAspectRatio(value?.aspectRatio) ??
+    DEFAULT_PROJECT_CONFIG.aspectRatio;
 
   const layoutMode = VALID_LAYOUT_MODES.has(
     value?.layoutMode as NonNullable<ProjectConfig["layoutMode"]>,
@@ -82,8 +85,14 @@ const getProjectConfigFromDocument = (
 
   // Projects saved before output resolution existed rendered everything at a
   // 1080 short edge, which is the default — so they reopen unchanged.
-  const outputResolution = isProjectOutputResolution(value?.outputResolution)
-    ? value.outputResolution
+  const candidateOutputResolution =
+    normalizeProjectOutputResolution(value?.outputResolution) ??
+    DEFAULT_PROJECT_CONFIG.outputResolution;
+  const outputResolution = isValidProjectOutputGeometry(
+    aspectRatio,
+    candidateOutputResolution,
+  )
+    ? candidateOutputResolution
     : DEFAULT_PROJECT_CONFIG.outputResolution;
 
   // Existing projects without fitMode default to "contain" for backwards compat
@@ -405,6 +414,15 @@ export const useProjectStore = create<ProjectState>()(
       updateConfig: async (updates) => {
         const currentConfig = get().config;
         const nextConfig = { ...currentConfig, ...updates };
+
+        if (
+          !isValidProjectOutputGeometry(
+            nextConfig.aspectRatio,
+            nextConfig.outputResolution,
+          )
+        ) {
+          return;
+        }
 
         if (!hasProjectConfigChanged(currentConfig, nextConfig)) {
           return;

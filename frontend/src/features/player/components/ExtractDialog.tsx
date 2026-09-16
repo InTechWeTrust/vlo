@@ -27,7 +27,8 @@ import { useProjectStore } from "../../project";
 import {
   DEFAULT_PROJECT_OUTPUT_RESOLUTION,
   PROJECT_OUTPUT_RESOLUTIONS,
-  isProjectOutputResolution,
+  isPresetProjectOutputResolution,
+  normalizeProjectOutputResolution,
 } from "../../project/outputResolutionOptions";
 import { hostContextKeys } from "../../../core/shell/contextKeys";
 import { hostOptionCatalog } from "../../../core/shell/optionCatalog";
@@ -333,15 +334,16 @@ export function ExtractDialog({
                       label="Resolution"
                       onChange={(event) => {
                         const next = Number(event.target.value);
-                        // The options are the only source of values, so this
-                        // narrows rather than validates — but it keeps an
-                        // out-of-range value from reaching a config field that
-                        // would reject it on reload.
-                        if (isProjectOutputResolution(next)) {
-                          setResolution(next);
-                        }
+                        const normalized =
+                          normalizeProjectOutputResolution(next);
+                        if (normalized !== null) setResolution(normalized);
                       }}
                     >
+                      {!isPresetProjectOutputResolution(projectResolution) ? (
+                        <MenuItem value={projectResolution}>
+                          {projectResolution}px (Project)
+                        </MenuItem>
+                      ) : null}
                       {PROJECT_OUTPUT_RESOLUTIONS.map((option) => (
                         <MenuItem key={option} value={option}>
                           {RESOLUTION_LABELS[option] ?? `${option}p`}

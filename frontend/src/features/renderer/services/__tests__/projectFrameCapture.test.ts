@@ -96,6 +96,17 @@ describe("buildProjectRenderInputs output resolution", () => {
     expect(exportConfig.outputHeight).toBe(1280);
   });
 
+  it("combines a custom ratio and short edge", () => {
+    setAspectRatio("7:4");
+    setOutputResolution(768);
+    const { exportConfig } = buildProjectRenderInputs();
+
+    expect(exportConfig.logicalWidth).toBe(1890);
+    expect(exportConfig.logicalHeight).toBe(1080);
+    expect(exportConfig.outputWidth).toBe(1344);
+    expect(exportConfig.outputHeight).toBe(768);
+  });
+
   it("leaves the logical canvas untouched by the resolution", () => {
     setAspectRatio("9:16");
     const at1080 = buildProjectRenderInputs().exportConfig;

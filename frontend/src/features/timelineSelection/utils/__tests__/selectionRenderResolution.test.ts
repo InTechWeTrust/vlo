@@ -33,14 +33,24 @@ describe("resolveSelectionRenderResolution", () => {
     ).toBe(2160);
   });
 
+  it("accepts a custom project short edge", () => {
+    expect(
+      resolveSelectionRenderResolution({ override: null, project: 768 }),
+    ).toBe(768);
+  });
+
   it("defaults to 1080 with no sources at all", () => {
     expect(resolveSelectionRenderResolution({})).toBe(1080);
   });
 
-  // The override is picked from a fixed list; anything else would be accepted
-  // here and then rejected by the project config it falls back to.
-  it.each([1234, 0, -720, Number.NaN])(
-    "ignores an unsupported override: %s",
+  it("accepts a valid custom override", () => {
+    expect(
+      resolveSelectionRenderResolution({ override: 1234, project: 1080 }),
+    ).toBe(1234);
+  });
+
+  it.each([1233, 0, -720, Number.NaN])(
+    "ignores an invalid override: %s",
     (override) => {
       expect(
         resolveSelectionRenderResolution({ override, project: 1080 }),
@@ -111,8 +121,15 @@ describe("resolveRegionRenderResolution", () => {
     },
   );
 
-  it("falls back to the default when the project value is unusable too", () => {
-    expect(resolveRegionRenderResolution(null, 1234)).toBe(1080);
+  it.each([undefined, null, 0, -1, Number.NaN])(
+    "falls back to the default when the project value is unusable too: %s",
+    (projectResolution) => {
+      expect(resolveRegionRenderResolution(null, projectResolution)).toBe(1080);
+    },
+  );
+
+  it("accepts a custom project short edge", () => {
+    expect(resolveRegionRenderResolution(null, 768)).toBe(768);
   });
 
   it("resolves dimensions through the shared resolver", () => {

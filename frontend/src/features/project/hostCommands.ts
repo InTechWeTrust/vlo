@@ -7,22 +7,16 @@ import {
 import type { ShellDisposable } from "../../core/shell/hostMenuCatalog";
 import {
   useProjectStore,
-  type AspectRatio,
   type AssetBrowserDisplay,
   type ProjectFitMode,
 } from "./useProjectStore";
 import { fileSystemService } from "./services/FileSystemService";
 import { recentProjectsService } from "./services/RecentProjectsService";
 import { projectPageActions } from "./services/ProjectPageActions";
-import { isProjectOutputResolution } from "./outputResolutionOptions";
+import { normalizeAspectRatio } from "./aspectRatioOptions";
+import { normalizeProjectOutputResolution } from "./outputResolutionOptions";
+import { isValidProjectOutputGeometry } from "./projectOutputGeometry";
 
-const ASPECT_RATIOS: readonly AspectRatio[] = [
-  "16:9",
-  "4:3",
-  "1:1",
-  "3:4",
-  "9:16",
-];
 const FIT_MODES: readonly ProjectFitMode[] = ["contain", "cover"];
 const LAYOUT_MODES = ["full-height", "compact"] as const;
 const ASSET_BROWSER_DISPLAYS: readonly AssetBrowserDisplay[] = [
@@ -113,12 +107,20 @@ const projectHostCommands: readonly HostCommandDefinition[] = [
     title: "Set aspect ratio",
     when: { key: "project.open" },
     run: ({ subject }) => {
-      const aspectRatio = pickOption(
+      const aspectRatio = normalizeAspectRatio(
         readSubjectValue(subject, "aspectRatio"),
-        ASPECT_RATIOS,
       );
       if (!aspectRatio) return;
-      void useProjectStore.getState().updateConfig({ aspectRatio });
+      const state = useProjectStore.getState();
+      if (
+        !isValidProjectOutputGeometry(
+          aspectRatio,
+          state.config.outputResolution,
+        )
+      ) {
+        return;
+      }
+      void state.updateConfig({ aspectRatio });
     },
   },
   {
@@ -126,9 +128,15 @@ const projectHostCommands: readonly HostCommandDefinition[] = [
     title: "Set output resolution",
     when: { key: "project.open" },
     run: ({ subject }) => {
-      const outputResolution = readSubjectValue(subject, "outputResolution");
-      if (!isProjectOutputResolution(outputResolution)) return;
-      void useProjectStore.getState().updateConfig({ outputResolution });
+      const outputResolution = normalizeProjectOutputResolution(
+        readSubjectValue(subject, "outputResolution"),
+      );
+      if (outputResolution === null) return;
+      const state = useProjectStore.getState();
+      if (!isValidProjectOutputGeometry(state.config.aspectRatio, outputResolution)) {
+        return;
+      }
+      void state.updateConfig({ outputResolution });
     },
   },
   {

@@ -140,16 +140,18 @@ function resolveAspectRatioCropTarget(
 
 export function normalizeToSupportedProjectAspectRatio(
   aspectRatio: string,
+  extraCandidates: readonly string[] = [],
 ): string | null {
   const parsedAspectRatio = parseAspectRatio(aspectRatio);
   if (!parsedAspectRatio) {
     return null;
   }
 
-  let closestAspectRatio = PROJECT_ASPECT_RATIOS[0] ?? null;
+  const candidates = [...PROJECT_ASPECT_RATIOS, ...extraCandidates];
+  let closestAspectRatio = candidates[0] ?? null;
   let closestDelta = Number.POSITIVE_INFINITY;
 
-  for (const candidate of PROJECT_ASPECT_RATIOS) {
+  for (const candidate of candidates) {
     const parsedCandidate = parseAspectRatio(candidate);
     if (!parsedCandidate) {
       continue;

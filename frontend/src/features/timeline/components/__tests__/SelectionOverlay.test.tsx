@@ -414,6 +414,31 @@ describe("SelectionOverlay", () => {
       expect(screen.getByText("rec 832")).toBeInTheDocument();
     });
 
+    it("offers a custom project short edge as an explicit override", () => {
+      selectionState = createSelectionState({
+        selectionRecommendedResolution: 720,
+      });
+      (useProjectStore as unknown as Mock).mockImplementation(
+        (selector: unknown) => {
+          const state = { config: { fps: 60, outputResolution: 768 } };
+          return typeof selector === "function" ? selector(state) : state;
+        },
+      );
+
+      render(<SelectionOverlay />);
+      fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));
+      fireEvent.mouseDown(
+        screen.getByLabelText("Selection render resolution"),
+      );
+      fireEvent.click(
+        screen.getByRole("option", { name: "768px (Project)" }),
+      );
+
+      expect(selectionState.setSelectionResolutionOverride).toHaveBeenCalledWith(
+        768,
+      );
+    });
+
     it("commits an explicit override", () => {
       render(<SelectionOverlay />);
       fireEvent.click(screen.getByTestId("selection-overlay-settings-toggle"));

@@ -12,12 +12,18 @@ export {
   projectTrashService,
   PROJECT_TRASH_LIMIT_BYTES,
 } from "./services/ProjectTrashService";
-export { PROJECT_ASPECT_RATIOS } from "./aspectRatioOptions";
+export {
+  PROJECT_ASPECT_RATIOS,
+  isPresetAspectRatio,
+} from "./aspectRatioOptions";
+export type {
+  AspectRatio,
+  PresetAspectRatio,
+} from "./aspectRatioOptions";
 export { collectTimelineExtensionRequirements } from "./utils/extensionRequirements";
 export type {
   ProjectState,
   ProjectConfig,
-  AspectRatio,
   AssetBrowserDisplay,
   ProjectFitMode,
   ProjectTimelineSnapshotRequest,

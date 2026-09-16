@@ -698,7 +698,7 @@ describe("generationPlan cache media extraction", () => {
         attach_generation_mask: false,
       },
       workflowWarnings: [],
-      projectConfig: { fps: 30, aspectRatio: "16:9" },
+      projectConfig: { fps: 30, aspectRatio: "7:4", outputResolution: 768 },
     });
     selectionClips.push({ id: "mutated" } as TimelineClip);
     expect(plan.workflow.workflow).toEqual({ keep: "value" });
@@ -715,6 +715,10 @@ describe("generationPlan cache media extraction", () => {
     expect(plan.metadata.generationMetadata.replayState?.bypassNodeIds).toEqual(
       ["1"],
     );
+    expect(plan.preprocess.projectConfig).toEqual({
+      fps: 30,
+      aspectRatio: "7:4",
+    });
   });
 
   it("keeps shared references that are not cycles", () => {

@@ -68,6 +68,44 @@ describe("ProjectSettingsMenu", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows custom ratio and resolution values without selecting presets", () => {
+    useProjectStore.setState({
+      config: {
+        ...useProjectStore.getState().config,
+        aspectRatio: "7:4",
+        outputResolution: 768,
+      },
+    });
+    render(<ProjectSettingsMenu />);
+
+    fireEvent.click(screen.getByRole("button"));
+
+    expect(screen.getByText("Custom (7:4)...")).toBeInTheDocument();
+    expect(screen.getByText("Custom (768px)...")).toBeInTheDocument();
+  });
+
+  it("explains when a custom ratio would make the output too large", () => {
+    useProjectStore.setState({
+      config: {
+        ...useProjectStore.getState().config,
+        outputResolution: 2160,
+      },
+    });
+    render(<ProjectSettingsMenu />);
+
+    fireEvent.click(screen.getByRole("button"));
+    fireEvent.click(screen.getAllByText("Custom...")[0]);
+    fireEvent.change(screen.getByLabelText("Width"), {
+      target: { value: "4" },
+    });
+    fireEvent.change(screen.getByLabelText("Height"), {
+      target: { value: "1" },
+    });
+
+    expect(screen.getByText(/8192px maximum edge/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
+  });
+
   it("offers grouped and ungrouped asset browser display options", () => {
     render(<ProjectSettingsMenu />);
 

@@ -26,6 +26,10 @@ describe("getProjectDimensions", () => {
     expect(getProjectDimensions("9:16")).toEqual({ width: 608, height: 1080 });
   });
 
+  it("supports a custom project ratio", () => {
+    expect(getProjectDimensions("7:4")).toEqual({ width: 1890, height: 1080 });
+  });
+
   it("should return default 16:9 dimensions for unknown ratio", () => {
     // @ts-expect-error Testing invalid input
     expect(getProjectDimensions("invalid")).toEqual({
@@ -54,6 +58,13 @@ describe("deriveTrueDimensionsFromShortEdge", () => {
     expect(deriveTrueDimensionsFromShortEdge("1:1", 720)).toEqual({
       width: 720,
       height: 720,
+    });
+  });
+
+  it("reconstructs an exact custom output from ratio and short edge", () => {
+    expect(resolveRenderOutputDimensions("7:4", 768)).toEqual({
+      width: 1344,
+      height: 768,
     });
   });
 });
@@ -112,5 +123,11 @@ describe("resolveRenderOutputDimensions", () => {
       width: 1920,
       height: 1080,
     });
+  });
+
+  it("rejects oversized dimensions before a render starts", () => {
+    expect(() => resolveRenderOutputDimensions("4:1", 2160)).toThrow(
+      "8192px maximum edge",
+    );
   });
 });

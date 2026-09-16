@@ -1,6 +1,6 @@
 import {
   DEFAULT_PROJECT_OUTPUT_RESOLUTION,
-  isProjectOutputResolution,
+  normalizeProjectOutputResolution,
 } from "../../project/outputResolutionOptions";
 // Deep import, like `renderer/utils/mediaTime` elsewhere in this feature:
 // `dimensions` is a leaf module, while the renderer front door pulls in the
@@ -11,7 +11,7 @@ import type { AspectRatio } from "../../project/useProjectStore";
 export interface SelectionResolutionSources {
   /**
    * What the user picked on the selection, or `null` to follow the project.
-   * Restricted to the offered rungs, because it is chosen from a fixed list.
+   * May be a preset or the project's validated custom short edge.
    */
   override?: number | null;
   /**
@@ -33,20 +33,20 @@ const isPositiveShortEdge = (value: unknown): value is number =>
  *
  * Precedence is the same one the fps and frame-step settings use: an explicit
  * choice on the selection wins, then the workflow's recommendation, then the
- * project. Only offered rungs count at every level, so a value here can never
- * disagree with what the project config would accept.
+ * project.
  */
 export function resolveSelectionRenderResolution(
   sources: SelectionResolutionSources,
 ): number {
-  if (isProjectOutputResolution(sources.override)) {
-    return sources.override;
+  const override = normalizeProjectOutputResolution(sources.override);
+  if (override !== null) {
+    return override;
   }
   if (isPositiveShortEdge(sources.recommended)) {
     return Math.round(sources.recommended);
   }
-  if (isProjectOutputResolution(sources.project)) {
-    return sources.project;
+  if (isPositiveShortEdge(sources.project)) {
+    return Math.round(sources.project);
   }
   return DEFAULT_PROJECT_OUTPUT_RESOLUTION;
 }
@@ -80,8 +80,8 @@ export function resolveRegionRenderResolution(
   if (isPositiveShortEdge(region?.resolution)) {
     return Math.round(region.resolution);
   }
-  return isProjectOutputResolution(projectResolution)
-    ? projectResolution
+  return isPositiveShortEdge(projectResolution)
+    ? Math.round(projectResolution)
     : DEFAULT_PROJECT_OUTPUT_RESOLUTION;
 }
 
