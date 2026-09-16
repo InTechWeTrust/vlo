@@ -435,6 +435,21 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
     expect(pkg.referenceNameError("", "visual:media-V2", names)).toBeNull();
     expect(pkg.referenceNameError("Shot3", "visual:media-V2", names)).toBe("Too close to a numbered tag.");
     expect(pkg.referenceNameError("close-up_2", "visual:media-V2", names)).toBeNull();
+    // Spaces are allowed; spacing and case do not make a name distinct.
+    expect(pkg.referenceNameError("red scarf", "visual:media-V2", names)).toBeNull();
+    expect(pkg.referenceNameError("Video 2", "visual:media-P1", names)).toBe("Too close to a numbered tag.");
+    const spaced = new Map([["visual:media-V2", "red scarf"]]);
+    expect(pkg.referenceNameError("  Red   Scarf ", "visual:media-P1", spaced)).toBe("Another reference has this name.");
+    const scarf = pkg.createReferenceLabeller(document, catalogue, spaced);
+    expect(scarf.display("visual:media-V2")).toBe("<red scarf>");
+    expect(scarf.target("<red  scarf>")).toBe("visual:media-V2");
+    expect(pkg.bindAuthoredText("the <red scarf> says <d>[English] hi</d>", scarf)).toEqual(
+      pkg.inlineDocument([
+        { kind: "text", text: "the " },
+        { kind: "reference", targetId: "visual:media-V2" },
+        { kind: "text", text: " says <d>[English] hi</d>" },
+      ]),
+    );
 
     const labeller = pkg.createReferenceLabeller(document, catalogue, names);
     expect(labeller.display("visual:media-V2")).toBe("<chase>");
@@ -446,25 +461,32 @@ describe.skipIf(!packagePresent)("minimax ref2v: bound document", () => {
     expect(pkg.bindReferenceText("see <chase>", labeller.target)).toEqual(pkg.textDocument("see <chase>"));
 
     // Subjects answer to a name that follows the tag-name rules, besides their
-    // number. A tag's name wins a collision; a name with a space is not typed.
+    // number. A tag's name wins a collision; a name in the numbered notation
+    // is not typed.
     const withSubjects = pkg.addSubject(
       pkg.addSubject(pkg.addSubject(document, { id: "amelia", name: " Amelia " }), { id: "clash", name: "chase" }),
       { id: "spaced", name: "young woman" },
     );
-    const both = pkg.createReferenceLabeller(withSubjects, catalogue, names);
+    const withNumbered = pkg.addSubject(withSubjects, { id: "numbered", name: "Video 3" }
+    );
+    const both = pkg.createReferenceLabeller(withNumbered, catalogue, names);
     const amelia = pkg.subjectTarget("amelia");
     expect(both.target("<Amelia>")).toBe(amelia);
     expect(both.target(`<Subject ${withSubjects.subjects.length - 2}>`)).toBe(amelia);
     expect(both.target("<chase>")).toBe("visual:media-V2");
     expect(both.target("<Video 2>")).toBe("visual:media-V2");
-    expect(both.target("<young woman>")).toBeNull();
+    expect(both.target("<young woman>")).toBe(pkg.subjectTarget("spaced"));
+    // A subject named in the numbered notation never takes that tag over.
+    expect(both.target("<Video 3>")).not.toBe(pkg.subjectTarget("numbered"));
     // A subject shows the name it can be typed as; one it cannot, its number.
     expect(both.display(amelia)).toBe("<Amelia>");
     expect(both.display(pkg.subjectTarget("clash"))).toBe(`<Subject ${withSubjects.subjects.length - 1}>`);
-    expect(both.display(pkg.subjectTarget("spaced"))).toBe(`<Subject ${withSubjects.subjects.length}>`);
-    expect([...pkg.subjectNameReservations(withSubjects.subjects)]).toEqual([
+    expect(both.display(pkg.subjectTarget("spaced"))).toBe("<young woman>");
+    expect(both.display(pkg.subjectTarget("numbered"))).toBe(`<Subject ${withNumbered.subjects.length}>`);
+    expect([...pkg.subjectNameReservations(withNumbered.subjects)]).toEqual([
       [amelia, "Amelia"],
       [pkg.subjectTarget("clash"), "chase"],
+      [pkg.subjectTarget("spaced"), "young woman"],
     ]);
 
     // A name on a soundtrack that is switched off stays reserved while its
@@ -1091,10 +1113,10 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
     // Refused names say why and are never saved.
     for (const [name, reason] of [
       ["d", "<d> is reserved for dialogue."],
-      ["D", "<d> is reserved for dialogue."],
-      ["the hero", "Names cannot contain spaces."],
+      ["/D", "<d> is reserved for dialogue."],
+      ["picture 2", "Too close to a numbered tag."],
       ["Picture2", "Too close to a numbered tag."],
-      ["<hero>", "Use letters, numbers, - or _."],
+      ["<hero>", "Names cannot contain < or >."],
     ] as const) {
       fireEvent.change(field, { target: { value: name } });
       expect(within(view).getByText(reason)).toBeInTheDocument();

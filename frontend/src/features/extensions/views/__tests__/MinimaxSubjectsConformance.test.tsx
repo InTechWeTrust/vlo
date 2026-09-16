@@ -952,9 +952,9 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
       fireEvent.click(view.getByRole("button", { name: "Rename <Picture 2>" }));
     });
     const field = view.container.querySelector('textarea[placeholder="name"]')!;
-    // A refused name is never stored — one with a space, or the subject's own
+    // A refused name is never stored — the numbered notation, or the subject's own
     // name, which `<Amelia>` already answers to.
-    for (const refused of ["pink shirt", "amelia"]) {
+    for (const refused of ["Picture 3", "amelia"]) {
       await act(async () => {
         fireEvent.change(field, { target: { value: refused } });
         fireEvent.keyDown(field, { key: "Enter" });
@@ -962,25 +962,25 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
       expect(store.getState().subjects[0].names).toBeUndefined();
     }
     await act(async () => {
-      fireEvent.change(field, { target: { value: "shirt" } });
+      fireEvent.change(field, { target: { value: "pink shirt" } });
       fireEvent.keyDown(field, { key: "Enter" });
     });
-    expect(store.getState().subjects[0].names).toEqual({ "ref:Picture:asset-2": "shirt" });
-    expect(strip.textContent).toBe("<Picture 1><shirt>");
-    expect(view.container.textContent).toContain("Wearing <shirt>.");
+    expect(store.getState().subjects[0].names).toEqual({ "ref:Picture:asset-2": "pink shirt" });
+    expect(strip.textContent).toBe("<Picture 1><pink shirt>");
+    expect(view.container.textContent).toContain("Wearing <pink shirt>.");
 
-    // The subject binds as `<Subject 1>` or `<Amelia>`, the tag as `<shirt>` or
+    // The subject binds as `<Subject 1>` or `<Amelia>`, the tag as `<pink shirt>` or
     // `<Picture 2>`: each pair lands on one chip and one stored marker.
     const compose = view.getByRole("textbox", { name: "New line" });
     // Promotion reads the token that ends each typed insertion.
     typeReferenceText(compose, "<Subject 1>");
     typeReferenceText(compose, " or <Amelia>");
-    typeReferenceText(compose, " wears <shirt>");
+    typeReferenceText(compose, " wears <pink  shirt>");
     typeReferenceText(compose, " or <Picture 2>");
     // Chips show names: the subject's, and the tag's.
     expect(
       [...compose.querySelectorAll("[data-reference-id]")].map((chip) => chip.textContent?.replace(/\uFEFF/g, "")),
-    ).toEqual(["<Amelia>", "<Amelia>", "<shirt>", "<shirt>"]);
+    ).toEqual(["<Amelia>", "<Amelia>", "<pink shirt>", "<pink shirt>"]);
     expect(
       [...compose.querySelectorAll("[data-reference-id]")].map((chip) => chip.getAttribute("data-reference-id")),
     ).toEqual(["subject", "subject", "ref:Picture:asset-2", "ref:Picture:asset-2"]);
@@ -995,12 +995,12 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     await act(async () => {
       (dropSlotProps?.onReorder as (slotId: string, to: number) => void)("asset-2", 0);
     });
-    expect(view.getByRole("button", { name: "Rename <Picture 1>" })).toHaveTextContent("<shirt>");
+    expect(view.getByRole("button", { name: "Rename <Picture 1>" })).toHaveTextContent("<pink shirt>");
     store.dispose();
 
     const reopened = createSubjectStore(createStoreApi(createScope(values)));
     await whenReady(reopened);
-    expect(reopened.getState().subjects[0].names).toEqual({ "ref:Picture:asset-2": "shirt" });
+    expect(reopened.getState().subjects[0].names).toEqual({ "ref:Picture:asset-2": "pink shirt" });
     view.unmount();
     reopened.dispose();
   });
