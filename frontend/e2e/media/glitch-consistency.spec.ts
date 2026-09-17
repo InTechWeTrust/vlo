@@ -30,7 +30,6 @@ interface GlitchConsistencyComparison {
 
 interface GlitchConsistencyProbeResult {
     maxTextureSize: number;
-    extremeZoom: number;
     independentInstancesIdentical: boolean;
     comparisons: GlitchConsistencyComparison[];
 }

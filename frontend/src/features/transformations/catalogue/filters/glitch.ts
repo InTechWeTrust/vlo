@@ -1,15 +1,12 @@
 import { GlitchFilter } from "pixi-filters";
-import {
-  GlProgram,
-  GpuProgram,
-  type Filter,
-  type FilterSystem,
-  type RenderSurface,
-  type Texture,
-} from "pixi.js";
+import { GlProgram, GpuProgram, type Filter } from "pixi.js";
 import type { TransformationDefinition } from "../types";
 import { filterHandler } from "../filterHandler";
 import { createTransformationFilterRuntime } from "../filterRuntime";
+import {
+  configureUnclippedFilter,
+  withFilterTextureLimitRecording,
+} from "./unclippedFilterTexture";
 import {
   computeGlitchPattern,
   GLITCH_SAMPLE_SIZE,
@@ -42,69 +39,9 @@ export function patchGlitchShaderSource(
   return source.replace(UPSTREAM_Y_DISPLACEMENT, STABLE_Y_DISPLACEMENT);
 }
 
-/**
- * Largest filter texture side the device accepts. Starts conservative and is
- * refined from the renderer on the first apply.
- */
-let maxFilterTextureSize = 4096;
-
-interface RendererLimitSource {
-  gl?: WebGLRenderingContext | WebGL2RenderingContext;
-  gpu?: { device?: { limits?: { maxTextureDimension2D?: number } } };
-}
-
-function recordMaxFilterTextureSize(renderer: RendererLimitSource): void {
-  const gl = renderer.gl;
-  const size = gl
-    ? Math.min(
-        gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
-        gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
-      )
-    : renderer.gpu?.device?.limits?.maxTextureDimension2D;
-  if (typeof size === "number" && size > 0) maxFilterTextureSize = size;
-}
-
-/** Headroom for padding added by other filters sharing the target's chain. */
-const FILTER_TEXTURE_HEADROOM = 0.9;
-
-/**
- * Viewport clipping is disabled, so a deeply zoomed clip would need a filter
- * texture beyond the device limit, and the clip would render blank. Lowering
- * the filter resolution instead keeps the bands and displacement in place:
- * both are measured against the logical input frame, not its pixel count.
- */
-export function resolveGlitchFilterResolution(
-  bounds: { width: number; height: number } | null,
-  maxTextureSize: number,
-): number {
-  if (!bounds) return 1;
-  const side = Math.max(bounds.width, bounds.height);
-  if (!Number.isFinite(side) || side <= 0) return 1;
-  return Math.min(1, (maxTextureSize * FILTER_TEXTURE_HEADROOM) / side);
-}
-
-function getTargetBounds(
-  target: unknown,
-): { width: number; height: number } | null {
-  const boundsTarget = target as {
-    getBounds?: () => { width: number; height: number };
-  };
-  return typeof boundsTarget.getBounds === "function"
-    ? boundsTarget.getBounds()
-    : null;
-}
-
-class StableGlitchFilter extends GlitchFilter {
-  override apply(
-    filterManager: FilterSystem,
-    input: Texture,
-    output: RenderSurface,
-    clearMode: boolean,
-  ): void {
-    recordMaxFilterTextureSize(filterManager.renderer as RendererLimitSource);
-    super.apply(filterManager, input, output, clearMode);
-  }
-}
+class StableGlitchFilter extends withFilterTextureLimitRecording(
+  GlitchFilter,
+) {}
 
 let stablePrograms: { glProgram: GlProgram; gpuProgram: GpuProgram } | null =
   null;
@@ -154,19 +91,12 @@ const DRAWN_PATTERNS = new WeakMap<Filter, GlitchPatternInputs>();
  * at zero.
  */
 export const glitchFilterRuntime = createTransformationFilterRuntime({
-  create: () => {
-    const filter = createStableGlitchFilter();
-    // The shader spreads the displacement map over the input frame. Viewport
-    // cropping would change that frame and move bands relative to the image.
-    filter.clipToViewport = false;
-    return filter;
-  },
+  create: () => createStableGlitchFilter(),
   update: (filter, parameters, context, outputFilters) => {
     const glitch = filter as GlitchFilter;
-    glitch.resolution = resolveGlitchFilterResolution(
-      getTargetBounds(context.target),
-      maxFilterTextureSize,
-    );
+    // The shader spreads the displacement map over the input frame. Viewport
+    // cropping would change that frame and move bands relative to the image.
+    configureUnclippedFilter(glitch, context.target);
     if (
       typeof parameters.offset === "number" &&
       Number.isFinite(parameters.offset)

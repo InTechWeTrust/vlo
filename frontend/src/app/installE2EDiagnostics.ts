@@ -89,6 +89,7 @@ declare global {
         endTick: number;
       }) => Promise<unknown>;
       runGlitchConsistencyProbe?: () => Promise<unknown>;
+      runRgbSplitConsistencyProbe?: () => Promise<unknown>;
       runCompositeParityProbe?: (request: {
         compositeId: string;
         placementTick: number;
@@ -188,6 +189,16 @@ export function installE2EDiagnostics(): void {
       })
       .catch((error: unknown) => {
         console.error("Failed to install Glitch consistency probe", error);
+      });
+    void import("./e2e/rgbSplitConsistencyProbe")
+      .then(({ runRgbSplitConsistencyProbe }) => {
+        if (window.__vloE2E) {
+          window.__vloE2E.runRgbSplitConsistencyProbe =
+            runRgbSplitConsistencyProbe;
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to install RGB Split consistency probe", error);
       });
     void import("./e2e/compositeParityProbe")
       .then(

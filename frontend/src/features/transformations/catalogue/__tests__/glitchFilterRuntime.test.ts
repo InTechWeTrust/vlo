@@ -7,7 +7,6 @@ import {
   glitchFilterDefinition,
   glitchFilterRuntime,
   patchGlitchShaderSource,
-  resolveGlitchFilterResolution,
 } from "../filters/glitch";
 import { createStatelessFilterRenderContext } from "../renderSampleContext";
 import type { ClipTransformTarget } from "../types";
@@ -89,7 +88,9 @@ describe("glitchFilterRuntime", () => {
     expect(glitchFilterDefinition.filterParameterScale).toEqual({
       offset: "worldUniform",
     });
-    expect(createGlitch().clipToViewport).toBe(false);
+    const filter = createGlitch();
+    update(filter, PARAMS);
+    expect(filter.clipToViewport).toBe(false);
   });
 
   it("draws the same pattern in independent instances", () => {
@@ -235,26 +236,5 @@ describe("Glitch shader patch", () => {
     expect(() => patchGlitchShaderSource("void main() {}", "GLSL")).toThrow(
       /Unexpected pixi-filters Glitch GLSL shader/,
     );
-  });
-});
-
-describe("resolveGlitchFilterResolution", () => {
-  it("keeps full resolution while the filter texture fits", () => {
-    expect(resolveGlitchFilterResolution(null, 8192)).toBe(1);
-    expect(
-      resolveGlitchFilterResolution({ width: 1920, height: 1080 }, 8192),
-    ).toBe(1);
-    expect(resolveGlitchFilterResolution({ width: 0, height: 0 }, 8192)).toBe(
-      1,
-    );
-  });
-
-  it("lowers resolution so deeply zoomed bounds fit the device limit", () => {
-    const resolution = resolveGlitchFilterResolution(
-      { width: 19200, height: 10800 },
-      16384,
-    );
-    expect(resolution).toBeLessThan(1);
-    expect(19200 * resolution).toBeLessThanOrEqual(16384);
   });
 });
