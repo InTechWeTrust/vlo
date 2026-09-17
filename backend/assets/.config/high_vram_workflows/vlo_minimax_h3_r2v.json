@@ -759,112 +759,14 @@
     },
     {
       "id": 149,
-      "type": "ResizeImageMaskNode",
-      "title": "Output Resize",
-      "pos": [
-        546.4699787640386,
-        5205.287376816053
-      ],
-      "size": [
-        270,
-        154
-      ],
-      "flags": {},
-      "order": 20,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "input",
-          "name": "input",
-          "type": "IMAGE,MASK",
-          "link": 295
-        },
-        {
-          "localized_name": "resize_type",
-          "name": "resize_type",
-          "type": "COMFY_DYNAMICCOMBO_V3",
-          "widget": {
-            "name": "resize_type"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "width",
-          "name": "resize_type.width",
-          "type": "INT",
-          "widget": {
-            "name": "resize_type.width"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "height",
-          "name": "resize_type.height",
-          "type": "INT",
-          "widget": {
-            "name": "resize_type.height"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "crop",
-          "name": "resize_type.crop",
-          "type": "COMBO",
-          "widget": {
-            "name": "resize_type.crop"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "scale_method",
-          "name": "scale_method",
-          "type": "COMBO",
-          "widget": {
-            "name": "scale_method"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "resized",
-          "name": "resized",
-          "type": "IMAGE",
-          "links": [
-            286
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ResizeImageMaskNode",
-        "cnr_id": "comfy-core",
-        "ver": "0.19.3",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "scale dimensions",
-        1280,
-        720,
-        "disabled",
-        "lanczos"
-      ],
-      "widgets_values_named": {
-        "resize_type": "scale dimensions",
-        "resize_type.width": 1280,
-        "resize_type.height": 720,
-        "resize_type.crop": "disabled",
-        "scale_method": "lanczos"
-      }
-    },
-    {
-      "id": 144,
-      "type": "VHS_VideoCombine",
+      "type": "vloSaveVideo",
+      "title": "Output Save",
       "pos": [
         822.950355797513,
         4968.541866257099
       ],
       "size": [
-        321.19373082640595,
+        270,
         334
       ],
       "flags": {},
@@ -875,7 +777,7 @@
           "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
-          "link": 286
+          "link": 295
         },
         {
           "localized_name": "audio",
@@ -885,34 +787,11 @@
           "link": 287
         },
         {
-          "localized_name": "meta_batch",
-          "name": "meta_batch",
-          "shape": 7,
-          "type": "VHS_BatchManager",
-          "link": null
-        },
-        {
-          "localized_name": "vae",
-          "name": "vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": null
-        },
-        {
-          "localized_name": "frame_rate",
-          "name": "frame_rate",
+          "localized_name": "fps",
+          "name": "fps",
           "type": "FLOAT",
           "widget": {
-            "name": "frame_rate"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "loop_count",
-          "name": "loop_count",
-          "type": "INT",
-          "widget": {
-            "name": "loop_count"
+            "name": "fps"
           },
           "link": null
         },
@@ -926,24 +805,6 @@
           "link": null
         },
         {
-          "localized_name": "format",
-          "name": "format",
-          "type": "COMBO",
-          "widget": {
-            "name": "format"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "pingpong",
-          "name": "pingpong",
-          "type": "BOOLEAN",
-          "widget": {
-            "name": "pingpong"
-          },
-          "link": null
-        },
-        {
           "localized_name": "save_output",
           "name": "save_output",
           "type": "BOOLEAN",
@@ -953,85 +814,129 @@
           "link": null
         },
         {
-          "name": "pix_fmt",
-          "type": [
-            "yuv420p",
-            "yuv420p10le"
-          ],
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
           "widget": {
-            "name": "pix_fmt"
+            "name": "width"
           },
           "link": null
         },
         {
-          "name": "crf",
+          "localized_name": "height",
+          "name": "height",
           "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "upscale_method",
+          "name": "upscale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "upscale_method"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crop",
+          "name": "crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "format",
+          "name": "format",
+          "type": "COMBO",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "codec",
+          "name": "codec",
+          "type": "COMBO",
+          "widget": {
+            "name": "codec"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crf",
+          "name": "crf",
+          "type": "FLOAT",
           "widget": {
             "name": "crf"
           },
           "link": null
         },
         {
-          "name": "save_metadata",
-          "type": "BOOLEAN",
+          "localized_name": "bit_depth",
+          "name": "bit_depth",
+          "type": "COMBO",
           "widget": {
-            "name": "save_metadata"
+            "name": "bit_depth"
           },
-          "link": null
+          "link": null,
+          "shape": 7
         },
         {
-          "name": "trim_to_audio",
-          "type": "BOOLEAN",
+          "localized_name": "color_space",
+          "name": "color_space",
+          "type": "COMBO",
           "widget": {
-            "name": "trim_to_audio"
+            "name": "color_space"
           },
-          "link": null
+          "link": null,
+          "shape": 7
         }
       ],
       "outputs": [
         {
-          "localized_name": "Filenames",
-          "name": "Filenames",
-          "type": "VHS_FILENAMES",
-          "links": null
+          "localized_name": "video",
+          "name": "video",
+          "type": "VIDEO",
+          "links": []
         }
       ],
       "properties": {
-        "Node name for S&R": "VHS_VideoCombine"
+        "Node name for S&R": "vloSaveVideo",
+        "cnr_id": "ComfyUI-vlo",
+        "widget_ue_connectable": {}
       },
-      "widgets_values": {
-        "frame_rate": 24,
-        "loop_count": 0,
-        "filename_prefix": "MiniMax",
-        "format": "video/h264-mp4",
-        "pix_fmt": "yuv420p",
-        "crf": 19,
-        "save_metadata": true,
-        "trim_to_audio": false,
-        "pingpong": false,
-        "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {}
-        }
-      },
+      "widgets_values": [
+        24.0,
+        "MiniMax",
+        false,
+        1280,
+        720,
+        "bicubic",
+        "disabled",
+        "auto",
+        "auto",
+        19.0,
+        "auto",
+        "sRGB"
+      ],
       "widgets_values_named": {
-        "frame_rate": 24,
-        "loop_count": 0,
+        "fps": 24.0,
         "filename_prefix": "MiniMax",
-        "format": "video/h264-mp4",
-        "pix_fmt": "yuv420p",
-        "crf": 19,
-        "save_metadata": true,
-        "trim_to_audio": false,
-        "pingpong": false,
         "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {}
-        }
+        "width": 1280,
+        "height": 720,
+        "upscale_method": "bicubic",
+        "crop": "disabled",
+        "format": "auto",
+        "codec": "auto",
+        "crf": 19.0,
+        "bit_depth": "auto",
+        "color_space": "sRGB"
       }
     },
     {
@@ -1723,18 +1628,10 @@
       "AUDIO"
     ],
     [
-      286,
-      149,
-      0,
-      144,
-      0,
-      "IMAGE"
-    ],
-    [
       287,
       121,
       0,
-      144,
+      149,
       1,
       "AUDIO"
     ],

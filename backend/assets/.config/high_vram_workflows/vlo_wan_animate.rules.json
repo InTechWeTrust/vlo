@@ -110,8 +110,8 @@
           "apply_to": "all_visual_outputs",
           "targets": [
             {
-              "width": { "node_id": "199", "param": "resize_type.width" },
-              "height": { "node_id": "199", "param": "resize_type.height" }
+              "width": { "node_id": "199", "param": "width" },
+              "height": { "node_id": "199", "param": "height" }
             }
           ]
         }

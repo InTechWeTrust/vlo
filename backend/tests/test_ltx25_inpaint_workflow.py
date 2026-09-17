@@ -91,9 +91,9 @@ def test_inpaint_preserves_optional_audio_retake_and_raw_output(workflow):
     assert _source(workflow, 702, "masks") == (714, 0)
     assert _node(workflow, 714)["widgets_values"] == [False]
     assert _source(workflow, 527, "samples") == (569, 2)
-    assert _source(workflow, 775, "input") == (527, 0)
-    assert _source(workflow, 716, "images") == (775, 0)
-    assert _source(workflow, 745, "images") == (775, 0)
+    assert _node(workflow, 775)["type"] == "vloSaveVideo"
+    assert _source(workflow, 775, "images") == (527, 0)
+    assert _source(workflow, 775, "audio") == (425, 0)
 
 
 def test_inpaint_lora_is_active_and_discoverable_for_download(workflow, tmp_path, monkeypatch):

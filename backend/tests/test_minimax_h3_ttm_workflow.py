@@ -144,29 +144,22 @@ def test_reference_latents_and_sampled_latent_share_a_frame_count():
         assert origin_of(consumer, param) == snap["id"]
 
     # The same canvas feeds the *input* resize nodes and the latent the sampler
-    # starts from. The output resize is deliberately excluded: it restores the
-    # requested size after generation, so wiring it to the generation canvas
-    # would defeat it.
+    # starts from.
     width = origin_of(h3, "width")
     height = origin_of(h3, "height")
-    output_resize_ids = _postprocess_target_node_ids()
-    input_resizes = [
-        node
-        for node in _nodes_by_type(workflow, "ResizeImageMaskNode")
-        if node["id"] not in output_resize_ids
-    ]
+    input_resizes = _nodes_by_type(workflow, "ResizeImageMaskNode")
     assert input_resizes, "expected at least one input resize node"
     for resize in input_resizes:
         assert origin_of(resize, "resize_type.width") == width
         assert origin_of(resize, "resize_type.height") == height
 
-    # The output resize takes its dimensions from the aspect-ratio stage at
-    # dispatch, so its width/height must stay unlinked widgets for the backend
-    # to write into.
-    for node_id in output_resize_ids:
+    # The output save restores the requested size after generation. It takes its
+    # dimensions from the aspect-ratio stage at dispatch, so its width/height
+    # must stay unlinked widgets for the backend to write into.
+    for node_id in _postprocess_target_node_ids():
         node = by_id[node_id]
-        assert node["type"] == "ResizeImageMaskNode"
-        for param in ("resize_type.width", "resize_type.height"):
+        assert node["type"] == "vloSaveVideo"
+        for param in ("width", "height"):
             spec = next(i for i in node["inputs"] if i["name"] == param)
             assert spec["link"] is None, f"{param} must not be wired to the canvas"
 
@@ -195,12 +188,12 @@ def test_audio_is_decoded_and_muxed():
     """TTM never holds the audio stream, so H3 still generates a soundtrack."""
     workflow = _workflow()
     links = {link[0]: link for link in workflow["links"]}
-    combine = _only(workflow, "VHS_VideoCombine")
-    audio_input = next(i for i in combine["inputs"] if i["name"] == "audio")
+    save = _only(workflow, "vloSaveVideo")
+    audio_input = next(i for i in save["inputs"] if i["name"] == "audio")
 
     assert audio_input["link"] is not None
     assert links[audio_input["link"]][1] == _only(workflow, "VAEDecodeAudio")["id"]
-    assert combine["widgets_values"]["frame_rate"] == 24
+    assert save["widgets_values_named"]["fps"] == 24
 
 
 def test_ttm_window_is_exposed_and_the_canvas_is_not():

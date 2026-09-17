@@ -3568,169 +3568,178 @@
     },
     {
       "id": 246,
-      "type": "ResizeImageMaskNode",
-      "title": "Output Resize",
-      "pos": [3210, 3490],
-      "size": [270, 154],
-      "flags": {},
-      "order": 109,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "input",
-          "name": "input",
-          "type": "IMAGE,MASK",
-          "link": 346
-        },
-        {
-          "localized_name": "resize_type",
-          "name": "resize_type",
-          "type": "COMFY_DYNAMICCOMBO_V3",
-          "widget": {
-            "name": "resize_type"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "width",
-          "name": "resize_type.width",
-          "type": "INT",
-          "widget": {
-            "name": "resize_type.width"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "height",
-          "name": "resize_type.height",
-          "type": "INT",
-          "widget": {
-            "name": "resize_type.height"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "crop",
-          "name": "resize_type.crop",
-          "type": "COMBO",
-          "widget": {
-            "name": "resize_type.crop"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "scale_method",
-          "name": "scale_method",
-          "type": "COMBO",
-          "widget": {
-            "name": "scale_method"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "resized",
-          "name": "resized",
-          "type": "IMAGE",
-          "links": [271]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ResizeImageMaskNode",
-        "cnr_id": "comfy-core",
-        "ver": "0.19.3",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["scale dimensions", 1280, 720, "disabled", "lanczos"],
-      "widgets_values_named": {
-        "resize_type": "scale dimensions",
-        "resize_type.width": 1280,
-        "resize_type.height": 720,
-        "resize_type.crop": "disabled",
-        "scale_method": "lanczos"
-      }
-    },
-    {
-      "id": 43,
-      "type": "VHS_VideoCombine",
+      "type": "vloSaveVideo",
+      "title": "Output Save",
       "pos": [3060, 3260],
-      "size": [590, 675.75],
+      "size": [270, 334],
       "flags": {},
       "order": 110,
       "mode": 0,
       "inputs": [
         {
+          "localized_name": "images",
           "name": "images",
           "type": "IMAGE",
-          "link": 271
+          "link": 346
         },
         {
+          "localized_name": "audio",
           "name": "audio",
           "shape": 7,
           "type": "AUDIO",
           "link": 329
         },
         {
-          "name": "meta_batch",
-          "shape": 7,
-          "type": "VHS_BatchManager",
-          "link": null
-        },
-        {
-          "name": "vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": null
-        },
-        {
-          "name": "frame_rate",
+          "localized_name": "fps",
+          "name": "fps",
           "type": "FLOAT",
           "widget": {
-            "name": "frame_rate"
+            "name": "fps"
           },
           "link": 201
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "save_output",
+          "name": "save_output",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "save_output"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "upscale_method",
+          "name": "upscale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "upscale_method"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crop",
+          "name": "crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "format",
+          "name": "format",
+          "type": "COMBO",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "codec",
+          "name": "codec",
+          "type": "COMBO",
+          "widget": {
+            "name": "codec"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crf",
+          "name": "crf",
+          "type": "FLOAT",
+          "widget": {
+            "name": "crf"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "bit_depth",
+          "name": "bit_depth",
+          "type": "COMBO",
+          "widget": {
+            "name": "bit_depth"
+          },
+          "link": null,
+          "shape": 7
+        },
+        {
+          "localized_name": "color_space",
+          "name": "color_space",
+          "type": "COMBO",
+          "widget": {
+            "name": "color_space"
+          },
+          "link": null,
+          "shape": 7
         }
       ],
       "outputs": [
         {
-          "name": "Filenames",
-          "type": "VHS_FILENAMES",
-          "links": null
+          "localized_name": "video",
+          "name": "video",
+          "type": "VIDEO",
+          "links": []
         }
       ],
       "properties": {
-        "cnr_id": "comfyui-videohelpersuite",
-        "ver": "993082e4f2473bf4acaf06f51e33877a7eb38960",
-        "Node name for S&R": "VHS_VideoCombine",
-        "widget_ue_connectable": {
-          "frame_rate": true
-        }
+        "Node name for S&R": "vloSaveVideo",
+        "cnr_id": "ComfyUI-vlo",
+        "widget_ue_connectable": {}
       },
-      "widgets_values": {
-        "frame_rate": 25,
-        "loop_count": 0,
+      "widgets_values": [
+        25.0,
+        "LTX-2",
+        false,
+        1280,
+        720,
+        "bicubic",
+        "disabled",
+        "auto",
+        "auto",
+        19.0,
+        "auto",
+        "sRGB"
+      ],
+      "widgets_values_named": {
+        "fps": 25.0,
         "filename_prefix": "LTX-2",
-        "format": "video/h264-mp4",
-        "pix_fmt": "yuv420p",
-        "crf": 19,
-        "save_metadata": true,
-        "trim_to_audio": false,
-        "pingpong": false,
         "save_output": false,
-        "videopreview": {
-          "hidden": false,
-          "paused": false,
-          "params": {
-            "filename": "LTX-2_00042-audio.mp4",
-            "subfolder": "",
-            "type": "output",
-            "format": "video/h264-mp4",
-            "frame_rate": 24,
-            "workflow": "LTX-2_00042.png",
-            "fullpath": "/notebooks/ComfyUI/output/LTX-2_00042-audio.mp4"
-          }
-        }
+        "width": 1280,
+        "height": 720,
+        "upscale_method": "bicubic",
+        "crop": "disabled",
+        "format": "auto",
+        "codec": "auto",
+        "crf": 19.0,
+        "bit_depth": "auto",
+        "color_space": "sRGB"
       }
     },
     {
@@ -4066,7 +4075,7 @@
     [187, 124, 0, 11, 0, "CLIP"],
     [190, 127, 0, 9, 1, "INT"],
     [191, 127, 0, 32, 2, "INT"],
-    [201, 137, 0, 43, 4, "FLOAT"],
+    [201, 137, 0, 246, 2, "FLOAT"],
     [212, 114, 0, 42, 0, "IMAGE"],
     [214, 116, 0, 49, 0, "IMAGE"],
     [219, 146, 1, 150, 0, "LATENT"],
@@ -4093,7 +4102,6 @@
     [263, 198, 0, 197, 0, "MODEL"],
     [264, 197, 0, 199, 0, "MODEL"],
     [265, 200, 0, 36, 0, "MODEL"],
-    [271, 246, 0, 43, 0, "IMAGE"],
     [274, 207, 0, 36, 2, "CONDITIONING"],
     [275, 208, 0, 36, 1, "CONDITIONING"],
     [279, 16, 0, 10, 0, "CONDITIONING"],
@@ -4125,7 +4133,7 @@
     [325, 233, 0, 235, 1, "LATENT"],
     [326, 235, 0, 24, 1, "LATENT"],
     [327, 9, 0, 236, 0, "LATENT"],
-    [329, 150, 0, 43, 1, "AUDIO"],
+    [329, 150, 0, 246, 1, "AUDIO"],
     [334, 13, 0, 146, 0, "LATENT"],
     [337, 241, 0, 32, 0, "INT"],
     [338, 240, 0, 32, 1, "INT"],
