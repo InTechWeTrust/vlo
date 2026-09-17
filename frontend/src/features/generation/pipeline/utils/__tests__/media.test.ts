@@ -380,6 +380,14 @@ describe("cropImageToAspectRatio", () => {
     expect(await cropImageToAspectRatio(file, "1:1")).toBe(file);
   });
 
+  it("treats a rounding-sized trim as already at the target ratio", async () => {
+    // 480p 16:9 renders at 854x480; the exact crop would be 853x480.
+    const { close } = stubBitmap(854, 480);
+    const file = imageFile();
+    expect(await cropImageToAspectRatio(file, "16:9")).toBe(file);
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("crops toward the target ratio (reaching the canvas draw path)", async () => {
     // Source 1920x1080 cropped to 1:1 produces a non-equal target, so the
     // function advances past resolveAspectRatioCropTarget into canvas drawing.
@@ -477,6 +485,24 @@ describe("video resize and crop", () => {
     await expect(
       cropVideoToAspectRatio(alreadyWide, "16:9"),
     ).resolves.toBe(alreadyWide);
+  });
+
+  it("leaves 480p 16:9 renders alone instead of re-encoding 2px away", async () => {
+    mediaMocks.primaryVideoTrack = { displayWidth: 854, displayHeight: 480 };
+    const render = video();
+    await expect(cropVideoToAspectRatio(render, "16:9")).resolves.toBe(render);
+    expect(mediaMocks.conversionInit).not.toHaveBeenCalled();
+  });
+
+  it("still crops once the trim exceeds the rounding tolerance", async () => {
+    // 1:1 from 484x480 trims 4px of width.
+    mediaMocks.primaryVideoTrack = { displayWidth: 484, displayHeight: 480 };
+    await cropVideoToAspectRatio(video(), "1:1");
+    expect(mediaMocks.conversionInit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: expect.objectContaining({ width: 480, height: 480 }),
+      }),
+    );
   });
 
   it("crops videos to even dimensions and rejects empty output", async () => {

@@ -83,6 +83,9 @@ function nearlyEqual(left: number, right: number, epsilon = 1e-6): boolean {
   return Math.abs(left - right) <= epsilon;
 }
 
+/** Largest per-axis trim still treated as "already at the target ratio". */
+const ASPECT_RATIO_CROP_TOLERANCE_PX = 2;
+
 function resolveAspectRatioCropTarget(
   sourceWidth: number,
   sourceHeight: number,
@@ -121,6 +124,19 @@ function resolveAspectRatioCropTarget(
       1,
       Math.round(normalizedWidth / parsedAspectRatio.ratio),
     );
+  }
+
+  // A trim this small is rounding, not a different ratio: renders pin the
+  // short edge and round the long edge to even (480p 16:9 is 854x480, not
+  // 853.33x480). Cropping it would buy a lossy video re-encode for 1-2px.
+  if (
+    normalizedWidth - targetWidth <= ASPECT_RATIO_CROP_TOLERANCE_PX &&
+    normalizedHeight - targetHeight <= ASPECT_RATIO_CROP_TOLERANCE_PX
+  ) {
+    return {
+      width: normalizedWidth,
+      height: normalizedHeight,
+    };
   }
 
   if (options.evenDimensions) {
