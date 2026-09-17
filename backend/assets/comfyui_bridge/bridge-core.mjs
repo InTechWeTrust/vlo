@@ -1459,7 +1459,19 @@ export function startVloBridge({ app, api, windowObject = window }) {
     }
     try {
       const result = await handler(data.payload);
-      post({ type: "response", requestId: data.requestId, ok: true, result });
+      // Handler results are read straight out of live ComfyUI state, which
+      // hands back Vue reactive proxies the structured clone algorithm
+      // rejects (`graphToPrompt` widget values and subgraph definitions, as
+      // `activeState` already does). An unclonable result would throw inside
+      // `post` and reach the parent as an opaque DataCloneError instead of
+      // the prompt it asked for, so every result crosses the boundary as a
+      // clone that reads through proxies.
+      post({
+        type: "response",
+        requestId: data.requestId,
+        ok: true,
+        result: cloneValue(windowObject, result),
+      });
     } catch (error) {
       post({
         type: "response",

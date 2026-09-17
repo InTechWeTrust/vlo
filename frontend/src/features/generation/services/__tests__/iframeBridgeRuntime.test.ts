@@ -639,6 +639,74 @@ describe("hosted iframe bridge runtime", () => {
     expect(JSON.stringify(response)).not.toContain("__vloPromptGraphNonce");
   });
 
+  // ComfyUI ≥1.45 reads widget values (promoted subgraph inputs among them)
+  // through Vue reactive proxies, which the structured clone algorithm
+  // rejects. Posting `graphToPrompt`'s result as-is fails the whole
+  // generation with a DataCloneError the parent cannot act on.
+  it("posts a resolved prompt ComfyUI returned as reactive proxies", async () => {
+    const harness = createHarness();
+    const parentWindow = harness.windowObject.parent;
+    const deliver = parentWindow.postMessage;
+    // A real window rejects an unclonable message before it is delivered.
+    parentWindow.postMessage = vi.fn((message: Record<string, unknown>) => {
+      structuredClone(message);
+      return deliver(message);
+    });
+    harness.app.graphToPrompt.mockImplementation(async (graph) => ({
+      output: new Proxy(
+        {
+          "node-a": {
+            class_type: "LoadImage",
+            inputs: new Proxy({ image: "override.png" }, {}),
+          },
+        },
+        {},
+      ),
+      workflow: { extra: { ...graph.extra } },
+    }));
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "read-proxy", "read-active");
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "read-proxy"),
+      ).toBe(true),
+    );
+    const snapshot = harness.posted.find(
+      (message) => message.requestId === "read-proxy",
+    )?.result as { workflowInstanceId: string; revision: number };
+
+    request(harness, "resolve-proxy", "resolve-prompt", {
+      ...snapshot,
+      bypassNodeIds: [],
+      widgetOverrides: [],
+    });
+    await vi.waitFor(() =>
+      expect(
+        harness.posted.some((message) => message.requestId === "resolve-proxy"),
+      ).toBe(true),
+    );
+    const response = harness.posted.find(
+      (message) => message.requestId === "resolve-proxy",
+    );
+    expect(response).toMatchObject({
+      ok: true,
+      result: {
+        output: {
+          "node-a": {
+            class_type: "LoadImage",
+            inputs: { image: "override.png" },
+          },
+        },
+      },
+    });
+    expect(() => structuredClone(response)).not.toThrow();
+  });
+
   it("activates a node the workflow ships bypassed, on the clone only", async () => {
     const harness = createHarness();
     // The arrangement an optional LoRA loader ships in: off in the file, so
