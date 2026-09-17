@@ -26,6 +26,8 @@ const FORBIDDEN = [
   "selection export probe:",
   "runCompositeParityProbe",
   "composite parity probe:",
+  "runGlitchConsistencyProbe",
+  "Glitch consistency probe",
   "acceptLiveCompositeFrame",
   "rejectLiveCompositeFrame",
   "__PLAYBACK_CLOCK__",

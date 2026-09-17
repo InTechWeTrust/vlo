@@ -88,6 +88,7 @@ declare global {
         startTick: number;
         endTick: number;
       }) => Promise<unknown>;
+      runGlitchConsistencyProbe?: () => Promise<unknown>;
       runCompositeParityProbe?: (request: {
         compositeId: string;
         placementTick: number;
@@ -178,6 +179,15 @@ export function installE2EDiagnostics(): void {
       })
       .catch((error: unknown) => {
         console.error("Failed to install selection export probe", error);
+      });
+    void import("./e2e/glitchConsistencyProbe")
+      .then(({ runGlitchConsistencyProbe }) => {
+        if (window.__vloE2E) {
+          window.__vloE2E.runGlitchConsistencyProbe = runGlitchConsistencyProbe;
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to install Glitch consistency probe", error);
       });
     void import("./e2e/compositeParityProbe")
       .then(
