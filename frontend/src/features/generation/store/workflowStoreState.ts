@@ -373,6 +373,11 @@ export function buildWorkflowStoreState(
   // Rules resolution is asynchronous. A newer graph, reload, or project reset
   // must invalidate old editor responses even when the filename stays the same.
   let editorSyncGeneration = 0;
+  // Graphs a restored snapshot carried for its workflow, by workflow id. Used
+  // only when vlo has no file for that id — a workflow opened directly in
+  // ComfyUI — and kept for the project's lifetime so the editor's own retries
+  // and reloads of the workflow find it too.
+  const savedWorkflowGraphs = new Map<string, Record<string, unknown>>();
 
   return {
     syncedWorkflow: null,
@@ -422,9 +427,10 @@ export function buildWorkflowStoreState(
     setPanelValues: (panelValues) => set({ panelValues }),
     pendingPanelSnapshot: null,
     isRestoringPanelSnapshot: false,
+    panelSnapshotRestoreFailed: false,
     panelResetToken: 0,
     setPendingPanelSnapshot: (pendingPanelSnapshot) =>
-      set({ pendingPanelSnapshot }),
+      set({ pendingPanelSnapshot, panelSnapshotRestoreFailed: false }),
 
     restorePanelSnapshot: async (snapshot) => {
       // The snapshot stays pending for the whole restore: it is what blocks
@@ -439,6 +445,10 @@ export function buildWorkflowStoreState(
         pendingWorkflowCarryover: discardWorkflowCarryover(state),
       }));
 
+      if (snapshot.graphData) {
+        savedWorkflowGraphs.set(snapshot.workflowId, snapshot.graphData);
+      }
+
       try {
         await get().loadWorkflow(snapshot.workflowId);
 
@@ -447,7 +457,13 @@ export function buildWorkflowStoreState(
         // belongs on screen any more.
         if (session.isStale()) return;
         if (get().selectedWorkflowId !== snapshot.workflowId) return;
-        if (get().workflowLoadState === "error") return;
+        if (get().workflowLoadState === "error") {
+          // Retrying would fail the same way, and each attempt puts the panel
+          // back into loading. The snapshot stays pending so the copy on disk
+          // survives until the user picks a workflow themselves.
+          set({ panelSnapshotRestoreFailed: true });
+          return;
+        }
 
         if (typeof snapshot.targetResolution === "number") {
           const rules = get().activeWorkflowRules;
@@ -485,7 +501,11 @@ export function buildWorkflowStoreState(
     },
 
     discardPendingPanelSnapshot: () =>
-      set({ pendingPanelSnapshot: null, isRestoringPanelSnapshot: false }),
+      set({
+        pendingPanelSnapshot: null,
+        isRestoringPanelSnapshot: false,
+        panelSnapshotRestoreFailed: false,
+      }),
 
     clearPanelForProjectChange: () => {
       // Invalidates any restore still in flight, plus the workflow load it is
@@ -494,10 +514,12 @@ export function buildWorkflowStoreState(
       openPanelRestoreSession();
       options.getNextWorkflowLoadRequestId();
       editorSyncGeneration += 1;
+      savedWorkflowGraphs.clear();
 
       set((state) => ({
         pendingPanelSnapshot: null,
         isRestoringPanelSnapshot: false,
+        panelSnapshotRestoreFailed: false,
         // Media values name assets of the project being closed.
         pendingWorkflowCarryover: discardWorkflowCarryover(state),
         pendingReplayPanelState: null,
@@ -1252,8 +1274,20 @@ export function buildWorkflowStoreState(
         if (isTempWorkflow && tempWorkflow) {
           graphData = tempWorkflow.graphData;
         } else {
+          const savedGraph = savedWorkflowGraphs.get(workflowId);
           const [graphResponse, fetchedRules] = await Promise.all([
-            comfyApi.getWorkflowContent(workflowId),
+            comfyApi.getWorkflowContent(workflowId).catch((error) => {
+              // vlo has no file under this id — it was opened directly in
+              // ComfyUI — so the graph the project saved is the only copy.
+              if (
+                savedGraph &&
+                error instanceof comfyApi.ComfyApiError &&
+                error.status === 404
+              ) {
+                return null;
+              }
+              throw error;
+            }),
             comfyApi
               .getWorkflowRules(workflowId)
               .then((result) => ({
@@ -1276,10 +1310,33 @@ export function buildWorkflowStoreState(
               })),
           ]);
 
-          graphData = graphResponse;
-          rules = fetchedRules.rules;
-          rulesWarnings = fetchedRules.warnings;
-          rulesSourceId = fetchedRules.rulesSourceId;
+          if (graphResponse) {
+            graphData = graphResponse;
+            rules = fetchedRules.rules;
+            rulesWarnings = fetchedRules.warnings;
+            rulesSourceId = fetchedRules.rulesSourceId;
+          } else {
+            graphData = savedGraph as Record<string, unknown>;
+            // Without a file there is no sidecar either, so the rules fetch
+            // above failed by definition. Resolve them from the graph, as an
+            // editor sync of this workflow would.
+            const resolved = await comfyApi
+              .resolveWorkflowRules({ workflow: null, graphData })
+              .catch(() => null);
+            rules = resolved?.rules ?? EMPTY_WORKFLOW_RULES;
+            rulesWarnings = resolved?.warnings ?? [];
+            rulesSourceId = null;
+            if (
+              !get().availableWorkflows.some((item) => item.id === workflowId)
+            ) {
+              set((state) => ({
+                availableWorkflows: upsertWorkflowOption(
+                  state.availableWorkflows,
+                  { id: workflowId, name: formatWorkflowName(workflowId) },
+                ),
+              }));
+            }
+          }
         }
         if (isStale()) return;
 

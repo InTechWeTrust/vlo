@@ -22,6 +22,7 @@ function readCurrentSnapshot(): GenerationPanelSnapshot | null {
   const state = useGenerationStore.getState();
   return buildGenerationPanelSnapshot({
     workflowId: state.selectedWorkflowId,
+    graphData: state.syncedGraphData,
     workflowRules: state.activeWorkflowRules,
     workflowInputs: state.workflowInputs,
     mediaInputs: state.mediaInputs,
@@ -212,6 +213,7 @@ function readStoreSignature(): readonly unknown[] {
     state.panelValues,
     state.mediaInputs,
     state.workflowInputs,
+    state.syncedGraphData,
   ];
 }
 

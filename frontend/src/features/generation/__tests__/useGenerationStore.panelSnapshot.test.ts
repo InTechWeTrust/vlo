@@ -169,6 +169,79 @@ describe("useGenerationStore panel snapshot restore", () => {
     // failed to load must not overwrite what the project has on disk.
     expect(state.pendingPanelSnapshot).toEqual(snapshot);
     expect(state.isRestoringPanelSnapshot).toBe(false);
+    // Marked failed so the panel does not retry it in a loop.
+    expect(state.panelSnapshotRestoreFailed).toBe(true);
+  });
+
+  it("reopens a workflow vlo has no file for on the graph it saved", async () => {
+    const savedGraph = {
+      nodes: [{ id: 145, type: "LoadImage", widgets_values: ["other.png"] }],
+    };
+    const snapshot: GenerationPanelSnapshot = {
+      version: 1,
+      workflowId: "opened-in-comfyui.json",
+      inputs: [
+        { nodeId: "145", kind: "draggedAsset", parentAssetId: sourceAsset.id },
+      ],
+      graphData: savedGraph,
+    };
+    vi.spyOn(comfyApi, "getWorkflowContent").mockRejectedValue(
+      new comfyApi.ComfyApiError("Workflow not found", 404, null),
+    );
+    vi.spyOn(comfyApi, "getWorkflowRules").mockRejectedValue(
+      new Error("Workflow not found"),
+    );
+    const resolveRules = vi
+      .spyOn(comfyApi, "resolveWorkflowRules")
+      .mockResolvedValue({
+        workflow_id: "opened-in-comfyui.json",
+        has_sidecar: false,
+        rules: createDefaultWorkflowRules({
+          nodes: {
+            "145": {
+              present: {
+                label: "Source Image",
+                input_type: "image",
+                param: "image",
+                class_type: "LoadImage",
+              },
+            },
+          },
+        }),
+        warnings: [],
+      });
+
+    useGenerationStore.getState().setPendingPanelSnapshot(snapshot);
+    await useGenerationStore.getState().restorePanelSnapshot(snapshot);
+
+    const state = useGenerationStore.getState();
+    expect(resolveRules).toHaveBeenCalledWith(
+      expect.objectContaining({ graphData: savedGraph }),
+    );
+    // Kept under its own id, so edits after the restore keep being saved.
+    expect(state.selectedWorkflowId).toBe("opened-in-comfyui.json");
+    expect(state.workflowLoadState).not.toBe("error");
+    expect(state.pendingPanelSnapshot).toBeNull();
+    expect(state.syncedGraphData).toEqual(savedGraph);
+    expect(state.mediaInputs["145:image"]).toMatchObject({
+      asset: { id: sourceAsset.id },
+    });
+  });
+
+  it("prefers vlo's own file over the saved graph when it has one", async () => {
+    const snapshot: GenerationPanelSnapshot = {
+      version: 1,
+      workflowId: "wan.json",
+      inputs: [],
+      graphData: { nodes: [{ id: 999, type: "Stale" }] },
+    };
+
+    useGenerationStore.getState().setPendingPanelSnapshot(snapshot);
+    await useGenerationStore.getState().restorePanelSnapshot(snapshot);
+
+    expect(useGenerationStore.getState().syncedGraphData).toEqual({
+      nodes: [{ id: 145, type: "LoadImage", widgets_values: ["other.png"] }],
+    });
   });
 
   it("drops the saved state once the user picks a workflow themselves", async () => {

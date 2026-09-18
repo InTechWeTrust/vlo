@@ -56,10 +56,18 @@ export interface GenerationPanelSnapshot {
   targetResolutionIsCustom?: boolean;
   inputs: GeneratedCreationInput[];
   replayState?: GeneratedCreationReplayState;
+  /**
+   * The workflow's graph as the panel last held it. Only a fallback: a
+   * workflow opened directly in ComfyUI has an id vlo holds no file for, so
+   * without this the project could never reopen on it. When vlo does have the
+   * file, that file wins.
+   */
+  graphData?: Record<string, unknown>;
 }
 
 export interface BuildGenerationPanelSnapshotOptions {
   workflowId: string | null;
+  graphData?: Record<string, unknown> | null;
   workflowRules: WorkflowRules | null;
   workflowInputs: WorkflowInput[];
   mediaInputs: Record<string, GenerationMediaInputValue | null>;
@@ -117,6 +125,7 @@ export function buildGenerationPanelSnapshot(
       { includeItemIds: true },
     ),
     ...(replayState ? { replayState } : {}),
+    ...(options.graphData ? { graphData: options.graphData } : {}),
   };
 }
 
@@ -197,6 +206,7 @@ export function parseGenerationPanelSnapshot(
     ...(isRecord(value.replayState)
       ? { replayState: value.replayState as unknown as GeneratedCreationReplayState }
       : {}),
+    ...(isRecord(value.graphData) ? { graphData: value.graphData } : {}),
   };
 }
 

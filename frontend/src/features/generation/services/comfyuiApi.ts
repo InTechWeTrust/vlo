@@ -512,6 +512,16 @@ export async function getWorkflowContent(
 ): Promise<Record<string, unknown>> {
   const normalizedFilename = normalizeWorkflowFilename(filename) ?? filename;
   const resp = await fetch(`${COMFY_API}/workflow/content/${normalizedFilename}`);
+  if (resp.status === 404) {
+    // Typed so a caller holding its own copy of the graph can tell "vlo has
+    // no such file" from a failed request.
+    const payload = await parsePayload(resp);
+    throw new ComfyApiError(
+      formatComfyErrorMessage("Workflow content fetch", resp.status, payload),
+      resp.status,
+      payload,
+    );
+  }
   if (!resp.ok) {
     await throwRequestError("Workflow content fetch", resp);
   }

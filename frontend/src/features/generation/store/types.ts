@@ -103,6 +103,11 @@ export interface GenerationWorkflowState {
    */
   isRestoringPanelSnapshot: boolean;
   /**
+   * The last restore could not load the saved workflow. Stops the panel from
+   * retrying it; cleared when a new snapshot arrives or the user moves on.
+   */
+  panelSnapshotRestoreFailed: boolean;
+  /**
    * Bumped when the panel must drop the state it holds outside the store —
    * the text and widget values that live in the component. Changing projects
    * is the only thing that does this.

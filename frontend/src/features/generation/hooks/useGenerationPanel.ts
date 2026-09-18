@@ -560,6 +560,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const isRestoringPanelSnapshot = useGenerationStore(
     (s) => s.isRestoringPanelSnapshot,
   );
+  const panelSnapshotRestoreFailed = useGenerationStore(
+    (s) => s.panelSnapshotRestoreFailed,
+  );
   const panelResetToken = useGenerationStore((s) => s.panelResetToken);
   const clearPendingReplayPanelState = useGenerationStore(
     (s) => s.clearPendingReplayPanelState,
@@ -1007,6 +1010,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   useEffect(() => {
     if (!pendingPanelSnapshot) return;
     if (isRestoringPanelSnapshot) return;
+    if (panelSnapshotRestoreFailed) return;
     if (connectionStatus !== "connected") return;
 
     void useGenerationStore
@@ -1018,7 +1022,12 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           error,
         );
       });
-  }, [connectionStatus, isRestoringPanelSnapshot, pendingPanelSnapshot]);
+  }, [
+    connectionStatus,
+    isRestoringPanelSnapshot,
+    panelSnapshotRestoreFailed,
+    pendingPanelSnapshot,
+  ]);
 
   useEffect(() => {
     const store = useGenerationStore.getState();
