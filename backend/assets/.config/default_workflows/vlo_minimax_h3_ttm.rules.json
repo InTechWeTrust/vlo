@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "MiniMax H3 Time-to-Move",
+  "name": "MiniMax H3 Time-to-Move (Base)",
   "sections": [
     { "id": "lora_loaders", "title": "LoRA loaders", "order": 3, "default_open": true },
     { "id": "advanced_settings", "title": "Advanced Settings", "order": 4, "default_open": false }

@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "VACE inpaint and stitch",
+  "name": "VACE Inpaint",
   "sections": [
     {
       "id": "advanced_settings",

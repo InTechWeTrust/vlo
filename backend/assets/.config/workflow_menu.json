@@ -95,6 +95,16 @@
       "order": 2
     },
     {
+      "workflow_id": "vlo_minimax_h3_inpaint.json",
+      "parent_id": "video.edit",
+      "order": 3
+    },
+    {
+      "workflow_id": "vlo_minimax_h3_inpaint_flf2va.json",
+      "parent_id": "video.edit",
+      "order": 4
+    },
+    {
       "workflow_id": "vlo_wan_ttm.json",
       "parent_id": "video.control",
       "order": 0

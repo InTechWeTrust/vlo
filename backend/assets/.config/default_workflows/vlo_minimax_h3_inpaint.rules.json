@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "MiniMax H3 inpaint and stitch",
+  "name": "MiniMax H3 Inpaint (Reference)",
   "sections": [
     { "id": "references", "title": "References", "order": 3, "default_open": true },
     { "id": "advanced_settings", "title": "Advanced Settings", "order": 4, "default_open": false }

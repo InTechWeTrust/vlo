@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "name": "MiniMax H3 inpaint and stitch (FLF2VA)",
+  "name": "MiniMax H3 Inpaint (Base)",
   "sections": [
     {
       "id": "advanced_settings",
