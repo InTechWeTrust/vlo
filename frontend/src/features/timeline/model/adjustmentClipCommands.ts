@@ -1,6 +1,6 @@
 import {
   ADJUSTMENT_DEPTH_ALL,
-  ADJUSTMENT_RETIMING_STATIC,
+  ADJUSTMENT_RETIMING_RIPPLE,
   getAdjustmentRetimingMode,
   isAdjustmentDepthAll,
   type AdjustmentDepth,
@@ -120,7 +120,7 @@ export function createAdjustmentClipInDraft(
     offset: 0,
     transformations: input.transformations ?? [],
     depth,
-    retimingMode: input.retimingMode ?? ADJUSTMENT_RETIMING_STATIC,
+    retimingMode: input.retimingMode ?? ADJUSTMENT_RETIMING_RIPPLE,
   };
 
   // Snapshot length before the add — addClipToDraft no-ops on rule-2
