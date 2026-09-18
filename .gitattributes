@@ -102,6 +102,8 @@
 # Render authority and the run record api.export reads.
 /frontend/src/core/export/exportController.ts extension-surface=adapter
 /frontend/src/core/export/exportRunLog.ts extension-surface=adapter
+/frontend/src/core/export/exportProgress.ts extension-surface=host
+/frontend/src/core/extract/useExtractStore.ts extension-surface=adapter
 /frontend/src/core/project/projectLifecycleHooks.ts extension-surface=adapter
 /frontend/src/core/persistence/preSaveHooks.ts extension-surface=adapter
 /frontend/src/features/colorGrading/components/GradeManagementControl.tsx extension-surface=adapter
@@ -231,6 +233,9 @@
 /frontend/src/features/renderer/services/CompositeSceneRuntime.ts extension-surface=adapter
 /frontend/src/features/renderer/services/CompositeAudioTrackRenderer.ts extension-surface=adapter
 /frontend/src/features/renderer/services/ExportRenderer.ts extension-surface=adapter
+/frontend/src/features/renderer/services/ExportFileTarget.ts extension-surface=host
+/frontend/src/features/renderer/services/TextureOutputEncoder.ts extension-surface=host
+/frontend/src/features/renderer/services/renderSelectionToVideoFile.ts extension-surface=adapter
 /frontend/src/features/renderer/services/RenderGroupOrchestrator.ts extension-surface=adapter
 /frontend/src/features/renderer/services/TemporalRenderCoordinator.ts extension-surface=adapter
 /frontend/src/features/renderer/services/TemporalFrameScopeResolver.ts extension-surface=adapter

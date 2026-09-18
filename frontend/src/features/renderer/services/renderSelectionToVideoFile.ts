@@ -1,3 +1,4 @@
+import type { ExportPhase } from "../../../core/export/exportProgress";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import { prepareBrushMasksForTimelineRender } from "../../masks/api";
 import { normalizeDetachedTimelineSelection } from "../../timelineSelection";
@@ -5,6 +6,7 @@ import { preloadColorGradeLuts } from "../../transformations/catalogue/filters/c
 import {
   ExportRenderer,
   type ExportConfig,
+  type RenderResult,
   type ExportRenderHealth,
   type ProjectData,
   type RenderedFramePixelCapture,
@@ -33,6 +35,7 @@ export interface RenderSelectionToVideoFileOptions {
   includeTimelineMasks?: boolean;
   signal?: AbortSignal;
   onProgress?: (percentage: number) => void;
+  onPhaseChange?: (phase: ExportPhase) => void;
   /** Output container. WebM is used for alpha-preserving composite caches. */
   format?: OutputVideoFormat;
   /** Seconds between keyframes in the rendered video. */
@@ -61,14 +64,14 @@ export interface RenderSelectionToVideoFileOptions {
 
 /**
  * Single source of truth for rendering a {@link TimelineSelection} to a video
- * `File`. Wraps the `ExportRenderer.create → render → File` sequence so callers
+ * output bundle. Wraps the `ExportRenderer.create → render` sequence so callers
  * (generation input prep, the composite bake, selection/project export)
  * don't each re-implement it. The renderer disposes itself in `render()`.
  */
-export async function renderSelectionToVideoFile(
+export async function renderSelectionToOutput(
   timelineSelection: TimelineSelection,
   options: RenderSelectionToVideoFileOptions = {},
-): Promise<File> {
+): Promise<RenderResult> {
   if (
     options.renderInputs &&
     options.renderInputs.brushMasksPrepared !== true
@@ -106,6 +109,7 @@ export async function renderSelectionToVideoFile(
     (percentage) => options.onProgress?.(percentage),
     {
       timelineSelection: selection,
+      onPhaseChange: options.onPhaseChange,
       format: options.format ?? "mp4",
       keyFrameInterval: options.keyFrameInterval,
       preserveAlpha: options.preserveAlpha,
@@ -119,6 +123,18 @@ export async function renderSelectionToVideoFile(
 
   options.onRenderHealth?.(result.renderHealth);
 
+  return result;
+}
+
+export async function renderSelectionToVideoFile(
+  timelineSelection: TimelineSelection,
+  options: RenderSelectionToVideoFileOptions = {},
+): Promise<File> {
+  if (options.renderInputs?.exportConfig.fileHandle) {
+    throw new Error("Use renderSelectionToOutput for disk exports");
+  }
+  const result = await renderSelectionToOutput(timelineSelection, options);
+  if (!result.video) throw new Error("Renderer produced no video blob");
   const prefix = options.filenamePrefix ?? "selection";
   const format = options.format ?? "mp4";
   const mimeType = format === "webm" ? "video/webm" : "video/mp4";

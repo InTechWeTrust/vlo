@@ -764,7 +764,6 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
 
   const handleCancelProcessing = useCallback(() => {
     cancel();
-    useExtractStore.getState().closeDialog();
   }, [cancel]);
 
   const handleConfirmSelection = useCallback(async () => {
@@ -773,7 +772,6 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
       setDialogView,
       setIsProcessing,
       setProgress,
-      closeDialog,
     } = useExtractStore.getState();
     const {
       selectionStartTick,
@@ -801,24 +799,20 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
     setIsProcessing(true);
     setProgress(0);
 
-    try {
-      await runSelectionExport({
-        selectionStartTick,
-        selectionEndTick,
-        selectionMessage,
-        selectionIncludedTrackIds,
-        selectionFpsOverride,
-        selectionResolution,
-        selectionFrameStep,
-        selectionFrameOffset,
-        audioOnly: selectionAudioOnly,
-        onProgress: (progress) => {
-          useExtractStore.getState().setProgress(progress);
-        },
-      });
-    } finally {
-      closeDialog();
-    }
+    await runSelectionExport({
+      selectionStartTick,
+      selectionEndTick,
+      selectionMessage,
+      selectionIncludedTrackIds,
+      selectionFpsOverride,
+      selectionResolution,
+      selectionFrameStep,
+      selectionFrameOffset,
+      audioOnly: selectionAudioOnly,
+      onProgress: (progress) => {
+        useExtractStore.getState().setProgress(progress);
+      },
+    });
   }, [config.outputResolution, runSelectionExport]);
 
   const handleExtractSelection = useCallback(() => {
@@ -838,7 +832,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
 
   const handleExport = useCallback(
     async (resolution: number, format: ExportFormatValue) => {
-      const { setIsProcessing, setProgress, setDialogView, closeDialog } =
+      const { setIsProcessing, setProgress, setDialogView } =
         useExtractStore.getState();
 
       let fileHandle: FileSystemFileHandle;
@@ -869,19 +863,15 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
       setIsProcessing(true);
       setProgress(0);
 
-      try {
-        await runProjectExport({
-          resolution,
-          format: format.format,
-          keyFrameInterval: format.keyFrameInterval,
-          fileHandle,
-          onProgress: (progress) => {
-            useExtractStore.getState().setProgress(progress);
-          },
-        });
-      } finally {
-        closeDialog();
-      }
+      await runProjectExport({
+        resolution,
+        format: format.format,
+        keyFrameInterval: format.keyFrameInterval,
+        fileHandle,
+        onProgress: (progress) => {
+          useExtractStore.getState().setProgress(progress);
+        },
+      });
     },
     [runProjectExport],
   );

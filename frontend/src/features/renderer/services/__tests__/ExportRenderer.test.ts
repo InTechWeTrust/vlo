@@ -175,6 +175,7 @@ vi.mock("mediabunny", () => {
       addVideoTrack = vi.fn();
       addAudioTrack = vi.fn();
       start = vi.fn();
+      cancel = vi.fn().mockResolvedValue(undefined);
       finalize = vi.fn();
     },
     Mp4OutputFormat: class {},
@@ -347,6 +348,32 @@ describe("ExportRenderer", () => {
     expect(logicalStage.scale.y * config.logicalHeight).toBeCloseTo(1920, 6);
 
     renderer.dispose();
+  });
+
+  it("completes a disk export without requiring a video Blob", async () => {
+    const stream = { write: vi.fn(), close: vi.fn().mockResolvedValue(undefined), abort: vi.fn().mockResolvedValue(undefined) };
+    const fileHandle = { createWritable: vi.fn().mockResolvedValue(stream) } as unknown as FileSystemFileHandle;
+    const config = { logicalWidth: 64, logicalHeight: 64, outputWidth: 64, outputHeight: 64, fileHandle };
+    const renderer = await ExportRenderer.create(config);
+    const progress = vi.fn();
+    const onPhaseChange = vi.fn();
+    const result = await renderer.render({ tracks: [], clips: [], assets: [], duration: 9600, fps: 30 }, config, progress, { onPhaseChange });
+    expect(result.video).toBeUndefined();
+    expect(result.outputs).toEqual({});
+    expect(result.files).toEqual({ video: fileHandle });
+    expect(stream.close).toHaveBeenCalledOnce();
+    expect(stream.abort).not.toHaveBeenCalled();
+    expect(progress.mock.calls.every(([value]) => value < 100)).toBe(true);
+    expect(onPhaseChange.mock.calls.flat()).toEqual(["preparing", "rendering", "finalizing", "saving"]);
+  });
+
+  it("preserves cancellation requested before render startup", async () => {
+    const fileHandle = { createWritable: vi.fn() } as unknown as FileSystemFileHandle;
+    const config = { logicalWidth: 64, logicalHeight: 64, outputWidth: 64, outputHeight: 64, fileHandle };
+    const renderer = await ExportRenderer.create(config);
+    renderer.cancel();
+    await expect(renderer.render({ tracks: [], clips: [], assets: [], duration: 9600, fps: 30 }, config, vi.fn())).rejects.toMatchObject({ name: "AbortError" });
+    expect(fileHandle.createWritable).not.toHaveBeenCalled();
   });
 
   it("should render project with clips without hanging", async () => {

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ExportPhase } from "../export/exportProgress";
 
 export type DialogView =
   | "choose"
@@ -28,6 +29,10 @@ export interface ExtractState {
   // Processing progress (shared)
   isProcessing: boolean;
   progress: number;
+  phase: ExportPhase | null;
+  error: string | null;
+  setPhase: (phase: ExportPhase) => void;
+  setError: (error: string) => void;
   setProgress: (p: number) => void;
   setIsProcessing: (v: boolean) => void;
 }
@@ -35,13 +40,15 @@ export interface ExtractState {
 export const useExtractStore = create<ExtractState>((set) => ({
   dialogOpen: false,
   dialogView: "choose",
-  openDialog: () => set({ dialogOpen: true, dialogView: "choose" }),
+  openDialog: () => set({ dialogOpen: true, dialogView: "choose", error: null, phase: null }),
   closeDialog: () =>
     set({
       dialogOpen: false,
       dialogView: "choose",
       isProcessing: false,
       progress: 0,
+      phase: null,
+      error: null,
   }),
   setDialogView: (view) => set({ dialogView: view }),
 
@@ -62,6 +69,10 @@ export const useExtractStore = create<ExtractState>((set) => ({
 
   isProcessing: false,
   progress: 0,
+  phase: null,
+  error: null,
+  setPhase: (phase) => set({ phase }),
+  setError: (error) => set({ error, isProcessing: false }),
   setProgress: (p) => set({ progress: p }),
-  setIsProcessing: (v) => set({ isProcessing: v }),
+  setIsProcessing: (v) => set(v ? { isProcessing: true, phase: "preparing", error: null } : { isProcessing: false }),
 }));

@@ -1,3 +1,4 @@
+import type { ExportPhase } from "../../../core/export/exportProgress";
 import { Application, Container, RenderTexture } from "pixi.js";
 import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
 import type {
@@ -314,6 +315,7 @@ export interface ProjectData {
 }
 
 export interface RenderOptions {
+  onPhaseChange?: (phase: ExportPhase) => void;
   timelineSelection?: TimelineSelection;
   format?: OutputVideoFormat;
   /** Seconds between keyframes in the default output. */
@@ -350,7 +352,9 @@ export interface RenderStillOptions {
 }
 
 export interface RenderResult {
-  video: Blob;
+  video?: Blob;
+  /** Committed file-backed outputs, which intentionally have no Blob. */
+  files?: Record<string, FileSystemFileHandle>;
   mask?: Blob;
   outputs: Record<string, Blob>;
   outputAnalyses?: Record<string, OutputVideoAnalysis>;
@@ -371,6 +375,7 @@ export class ExportRenderer {
   private orchestrator: RenderGroupOrchestrator | null = null;
   private cancelController: AbortController | null = null;
   private isCancelled = false;
+  private outputEncoder: TextureOutputEncoder | null = null;
 
   private constructor(app: Application, logicalStage: Container) {
     this.app = app;
@@ -432,7 +437,6 @@ export class ExportRenderer {
     onProgress: (percentage: number) => void,
     options: RenderOptions = {},
   ): Promise<RenderResult> {
-    this.isCancelled = false;
     this.cancelController = new AbortController();
     const decoderPool = createDecoderWorkerPool({ label: "export" });
     const frameJobResolver = new FrameJobResolver();
@@ -448,102 +452,108 @@ export class ExportRenderer {
         );
       },
     });
-    if (options.signal?.aborted) {
-      this.cancel();
-      throw createRenderAbortError();
-    }
+    let frameTexture: RenderTexture | null = null;
+    let outputEncoder: TextureOutputEncoder | null = null;
     const onAbort = () => this.cancel();
     options.signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      if (options.signal?.aborted) this.cancel();
+      this.throwIfCancelled();
+      options.onPhaseChange?.("preparing");
 
-    const renderProjectData = options.timelineSelection
-      ? buildSelectionProjectData(projectData, options.timelineSelection)
-      : projectData;
-    const { tracks, clips, assets, fps } = renderProjectData;
-    const { logicalWidth, logicalHeight, outputWidth, outputHeight } = config;
+      const renderProjectData = options.timelineSelection
+        ? buildSelectionProjectData(projectData, options.timelineSelection)
+        : projectData;
+      const { tracks, clips, assets, fps } = renderProjectData;
+      const { logicalWidth, logicalHeight, outputWidth, outputHeight } = config;
 
-    const timelineSelection = options.timelineSelection ?? {
-      start: 0,
-      end: renderProjectData.duration,
-      clips,
-      tracks,
-    };
-    const selectedClips = getIncludedClipsForSelection(
-      timelineSelection,
-      clips,
-    );
-    const effectiveTracks = getIncludedTracksForSelection(
-      timelineSelection,
-      tracks,
-    );
-    const startTick = timelineSelection.start;
-    const renderFps = resolveSelectionFps(timelineSelection, fps);
-    // Falls back to the clips' furthest presentation end when the selection
-    // omits an explicit end. A supplied selection is a self-contained render
-    // topology, so presentation must resolve against its saved snapshot.
-    // Quantize presentation on the canonical PROJECT-fps timeline grid (not
-    // renderFps) so export and preview resolve identical clip footprints for
-    // the same tick. renderFps only drives the export sample cadence + output
-    // timestamps below.
-    const inferredEndTick = computeFurthestPresentationEnd(
-      renderProjectData.tracks,
-      renderProjectData.clips,
-      fps,
-      selectedClips,
-    );
-    const requestedEndTick = Math.max(
-      startTick,
-      timelineSelection.end ?? inferredEndTick,
-    );
-    const frameStep = resolveSelectionFrameStep(timelineSelection);
-    const frameOffset = resolveSelectionFrameOffset(timelineSelection);
-    const ticksPerFrame = getTicksPerFrame(renderFps);
-    const rawFrameCount = Math.max(
-      1,
-      Math.ceil((requestedEndTick - startTick) / ticksPerFrame),
-    );
-    const totalFrames = snapFrameCountToStep(
-      rawFrameCount,
-      frameStep,
-      "floor",
-      frameOffset,
-    );
-    const rangeDurationTicks = totalFrames * ticksPerFrame;
-
-    const outputDefinitions = resolveOutputDefinitions(options).map((def) => ({
-      ...def,
-      fileHandle: config.fileHandle,
-    }));
-    const hasAudioOutput = outputDefinitions.some(
-      (output) => output.includeAudio,
-    );
-
-    const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
-      buildVisualRenderData(
-        effectiveTracks,
+      const timelineSelection = options.timelineSelection ?? {
+        start: 0,
+        end: renderProjectData.duration,
+        clips,
+        tracks,
+      };
+      const selectedClips = getIncludedClipsForSelection(
+        timelineSelection,
+        clips,
+      );
+      const effectiveTracks = getIncludedTracksForSelection(
+        timelineSelection,
+        tracks,
+      );
+      const startTick = timelineSelection.start;
+      const renderFps = resolveSelectionFps(timelineSelection, fps);
+      // Falls back to the clips' furthest presentation end when the selection
+      // omits an explicit end. A supplied selection is a self-contained render
+      // topology, so presentation must resolve against its saved snapshot.
+      // Quantize presentation on the canonical PROJECT-fps timeline grid (not
+      // renderFps) so export and preview resolve identical clip footprints for
+      // the same tick. renderFps only drives the export sample cadence + output
+      // timestamps below.
+      const inferredEndTick = computeFurthestPresentationEnd(
+        renderProjectData.tracks,
+        renderProjectData.clips,
+        fps,
         selectedClips,
-        options.includeTimelineMasks !== false,
+      );
+      const requestedEndTick = Math.max(
+        startTick,
+        timelineSelection.end ?? inferredEndTick,
+      );
+      const frameStep = resolveSelectionFrameStep(timelineSelection);
+      const frameOffset = resolveSelectionFrameOffset(timelineSelection);
+      const ticksPerFrame = getTicksPerFrame(renderFps);
+      const rawFrameCount = Math.max(
+        1,
+        Math.ceil((requestedEndTick - startTick) / ticksPerFrame),
+      );
+      const totalFrames = snapFrameCountToStep(
+        rawFrameCount,
+        frameStep,
+        "floor",
+        frameOffset,
+      );
+      const rangeDurationTicks = totalFrames * ticksPerFrame;
+
+      const definitions = resolveOutputDefinitions(options);
+      if (config.fileHandle && definitions.length !== 1) {
+        throw new Error("A disk export requires exactly one output");
+      }
+      const outputDefinitions = definitions.map((def) => ({
+        ...def,
+        fileHandle: config.fileHandle ?? def.fileHandle,
+      }));
+      const hasAudioOutput = outputDefinitions.some(
+        (output) => output.includeAudio,
       );
 
-    const relevantForAudio = effectiveTracks.filter(
-      (t) => !t.isMuted && t.isVisible,
-    );
-    const shouldRenderAudio = hasAudioOutput && relevantForAudio.length > 0;
+      const { trackClipsByTrackId, maskClipsByParent, visualTracks } =
+        buildVisualRenderData(
+          effectiveTracks,
+          selectedClips,
+          options.includeTimelineMasks !== false,
+        );
 
-    const frameTexture = RenderTexture.create({
-      width: outputWidth,
-      height: outputHeight,
-      dynamic: true,
-    });
+      const relevantForAudio = effectiveTracks.filter(
+        (t) => !t.isMuted && t.isVisible,
+      );
+      const shouldRenderAudio = hasAudioOutput && relevantForAudio.length > 0;
 
-    const outputEncoder = new TextureOutputEncoder(
-      this.app,
-      renderFps,
-      outputDefinitions,
-    );
+      frameTexture = RenderTexture.create({
+        width: outputWidth,
+        height: outputHeight,
+        dynamic: true,
+      });
 
-    await outputEncoder.start();
-
-    try {
+      outputEncoder = new TextureOutputEncoder(
+        this.app,
+        renderFps,
+        outputDefinitions,
+        { onPhaseChange: options.onPhaseChange },
+      );
+      this.outputEncoder = outputEncoder;
+      await outputEncoder.start();
+      this.throwIfCancelled();
       const adjustmentEffectResolver = new AdjustmentEffectResolver();
       // Project fps: the presentation grid must match preview, not the export
       // sample rate (renderFps).
@@ -557,6 +567,7 @@ export class ExportRenderer {
       const rangeDurationSec = tickToMediaSeconds(rangeDurationTicks);
 
       if (shouldRenderAudio) {
+        options.onPhaseChange?.("audio");
         const audioPrerollSeconds = estimateAudioExportPrerollSeconds(
           relevantForAudio.flatMap(
             (track) => trackClipsByTrackId.get(track.id) ?? [],
@@ -662,6 +673,7 @@ export class ExportRenderer {
 
       await outputEncoder.closeAudioTracks();
 
+      options.onPhaseChange?.("rendering");
       const startProgress = shouldRenderAudio ? 10 : 0;
 
       this.logicalStage.sortableChildren = true;
@@ -770,7 +782,7 @@ export class ExportRenderer {
         );
         this.app.renderer.render({
           container: this.logicalStage,
-          target: frameTexture,
+          target: frameTexture!,
           clear: true,
         });
       };
@@ -824,8 +836,8 @@ export class ExportRenderer {
 
         this.throwIfCancelled();
 
-        if (i % 5 === 0) {
-          const videoProgress = (i / totalFrames) * (100 - startProgress);
+        if (i % 5 === 0 || i === totalFrames - 1) {
+          const videoProgress = ((i + 1) / totalFrames) * (99 - startProgress);
           onProgress(startProgress + videoProgress);
           await yieldToEventLoop();
         }
@@ -836,17 +848,18 @@ export class ExportRenderer {
       const renderHealth = this.collectRenderHealth(visualTracks);
       this.warnOnDegradedRenderHealth(renderHealth, "selection render");
 
-      const { blobs: outputs, analyses: outputAnalyses } =
+      const { blobs: outputs, analyses: outputAnalyses, files } =
         await outputEncoder.finalize();
       const primaryOutputId = outputs.video
         ? "video"
         : (Object.keys(outputs)[0] ?? null);
-      if (!primaryOutputId) {
+      if (!primaryOutputId && Object.keys(files).length === 0) {
         throw new Error("Renderer produced no video outputs");
       }
 
       return {
-        video: outputs[primaryOutputId],
+        video: primaryOutputId ? outputs[primaryOutputId] : undefined,
+        files,
         mask: outputs.mask,
         outputs,
         outputAnalyses,
@@ -855,8 +868,10 @@ export class ExportRenderer {
     } finally {
       options.signal?.removeEventListener("abort", onAbort);
       this.cancelController = null;
-      outputEncoder.dispose();
-      frameTexture.destroy(true);
+      await outputEncoder?.abort();
+      outputEncoder?.dispose();
+      this.outputEncoder = null;
+      frameTexture?.destroy(true);
       this.dispose();
       frameGraphExecutor.dispose();
       decoderPool.dispose();
@@ -1118,9 +1133,10 @@ export class ExportRenderer {
   }
 
   public cancel() {
-    if (this.isCancelled) return;
+    if (this.isCancelled || this.outputEncoder?.isCommitting) return;
     this.isCancelled = true;
     this.cancelController?.abort();
+    void this.outputEncoder?.abort();
     const abortError = createRenderAbortError();
     this.engines.forEach((engine) => engine.cancelPendingFrame(abortError));
   }

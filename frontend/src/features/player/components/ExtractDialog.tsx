@@ -22,7 +22,8 @@ import ContentCutIcon from "@mui/icons-material/ContentCut";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import { CacheProvider, type EmotionCache } from "@emotion/react";
 import createCache from "@emotion/cache";
-import type { DialogView } from "../../../core/extract/useExtractStore";
+import { useExtractStore, type DialogView } from "../../../core/extract/useExtractStore";
+import type { ExportPhase } from "../../../core/export/exportProgress";
 import { useProjectStore } from "../../project";
 import {
   DEFAULT_PROJECT_OUTPUT_RESOLUTION,
@@ -67,13 +68,37 @@ interface PipState {
   cache: EmotionCache;
 }
 
-function ExportProgressPip({ progress }: { progress: number }) {
+const EXPORT_PHASE_LABELS: Record<ExportPhase, string> = {
+  preparing: "Preparing export…",
+  audio: "Mixing audio…",
+  rendering: "Rendering",
+  finalizing: "Finishing video…",
+  saving: "Saving file…",
+  ingesting: "Adding to library…",
+  cancelling: "Cancelling…",
+};
+
+interface ExportProgressProps {
+  progress: number;
+}
+
+function ExportProgress({ progress }: ExportProgressProps) {
+  const phase = useExtractStore((state) => state.phase);
+  const rendering = phase === null || phase === "rendering";
+  return (
+    <Box sx={{ width: "100%", mt: 2 }}>
+      <Typography variant="body2" color="text.secondary" gutterBottom>
+        {rendering ? `Rendering... ${Math.min(99, Math.round(progress))}%` : EXPORT_PHASE_LABELS[phase]}
+      </Typography>
+      <LinearProgress variant={rendering ? "determinate" : "indeterminate"} value={Math.min(99, progress)} />
+    </Box>
+  );
+}
+
+function ExportProgressPip({ progress }: ExportProgressProps) {
   return (
     <Box sx={{ p: 2, color: "#eee", bgcolor: "#1a1a1a", minHeight: "100vh" }}>
-      <Typography variant="body2" color="text.secondary" gutterBottom>
-        Rendering... {Math.round(progress)}%
-      </Typography>
-      <LinearProgress variant="determinate" value={progress} sx={{ mb: 2 }} />
+      <ExportProgress progress={progress} />
       <Typography variant="body2">
         You can move this popup somewhere inoffensive, but don&apos;t close it!{" "}
         <Tooltip
@@ -150,6 +175,10 @@ export function ExtractDialog({
     DEFAULT_EXPORT_FORMAT_ID,
   );
   const [pip, setPip] = useState<PipState | null>(null);
+  const phase = useExtractStore((state) => state.phase);
+  const error = useExtractStore((state) => state.error);
+  const cannotCancel =
+    phase === "saving" || phase === "ingesting" || phase === "cancelling";
   const handleCancelProcessing = onCancelProcessing ?? onClose;
 
   useSyncExternalStore(
@@ -234,6 +263,16 @@ export function ExtractDialog({
       setPip(null);
     };
   }, [exportInProgress]);
+
+  if (error) {
+    return (
+      <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+        <DialogTitle>Export failed</DialogTitle>
+        <DialogContent><Typography role="alert">{error}</Typography></DialogContent>
+        <DialogActions><Button onClick={onClose}>Close</Button></DialogActions>
+      </Dialog>
+    );
+  }
 
   if (dialogView === "choose") {
     return (
@@ -353,12 +392,7 @@ export function ExtractDialog({
                   </FormControl>
                 </>
               ) : (
-                <Box sx={{ width: "100%", mt: 2 }}>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Rendering... {Math.round(progress)}%
-                  </Typography>
-                  <LinearProgress variant="determinate" value={progress} />
-                </Box>
+                <ExportProgress progress={progress} />
               )}
             </Stack>
           </DialogContent>
@@ -385,7 +419,7 @@ export function ExtractDialog({
                 </Button>
               </>
             ) : (
-              <Button onClick={handleCancelProcessing} color="error" size="small">
+              <Button onClick={handleCancelProcessing} disabled={cannotCancel} color="error" size="small">
                 Cancel
               </Button>
             )}
@@ -429,15 +463,10 @@ export function ExtractDialog({
     >
       <DialogTitle>Extracting Selection</DialogTitle>
       <DialogContent>
-        <Box sx={{ width: "100%", mt: 2 }}>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            Rendering... {Math.round(progress)}%
-          </Typography>
-          <LinearProgress variant="determinate" value={progress} />
-        </Box>
+        <ExportProgress progress={progress} />
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleCancelProcessing} color="error" size="small">
+        <Button onClick={handleCancelProcessing} disabled={cannotCancel} color="error" size="small">
           Cancel
         </Button>
       </DialogActions>

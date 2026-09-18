@@ -7,13 +7,15 @@ import {
   Output,
   StreamTarget,
   WebMOutputFormat,
-  type StreamTargetChunk,
 } from "mediabunny";
 import {
   applyOutputTransformStack,
   type OutputTransform,
 } from "../utils/outputTransformStack";
 import { V1_COLOR_MODEL } from "../../../core/color";
+
+import type { ExportPhase } from "../../../core/export/exportProgress";
+import { ExportFileTarget } from "./ExportFileTarget";
 
 export type OutputVideoFormat = "mp4" | "webm";
 export type OutputContentProbe = "non_black_pixels";
@@ -46,7 +48,7 @@ interface ManagedOutput {
   target: BufferTarget | StreamTarget;
   videoSource: CanvasSource;
   audioSource: AudioBufferSource | null;
-  fileStream?: FileSystemWritableFileStream;
+  fileTarget?: ExportFileTarget;
   measuredContent: boolean;
   hasVisibleContent: boolean;
   canMeasureContent: boolean;
@@ -65,6 +67,7 @@ interface RendererReadbackApi {
 interface FinalizedOutputBundle {
   blobs: Record<string, Blob>;
   analyses: Record<string, OutputVideoAnalysis>;
+  files: Record<string, FileSystemFileHandle>;
 }
 
 function pixelsContainNonBlackContent(pixels: ArrayLike<number>): boolean {
@@ -88,6 +91,7 @@ const DEFAULT_ENCODE_QUEUE_FRAMES = 4;
 export interface TextureOutputEncoderOptions {
   /** Frames in flight per output before the producer is throttled. Min 1. */
   encodeQueueSize?: number;
+  onPhaseChange?: (phase: ExportPhase) => void;
 }
 
 interface ColorTaggedVideoEncoderConfig extends VideoEncoderConfig {
@@ -125,6 +129,13 @@ export class TextureOutputEncoder {
   private pendingEncodes: Promise<SettledEncode>[] = [];
   private readonly encodeQueueFrames: number;
   private maxPendingEncodes = 0;
+  private readonly abortController = new AbortController();
+  private readonly fileTargets: ExportFileTarget[] = [];
+  private abortPromise: Promise<void> | null = null;
+  private finalized = false;
+  private disposed = false;
+  public isCommitting = false;
+  private readonly onPhaseChange?: (phase: ExportPhase) => void;
 
   constructor(
     app: Application,
@@ -133,6 +144,7 @@ export class TextureOutputEncoder {
     options?: TextureOutputEncoderOptions,
   ) {
     this.app = app;
+    this.onPhaseChange = options?.onPhaseChange;
     if (definitions.length === 0) {
       throw new Error("TextureOutputEncoder requires at least one output");
     }
@@ -153,25 +165,25 @@ export class TextureOutputEncoder {
   public async start(): Promise<void> {
     if (this.started) return;
 
-    this.outputs = await Promise.all(
-      this.definitions.map(async (definition) => {
+    try {
+      for (const definition of this.definitions) {
+        this.throwIfCancelled();
         const format = definition.format ?? "mp4";
         const isAlphaWebM = format === "webm";
         const mimeType = isAlphaWebM ? "video/webm" : "video/mp4";
 
         let target: BufferTarget | StreamTarget;
-        let fileStream: FileSystemWritableFileStream | undefined;
+        let fileTarget: ExportFileTarget | undefined;
 
         if (definition.fileHandle) {
-          fileStream = await definition.fileHandle.createWritable();
-          target = new StreamTarget(
-            new WritableStream({
-              write: (chunk: StreamTargetChunk) =>
-                fileStream?.write(chunk.data) ?? Promise.resolve(),
-              close: () => fileStream?.close() ?? Promise.resolve(),
-              abort: () => fileStream?.abort() ?? Promise.resolve(),
-            }),
+          // Keep the late-created stream reachable even if cancellation arrived
+          // while the picker-backed createWritable operation was pending.
+          fileTarget = new ExportFileTarget(
+            await definition.fileHandle.createWritable(),
           );
+          this.fileTargets.push(fileTarget);
+          this.throwIfCancelled();
+          target = fileTarget.target;
         } else {
           target = new BufferTarget();
         }
@@ -179,7 +191,9 @@ export class TextureOutputEncoder {
         const output = new Output({
           format: isAlphaWebM
             ? new WebMOutputFormat()
-            : new Mp4OutputFormat({ fastStart: "in-memory" }),
+            : new Mp4OutputFormat({
+                fastStart: fileTarget ? false : "in-memory",
+              }),
           target,
         });
 
@@ -230,41 +244,90 @@ export class TextureOutputEncoder {
           output.addAudioTrack(audioSource);
         }
 
-        return {
+        this.outputs.push({
           definition,
           mimeType,
           output,
           target,
           videoSource,
           audioSource,
-          fileStream,
+          fileTarget,
           measuredContent: false,
           hasVisibleContent: false,
           canMeasureContent: definition.contentProbe === "non_black_pixels",
-        };
-      }),
-    );
+        });
+      }
 
-    for (const output of this.outputs) {
-      await output.output.start();
+      for (const output of this.outputs) {
+        await this.interruptible(output.output.start());
+      }
+      this.maxPendingEncodes = this.encodeQueueFrames * this.outputs.length;
+      this.started = true;
+    } catch (error) {
+      await this.abort();
+      // A stream created after an earlier abort still needs to be discarded.
+      await Promise.allSettled(this.fileTargets.map((target) => target.abort()));
+      throw error;
     }
-    this.maxPendingEncodes = this.encodeQueueFrames * this.outputs.length;
-    this.started = true;
+  }
+
+  private throwIfCancelled(): void {
+    if (this.abortController.signal.aborted) {
+      throw new DOMException("Render cancelled", "AbortError");
+    }
+  }
+
+  private async interruptible<T>(operation: Promise<T>): Promise<T> {
+    const signal = this.abortController.signal;
+    let onAbort!: () => void;
+    const cancelled = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new DOMException("Render cancelled", "AbortError"));
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
+    });
+    try {
+      return await Promise.race([operation, cancelled]);
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  }
+
+  public abort(): Promise<void> {
+    if (this.finalized || this.isCommitting) return Promise.resolve();
+    this.abortController.abort();
+    return (this.abortPromise ??= (async () => {
+      const results = await Promise.allSettled([
+        ...this.fileTargets.map((target) => target.abort()),
+        ...this.outputs
+          .filter(
+            ({ output }) =>
+              output.state !== "finalizing" && output.state !== "finalized",
+          )
+          .map(({ output }) => output.cancel()),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          console.warn("Export cleanup failed", result.reason);
+        }
+      }
+    })());
   }
 
   public async addAudioChunk(audioBuffer: AudioBuffer): Promise<void> {
+    this.throwIfCancelled();
     for (const output of this.outputs) {
       if (output.audioSource) {
-        await output.audioSource.add(audioBuffer);
+        await this.interruptible(output.audioSource.add(audioBuffer));
       }
     }
   }
 
   public async closeAudioTracks(): Promise<void> {
     if (this.audioClosed) return;
+    this.throwIfCancelled();
     for (const output of this.outputs) {
       if (output.audioSource) {
-        await output.audioSource.close();
+        await this.interruptible(Promise.resolve(output.audioSource.close()));
       }
     }
     this.audioClosed = true;
@@ -275,6 +338,7 @@ export class TextureOutputEncoder {
     timestamp: number,
     frameDuration: number,
   ): Promise<void> {
+    this.throwIfCancelled();
     for (const output of this.outputs) {
       applyOutputTransformStack(
         this.outputSprite,
@@ -323,7 +387,7 @@ export class TextureOutputEncoder {
     while (this.pendingEncodes.length > this.maxPendingEncodes) {
       const oldest = this.pendingEncodes.shift();
       if (oldest) {
-        throwIfRejected(await oldest);
+        throwIfRejected(await this.interruptible(oldest));
       }
     }
   }
@@ -336,7 +400,7 @@ export class TextureOutputEncoder {
   public async flushPendingEncodes(): Promise<void> {
     const pending = this.pendingEncodes;
     this.pendingEncodes = [];
-    const results = await Promise.all(pending);
+    const results = await this.interruptible(Promise.all(pending));
     const firstFailure = results.find(
       (result): result is Extract<SettledEncode, { status: "rejected" }> =>
         result.status === "rejected",
@@ -397,16 +461,18 @@ export class TextureOutputEncoder {
   }
 
   public async finalize(): Promise<FinalizedOutputBundle> {
+    this.throwIfCancelled();
+    this.onPhaseChange?.("finalizing");
     // Drain any frames still encoding before closing the sources.
     await this.flushPendingEncodes();
     for (const output of this.outputs) {
-      await output.videoSource.close();
-      await output.output.finalize();
+      await this.interruptible(Promise.resolve(output.videoSource.close()));
+      await this.interruptible(output.output.finalize());
     }
 
     const blobs: Record<string, Blob> = {};
     for (const output of this.outputs) {
-      if (!output.fileStream) {
+      if (!output.fileTarget) {
         if (!("buffer" in output.target) || !output.target.buffer) {
           throw new Error(`Rendered output '${output.definition.id}' is empty`);
         }
@@ -428,13 +494,32 @@ export class TextureOutputEncoder {
       }
     }
 
-    return {
-      blobs,
-      analyses,
-    };
+    this.throwIfCancelled();
+    const files: Record<string, FileSystemFileHandle> = {};
+    if (this.fileTargets.length > 0) {
+      // close() is the commit boundary. Cancellation is no longer safe once
+      // replacement of the destination has begun; keep the UI waiting for it.
+      this.isCommitting = true;
+      this.onPhaseChange?.("saving");
+      try {
+        for (const output of this.outputs) {
+          if (output.fileTarget && output.definition.fileHandle) {
+            await output.fileTarget.commit();
+            files[output.definition.id] = output.definition.fileHandle;
+          }
+        }
+      } finally {
+        this.isCommitting = false;
+      }
+    }
+    this.finalized = true;
+    return { blobs, analyses, files };
   }
 
   public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    void this.abort();
     // Queued entries already capture their own rejection (see pendingEncodes),
     // so dropping them on an aborted/failed teardown can't leak an unhandled
     // rejection — just release the references.

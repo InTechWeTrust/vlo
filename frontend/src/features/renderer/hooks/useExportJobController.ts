@@ -27,7 +27,7 @@ import {
   type ProjectData,
   type ExportConfig,
 } from "../services/ExportRenderer";
-import { renderSelectionToVideoFile } from "../services/renderSelectionToVideoFile";
+import { renderSelectionToVideoFile, renderSelectionToOutput } from "../services/renderSelectionToVideoFile";
 import { acquireExportWakeLock } from "../services/exportWakeLock";
 import { resolveRenderOutputDimensions } from "../utils/dimensions";
 import type { AspectRatio } from "../../project/useProjectStore";
@@ -103,6 +103,16 @@ function settleExportRun(run: ExportRunHandle, outcome: ExportRunOutcome): void 
   }
 }
 
+function finishExportDialog(outcome: ExportRunOutcome): void {
+  if (outcome.status === "failed") {
+    useExtractStore.getState().setError(
+      outcome.error instanceof Error ? outcome.error.message : "Export failed",
+    );
+  } else {
+    useExtractStore.getState().closeDialog();
+  }
+}
+
 export interface SelectionExportOptions {
   selectionStartTick: number;
   selectionEndTick: number;
@@ -164,11 +174,14 @@ export function useExportJobController({
   const activeRendererRef = useRef<ExportRenderer | null>(null);
   const cancelRenderRequestedRef = useRef(false);
   const renderSessionRef = useRef(0);
+  const activeSessionRef = useRef<number | null>(null);
 
   const beginSession = useCallback(() => {
     const sessionId = renderSessionRef.current + 1;
     renderSessionRef.current = sessionId;
+    activeSessionRef.current = sessionId;
     cancelRenderRequestedRef.current = false;
+    useExtractStore.setState({ phase: "preparing", error: null });
     return sessionId;
   }, []);
 
@@ -190,6 +203,7 @@ export function useExportJobController({
   const finalizeSession = useCallback((sessionId: number) => {
     if (sessionId !== renderSessionRef.current) return;
     activeRendererRef.current = null;
+    activeSessionRef.current = null;
     cancelRenderRequestedRef.current = false;
   }, []);
 
@@ -213,6 +227,11 @@ export function useExportJobController({
   }, [projectFps]);
 
   const cancel = useCallback(() => {
+    // Past rendering there is nothing left to abort: "saving" is committing the
+    // file and "ingesting" is adding it to the library, which cannot be undone.
+    const phase = useExtractStore.getState().phase;
+    if (activeSessionRef.current === null || phase === "saving" || phase === "ingesting") return;
+    useExtractStore.getState().setPhase("cancelling");
     cancelRenderRequestedRef.current = true;
     activeRendererRef.current?.cancel();
   }, []);
@@ -316,6 +335,11 @@ export function useExportJobController({
               projectData,
               brushMasksPrepared: true,
             },
+            onPhaseChange: (phase) => {
+              if (sessionId === renderSessionRef.current && !cancelRenderRequestedRef.current) {
+                useExtractStore.getState().setPhase(phase);
+              }
+            },
             onProgress: (progress) => {
               run.reportProgress(progress);
               onProgress?.(progress);
@@ -329,6 +353,8 @@ export function useExportJobController({
           },
         );
 
+        if (sessionId !== renderSessionRef.current || cancelRenderRequestedRef.current) throw createAbortError();
+        useExtractStore.getState().setPhase("ingesting");
         const extractedFile = audioOnly
           ? await extractSelectionAudioFile(file)
           : file;
@@ -377,7 +403,10 @@ export function useExportJobController({
         startTicks: options.selectionStartTick,
         endTicks: options.selectionEndTick,
       });
-      settleExportRun(run, await executeRangeExport(options, run));
+      const sessionId = renderSessionRef.current + 1;
+      const outcome = await executeRangeExport(options, run);
+      if (sessionId === renderSessionRef.current) finishExportDialog(outcome);
+      settleExportRun(run, outcome);
     },
     [executeRangeExport],
   );
@@ -426,12 +455,17 @@ export function useExportJobController({
           fps: projectData.fps,
         };
 
-        // The encoder writes to config.fileHandle; the returned File is unused.
-        await renderSelectionToVideoFile(fullTimelineSelection, {
+        // Disk outputs finish without constructing or reading back a video Blob.
+        await renderSelectionToOutput(fullTimelineSelection, {
           renderInputs: {
             exportConfig,
             projectData,
             brushMasksPrepared: true,
+          },
+          onPhaseChange: (phase) => {
+            if (sessionId === renderSessionRef.current && !cancelRenderRequestedRef.current) {
+              useExtractStore.getState().setPhase(phase);
+            }
           },
           onProgress: (progress) => {
             run.reportProgress(progress);
@@ -461,6 +495,7 @@ export function useExportJobController({
 
       // Settled after teardown, so a subscriber told the render finished finds
       // a renderer that is free rather than one still holding its session.
+      if (sessionId === renderSessionRef.current) finishExportDialog(outcome);
       settleExportRun(run, outcome);
     },
     [
@@ -493,6 +528,7 @@ export function useExportJobController({
       setIsProcessing(true);
       setProgress(0);
 
+      const sessionId = renderSessionRef.current + 1;
       const outcome = await executeRangeExport(
         {
           selectionStartTick: request.startTicks,
@@ -518,7 +554,7 @@ export function useExportJobController({
       // reads, so it has to be released before the run announces that it
       // settled — otherwise an extension starting its next render from the
       // completion notification is refused by state the host is still holding.
-      useExtractStore.getState().closeDialog();
+      if (sessionId === renderSessionRef.current) finishExportDialog(outcome);
       settleExportRun(run, outcome);
     },
     [executeRangeExport],

@@ -21,6 +21,8 @@ interface ColorTaggedVideoEncoderConfig extends VideoEncoderConfig {
   colorSpace?: VideoColorSpaceInit;
 }
 const addCalls: DeferredAdd[] = [];
+const mp4Options: Array<{ fastStart: false | "in-memory" }> = [];
+const outputs: Array<{ finalize: ReturnType<typeof vi.fn>; cancel: ReturnType<typeof vi.fn> }> = [];
 const canvasSourceConfigs: Array<{
   codec?: string;
   alpha?: "discard" | "keep";
@@ -48,12 +50,16 @@ vi.mock("../../utils/outputTransformStack", () => ({
 
 vi.mock("mediabunny", () => ({
   Output: class {
+    constructor() { outputs.push(this); }
     addVideoTrack = vi.fn();
     addAudioTrack = vi.fn();
     start = vi.fn().mockResolvedValue(undefined);
+    cancel = vi.fn().mockResolvedValue(undefined);
     finalize = vi.fn().mockResolvedValue(undefined);
   },
-  Mp4OutputFormat: class {},
+  Mp4OutputFormat: class {
+    constructor(options: { fastStart: false | "in-memory" }) { mp4Options.push(options); }
+  },
   WebMOutputFormat: class {},
   BufferTarget: class {
     buffer = new ArrayBuffer(1);
@@ -105,11 +111,107 @@ describe("TextureOutputEncoder encode backpressure window", () => {
 
   beforeEach(() => {
     addCalls.length = 0;
+    mp4Options.length = 0;
+    outputs.length = 0;
     canvasSourceConfigs.length = 0;
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  function fileDestination() {
+    const stream = {
+      write: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      abort: vi.fn().mockResolvedValue(undefined),
+    };
+    const fileHandle = { createWritable: vi.fn().mockResolvedValue(stream) } as unknown as FileSystemFileHandle;
+    return { stream, fileHandle };
+  }
+
+  it("streams disk MP4 and reports a file output only after commit", async () => {
+    const { stream, fileHandle } = fileDestination();
+    const phases: string[] = [];
+    const encoder = new TextureOutputEncoder(app, 30, [{ ...definition, fileHandle }], {
+      onPhaseChange: (phase) => phases.push(phase),
+    });
+    await encoder.start();
+    expect(mp4Options[0].fastStart).toBe(false);
+    expect(stream.close).not.toHaveBeenCalled();
+    const result = await encoder.finalize();
+    expect(result.blobs).toEqual({});
+    expect(result.files).toEqual({ video: fileHandle });
+    expect(stream.close).toHaveBeenCalledOnce();
+    expect(phases).toEqual(["finalizing", "saving"]);
+    encoder.dispose();
+    expect(stream.abort).not.toHaveBeenCalled();
+  });
+
+  it("discards earlier files when a later destination fails to open", async () => {
+    const { stream, fileHandle } = fileDestination();
+    const badHandle = { createWritable: vi.fn().mockRejectedValue(new Error("Permission lost")) } as unknown as FileSystemFileHandle;
+    const encoder = new TextureOutputEncoder(app, 30, [
+      { ...definition, fileHandle }, { id: "other", fileHandle: badHandle },
+    ]);
+    await expect(encoder.start()).rejects.toThrow("Permission lost");
+    expect(stream.abort).toHaveBeenCalledOnce();
+    expect(stream.close).not.toHaveBeenCalled();
+    expect(outputs[0].cancel).toHaveBeenCalledOnce();
+    encoder.dispose();
+  });
+
+  it("discards a file created after cancellation was requested", async () => {
+    const { stream, fileHandle } = fileDestination();
+    let opened!: (stream: FileSystemWritableFileStream) => void;
+    vi.mocked(fileHandle.createWritable).mockImplementationOnce(() => new Promise((resolve) => { opened = resolve; }));
+    const encoder = new TextureOutputEncoder(app, 30, [{ ...definition, fileHandle }]);
+    const starting = encoder.start();
+    await encoder.abort();
+    opened(stream as unknown as FileSystemWritableFileStream);
+    await expect(starting).rejects.toMatchObject({ name: "AbortError" });
+    expect(stream.abort).toHaveBeenCalledOnce();
+    expect(stream.close).not.toHaveBeenCalled();
+    encoder.dispose();
+  });
+
+  it("cancels while waiting for the encoder drain without committing", async () => {
+    const { stream, fileHandle } = fileDestination();
+    const encoder = new TextureOutputEncoder(app, 30, [{ ...definition, fileHandle }]);
+    await encoder.start();
+    await encoder.addTextureFrame(texture, 0, 1 / 30);
+    const finalizing = encoder.finalize();
+    const rejected = expect(finalizing).rejects.toMatchObject({ name: "AbortError" });
+    await encoder.abort();
+    await rejected;
+    expect(stream.abort).toHaveBeenCalledOnce();
+    expect(stream.close).not.toHaveBeenCalled();
+    expect(outputs[0].cancel).toHaveBeenCalledOnce();
+    addCalls[0].resolve();
+    encoder.dispose();
+  });
+
+  it("does not commit when mux finalization fails", async () => {
+    const { stream, fileHandle } = fileDestination();
+    const encoder = new TextureOutputEncoder(app, 30, [{ ...definition, fileHandle }]);
+    await encoder.start();
+    outputs[0].finalize.mockRejectedValueOnce(new Error("Write failed"));
+    await expect(encoder.finalize()).rejects.toThrow("Write failed");
+    await encoder.abort();
+    expect(stream.close).not.toHaveBeenCalled();
+    expect(stream.abort).toHaveBeenCalledOnce();
+    encoder.dispose();
+  });
+
+  it("propagates a failed file commit", async () => {
+    const { stream, fileHandle } = fileDestination();
+    const encoder = new TextureOutputEncoder(app, 30, [{ ...definition, fileHandle }]);
+    await encoder.start();
+    stream.close.mockRejectedValueOnce(new Error("Disk full"));
+    await expect(encoder.finalize()).rejects.toThrow("Disk full");
+    await encoder.abort();
+    expect(stream.abort).toHaveBeenCalledOnce();
+    encoder.dispose();
   });
 
   it("does not block while in-flight frames fit the window", async () => {

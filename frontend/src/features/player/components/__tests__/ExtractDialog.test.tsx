@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
+import { useExtractStore } from "../../../../core/extract/useExtractStore";
 import { ExtractDialog } from "../ExtractDialog";
 import { useProjectStore } from "../../../project";
 import type { ProjectOutputResolution } from "../../../project/outputResolutionOptions";
@@ -39,6 +40,7 @@ describe("ExtractDialog", () => {
   };
 
   beforeEach(() => {
+    useExtractStore.setState({ phase: null, error: null });
     vi.clearAllMocks();
     setProjectOutputResolution(1080);
   });
@@ -90,6 +92,30 @@ describe("ExtractDialog", () => {
       fireEvent.click(cancelButton);
       expect(mockOnClose).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it("shows finishing work without displaying 100%", () => {
+    useExtractStore.setState({ phase: "finalizing" });
+    render(<ExtractDialog {...defaultProps} dialogView="export" isProcessing progress={99.9} />);
+    expect(screen.getByText("Finishing video…")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).not.toHaveAttribute("aria-valuenow");
+    expect(screen.queryByText(/100%/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("keeps saving visible and disables cancellation at file commit", () => {
+    useExtractStore.setState({ phase: "saving" });
+    render(<ExtractDialog {...defaultProps} dialogView="export" isProcessing progress={99} />);
+    expect(screen.getByText("Saving file…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("shows a destination failure instead of silently closing", () => {
+    useExtractStore.setState({ error: "Disk full" });
+    render(<ExtractDialog {...defaultProps} dialogView="export" />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Disk full");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(mockOnClose).toHaveBeenCalledOnce();
   });
 
   describe("Export view", () => {

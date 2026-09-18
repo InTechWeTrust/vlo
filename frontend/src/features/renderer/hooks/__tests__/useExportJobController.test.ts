@@ -19,9 +19,10 @@ vi.mock("../../../timelineSelection", () => ({
   getClipsInSelection: vi.fn(() => []),
   resolveSelectionFps: vi.fn(() => 30),
 }));
-vi.mock("../../services/renderSelectionToVideoFile", () => ({
-  renderSelectionToVideoFile: vi.fn(),
-}));
+vi.mock("../../services/renderSelectionToVideoFile", () => {
+  const render = vi.fn();
+  return { renderSelectionToVideoFile: render, renderSelectionToOutput: render };
+});
 // Spied, not stubbed: the resolver is pure, and these tests assert the real
 // output sizes the render paths derive from the project ratio.
 vi.mock("../../utils/dimensions", async (importOriginal) => {
