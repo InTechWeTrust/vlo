@@ -7,6 +7,7 @@ import {
   TransformationPanel,
 } from "../../features/transformations";
 import { TransitionPanel } from "../../features/transitions";
+import { GENERATE_VIEW_ID } from "./hostViewIds";
 import { MaskPanel } from "../../features/masks";
 
 let installed = false;
@@ -42,7 +43,7 @@ export function declareRightSidebarHostViews(): void {
   installed = true;
   const clipSelected = { key: "selection.clipCount" } as const;
   hostViewRegistry.registerHostView({
-    id: "host.generate",
+    id: GENERATE_VIEW_ID,
     title: "Generate",
     defaultRegion: "right-sidebar",
     order: 10,

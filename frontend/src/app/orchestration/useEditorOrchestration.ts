@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect } from "react";
 import { registerPreSaveHook } from "../../core/persistence/preSaveHooks";
+import { revealShellView } from "../../core/shell/shellViewPlacement";
 import type { Asset } from "../../types/Asset";
 import {
   canRegenerateFromAssetMetadata,
@@ -19,6 +20,7 @@ import {
 } from "../../features/timeline/api";
 import { registerAssetRegenerator } from "../../features/userAssets";
 import type { ProjectTimelineSnapshotRequest } from "../../features/project";
+import { GENERATE_VIEW_ID } from "../layout/hostViewIds";
 
 function applyTimelineSnapshotRequest(
   request: ProjectTimelineSnapshotRequest | null,
@@ -37,10 +39,16 @@ export function useEditorOrchestration(): void {
       registerAssetRegenerator({
         canRegenerate: (asset: Asset) =>
           canRegenerateFromAssetMetadata(asset.creationMetadata),
-        regenerate: (asset: Asset) =>
-          useGenerationStore
+        regenerate: (asset: Asset) => {
+          // Revealed before the load starts, so the user watches the replay
+          // land (or fail) in the panel. It also has to precede the ComfyUI
+          // editor opening for in-editor assets: the editor overlay lives
+          // inside the Generate view, and a deselected view is display:none.
+          revealShellView(GENERATE_VIEW_ID);
+          return useGenerationStore
             .getState()
-            .loadWorkflowFromAssetMetadata(asset),
+            .loadWorkflowFromAssetMetadata(asset);
+        },
       }),
     [],
   );

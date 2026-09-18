@@ -17,6 +17,7 @@ import { useMaskViewStore } from "../../features/masks";
 import { ViewRegionMount } from "../../core/shell/ViewRegionMount";
 import { useViewRegion } from "../../core/shell/useViewRegion";
 import { ViewLayoutButton } from "../../core/shell/ViewLayoutButton";
+import { GENERATE_VIEW_ID } from "./hostViewIds";
 import { declareRightSidebarHostViews } from "./rightSidebarHostViews";
 
 declareRightSidebarHostViews();
@@ -57,7 +58,7 @@ function RightSidebarPanelComponent() {
       selectionMode === "transition"
         ? "host.transition"
         : selectionMode === "none"
-          ? "host.generate"
+          ? GENERATE_VIEW_ID
           : "host.adjust";
     selectView(preferred);
   }, [selectView, selectedIsGuest, selectionMode]);
