@@ -206,6 +206,8 @@ export interface WorkflowFrontendControl {
   group_order?: number | null;
   min?: number | null;
   max?: number | null;
+  min_from?: WorkflowRuleWidgetBound | null;
+  max_from?: WorkflowRuleWidgetBound | null;
   step?: number | null;
   default?: unknown | null;
   value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown" | null;
@@ -352,6 +354,11 @@ export interface WorkflowRuleSlot {
   max_frames?: number | null;
 }
 
+export interface WorkflowRuleWidgetBound {
+  ref: WorkflowParamValueReference;
+  offset?: number;
+}
+
 export interface WorkflowRuleWidgetDefaultOverride {
   when: ConditionAlways | WorkflowRuleWidgetInputPresenceCondition | ConditionCompare | ConditionAllOf | ConditionAnyOf | ConditionNot;
   value?: unknown | null;
@@ -376,6 +383,8 @@ export interface WorkflowRuleWidgetEntry {
   group_order?: number | null;
   min?: number | null;
   max?: number | null;
+  min_from?: WorkflowRuleWidgetBound | null;
+  max_from?: WorkflowRuleWidgetBound | null;
   step?: number | null;
   default?: unknown | null;
   value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown" | null;

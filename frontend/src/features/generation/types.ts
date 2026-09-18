@@ -372,6 +372,21 @@ export interface WidgetInputConfig {
    * these rungs plus a custom field for arbitrary values off the ladder.
    */
   resolutionLadder?: readonly number[];
+  /**
+   * Bounds that follow another widget's live value instead of the authored
+   * `min`/`max`, e.g. a sampling window that cannot run past the sampler's
+   * step count. Resolved against the panel's current values, with the static
+   * bound kept as the fallback for when the referenced widget is absent.
+   */
+  minFrom?: WidgetBoundReference;
+  maxFrom?: WidgetBoundReference;
+}
+
+export interface WidgetBoundReference {
+  nodeId: string;
+  param: string;
+  /** Added to the referenced value, e.g. -1 for a strictly-inside bound. */
+  offset: number;
 }
 
 export interface WorkflowParamReference {

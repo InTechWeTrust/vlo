@@ -25,6 +25,7 @@ import type {
   WorkflowDualSamplerDenoiseRule,
   WorkflowFrontendControl,
   WorkflowParamReference,
+  WorkflowRuleWidgetBound,
   WorkflowRules,
   WorkflowSingleSamplerDenoiseRule,
   WorkflowVideoAudioRetakeRule,
@@ -352,6 +353,20 @@ function toDisplayUnit(
   };
 }
 
+function toBoundReference(
+  bound: WorkflowRuleWidgetBound | null | undefined,
+): WidgetInputConfig["maxFrom"] {
+  const ref = bound?.ref;
+  if (!ref || typeof ref.node_id !== "string" || typeof ref.param !== "string") {
+    return undefined;
+  }
+  return {
+    nodeId: ref.node_id,
+    param: ref.param,
+    offset: typeof bound?.offset === "number" ? bound.offset : 0,
+  };
+}
+
 function valuesMatch(left: unknown, right: unknown): boolean {
   return Object.is(left, right);
 }
@@ -628,6 +643,8 @@ function resolveFrontendControlInput(
     control: entry.control ?? undefined,
     min: toOptionalNumber(entry.min),
     max: toOptionalNumber(entry.max),
+    minFrom: toBoundReference(entry.min_from),
+    maxFrom: toBoundReference(entry.max_from),
     step: toOptionalNumber(entry.step),
     defaultValue: entry.default,
     trueValue: entry.true_value,
@@ -763,6 +780,8 @@ export function resolveWidgetInputsFromRules(
         control: entry.control ?? undefined,
         min: toOptionalNumber(entry.min),
         max: toOptionalNumber(entry.max),
+        minFrom: toBoundReference(entry.min_from),
+        maxFrom: toBoundReference(entry.max_from),
         step: toOptionalNumber(entry.step),
         defaultValue: entry.default,
         trueValue: entry.true_value,

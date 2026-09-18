@@ -209,3 +209,35 @@ def test_ttm_window_is_exposed_and_the_canvas_is_not():
     h3_id = str(_only(workflow, "MiniMaxH3ImageToVideo")["id"])
     for param in ("width", "height", "length"):
         assert rules["nodes"][h3_id]["widgets"][param]["hidden"] is True
+
+
+def test_ttm_window_is_bounded_by_the_steps_the_sampler_runs():
+    """The window sliders cannot outrun the step count the user picked.
+
+    A constant ceiling here was wrong in both directions: it hid the steps a
+    raised count makes available, and it offered steps a lowered count no
+    longer runs, which vloTimeToMove rejects outright.
+    """
+    workflow = _workflow()
+    ttm_id = str(_only(workflow, "vloTimeToMove")["id"])
+    scheduler_id = str(_only(workflow, "BasicScheduler")["id"])
+
+    for directory in WORKFLOW_DIRS:
+        rules = _load_json(directory / RULES_NAME)
+        window = rules["nodes"][ttm_id]["widgets"]
+        steps_ref = {
+            "kind": "workflow_param",
+            "node_id": scheduler_id,
+            "param": "steps",
+        }
+
+        # start_step is seeded at a step the sampler still has to run, so it
+        # stops one short of the count; end_step is exclusive and may reach it.
+        assert window["start_step"]["max_from"] == {"ref": steps_ref, "offset": -1}
+        assert window["end_step"]["max_from"] == {"ref": steps_ref, "offset": 0}
+
+        steps = rules["nodes"][scheduler_id]["widgets"]["steps"]
+        for param in ("start_step", "end_step"):
+            assert window[param]["max"] == steps["max"], (
+                f"{param}'s fallback ceiling must match the Steps slider's"
+            )

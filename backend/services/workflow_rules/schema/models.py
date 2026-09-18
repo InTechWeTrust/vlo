@@ -260,6 +260,19 @@ class WidgetDisplayUnit(WorkflowRuleBaseModel):
     precision: int | None = None
 
 
+class WorkflowRuleWidgetBound(WorkflowRuleBaseModel):
+    """A numeric bound read from another widget instead of authored as a constant.
+
+    ``ref`` names the widget whose live value the bound follows, and ``offset``
+    shifts it — a sampling window that must stay strictly inside a run of
+    ``steps`` uses ``offset: -1``. The entry's static ``min``/``max`` stays the
+    fallback for when the referenced widget is not on the panel at all.
+    """
+
+    ref: WorkflowParamValueReference
+    offset: int | float = 0
+
+
 class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     label: str | None = None
     when: ConditionExpression | None = None
@@ -284,6 +297,10 @@ class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     group_order: int | None = None
     min: int | float | None = None
     max: int | float | None = None
+    # Bounds that track another widget's value. They win over the static
+    # min/max above whenever the referenced widget resolves.
+    min_from: WorkflowRuleWidgetBound | None = None
+    max_from: WorkflowRuleWidgetBound | None = None
     step: int | float | None = None
     default: Any | None = None
     value_type: PipelineControlValueType | None = None

@@ -613,6 +613,50 @@ describe("resolvePresentedInputs", () => {
     expect(sampler?.config.options).toEqual(["euler", "heun"]);
   });
 
+  it("carries a rule's max_from bound onto the widget config", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "26": { class_type: "vloTimeToMove", inputs: { start_step: 1 } },
+        "28": { class_type: "BasicScheduler", inputs: { steps: 20 } },
+      },
+      {
+        version: 3,
+        nodes: {
+          "26": {
+            widgets: {
+              start_step: {
+                label: "Motion lock-in",
+                value_type: "int",
+                control: "slider",
+                min: 0,
+                max: 60,
+                max_from: {
+                  ref: {
+                    kind: "workflow_param",
+                    node_id: "28",
+                    param: "steps",
+                  },
+                  offset: -1,
+                },
+              },
+            },
+          },
+        },
+        slots: {},
+      },
+    );
+
+    const startStep = widgets.find((widget) => widget.param === "start_step");
+    // The bound itself is resolved against the panel's live values, so the
+    // resolver only has to carry the reference through intact.
+    expect(startStep?.config.maxFrom).toEqual({
+      nodeId: "28",
+      param: "steps",
+      offset: -1,
+    });
+    expect(startStep?.config.max).toBe(60);
+  });
+
   it("carries a rule's default_node_bypass onto the widget config", () => {
     const widgets = resolveWidgetInputs(
       {

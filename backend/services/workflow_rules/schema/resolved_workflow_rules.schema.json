@@ -1637,6 +1637,17 @@
           "default": null,
           "title": "Max"
         },
+        "max_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetBound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "min": {
           "anyOf": [
             {
@@ -1651,6 +1662,17 @@
           ],
           "default": null,
           "title": "Min"
+        },
+        "min_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetBound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "options": {
           "anyOf": [
@@ -2764,6 +2786,31 @@
       "title": "WorkflowRuleSlot",
       "type": "object"
     },
+    "WorkflowRuleWidgetBound": {
+      "description": "A numeric bound read from another widget instead of authored as a constant.\n\n``ref`` names the widget whose live value the bound follows, and ``offset``\nshifts it \u2014 a sampling window that must stay strictly inside a run of\n``steps`` uses ``offset: -1``. The entry's static ``min``/``max`` stays the\nfallback for when the referenced widget is not on the panel at all.",
+      "properties": {
+        "offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "default": 0,
+          "title": "Offset"
+        },
+        "ref": {
+          "$ref": "#/$defs/WorkflowParamValueReference"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "WorkflowRuleWidgetBound",
+      "type": "object"
+    },
     "WorkflowRuleWidgetDefaultOverride": {
       "properties": {
         "value": {
@@ -3006,6 +3053,17 @@
           "default": null,
           "title": "Max"
         },
+        "max_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetBound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "min": {
           "anyOf": [
             {
@@ -3020,6 +3078,17 @@
           ],
           "default": null,
           "title": "Min"
+        },
+        "min_from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetBound"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "options": {
           "anyOf": [

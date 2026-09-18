@@ -128,6 +128,7 @@ import {
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../utils/loraLoaderWidgets";
 import { collectWidgetSubmissionState } from "../utils/widgetSubmissionState";
+import { applyDynamicWidgetBounds } from "../utils/dynamicWidgetBounds";
 import type { GenerationPanelValuesSnapshot } from "../persistence/generationPanelSnapshot";
 import {
   collectDefaultNodeBypassWidgetTargets,
@@ -720,7 +721,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       });
     }
   }, [bypassDiscoveryNodeIds, generationNodes, selectedWorkflowId]);
-  const widgetInputs = useMemo(
+  const authoredWidgetInputs = useMemo(
     () =>
       mergeAutodiscoveredLoraWidgetInputs(
         baseWidgetInputs,
@@ -728,6 +729,33 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       ),
     [autodiscoveredLoraWidgetInputs, baseWidgetInputs],
   );
+  // Bounds a rule tied to another widget (a sampling window against the step
+  // count) are resolved here, where the panel's live values are: the resolver
+  // only ever sees the workflow's own values.
+  const boundedWidgetInputs = useMemo(
+    () =>
+      applyDynamicWidgetBounds({
+        widgetInputs: authoredWidgetInputs,
+        widgetValues,
+      }),
+    [authoredWidgetInputs, widgetValues],
+  );
+  const widgetInputs = boundedWidgetInputs.widgetInputs;
+
+  // A bound that moved under a value out of range pulls it back in, so the
+  // panel never submits a window past the last step the sampler runs.
+  useEffect(() => {
+    const clamped = boundedWidgetInputs.clamped;
+    if (clamped.length === 0) return;
+    let next = widgetValuesRef.current;
+    for (const entry of clamped) {
+      if (Object.is(next[entry.nodeId]?.[entry.param], entry.value)) continue;
+      next = setNodeParamValue(next, entry.nodeId, entry.param, entry.value);
+    }
+    if (next === widgetValuesRef.current) return;
+    widgetValuesRef.current = next;
+    setWidgetValues(next);
+  }, [boundedWidgetInputs]);
 
   useEffect(() => {
     widgetInputsRef.current = widgetInputs;

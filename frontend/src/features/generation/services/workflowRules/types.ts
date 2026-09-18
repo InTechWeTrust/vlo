@@ -66,6 +66,7 @@ export type {
   WorkflowRuleSelectionConfig,
   WorkflowRuleSlot,
   WorkflowSection,
+  WorkflowRuleWidgetBound,
   WorkflowRuleWidgetDefaultOverride,
   WorkflowRuleWidgetEntry,
   WorkflowRuleWidgetInputPresenceCondition,
