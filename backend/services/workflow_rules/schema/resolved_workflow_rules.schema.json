@@ -1702,6 +1702,17 @@
           "default": null,
           "title": "Options"
         },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "section_id": {
           "anyOf": [
             {
@@ -3118,6 +3129,17 @@
           "default": null,
           "title": "Options"
         },
+        "range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkflowRuleWidgetRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "section_id": {
           "anyOf": [
             {
@@ -3277,6 +3299,56 @@
         }
       },
       "title": "WorkflowRuleWidgetInputPresenceCondition",
+      "type": "object"
+    },
+    "WorkflowRuleWidgetRange": {
+      "description": "Draws this widget and ``end`` as one range slider, this one the low end.\n\nBoth stay separate workflow values \u2014 only the panel presents them as a\npair \u2014 so a window whose ends must stay ordered (a sampling window's start\nand end step) is shown as one control instead of two sliders that can\nsilently cross. The pair falls back to two sliders when ``end`` is not\non the panel next to this widget.",
+      "properties": {
+        "collapsed_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collapsed Label"
+        },
+        "end": {
+          "$ref": "#/$defs/WorkflowParamValueReference"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "min_distance": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "default": 0,
+          "ge": 0,
+          "title": "Min Distance"
+        }
+      },
+      "required": [
+        "end"
+      ],
+      "title": "WorkflowRuleWidgetRange",
       "type": "object"
     },
     "WorkflowSection": {

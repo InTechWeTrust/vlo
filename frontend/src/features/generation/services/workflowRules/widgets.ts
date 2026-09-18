@@ -26,6 +26,7 @@ import type {
   WorkflowFrontendControl,
   WorkflowParamReference,
   WorkflowRuleWidgetBound,
+  WorkflowRuleWidgetRange,
   WorkflowRules,
   WorkflowSingleSamplerDenoiseRule,
   WorkflowVideoAudioRetakeRule,
@@ -364,6 +365,25 @@ function toBoundReference(
     nodeId: ref.node_id,
     param: ref.param,
     offset: typeof bound?.offset === "number" ? bound.offset : 0,
+  };
+}
+
+function toRangePairing(
+  range: WorkflowRuleWidgetRange | null | undefined,
+): WidgetInputConfig["range"] {
+  const end = range?.end;
+  if (!end || typeof end.node_id !== "string" || typeof end.param !== "string") {
+    return undefined;
+  }
+  return {
+    endNodeId: end.node_id,
+    endParam: end.param,
+    label: toOptionalString(range?.label),
+    collapsedLabel: toOptionalString(range?.collapsed_label),
+    minDistance:
+      typeof range?.min_distance === "number" && range.min_distance > 0
+        ? range.min_distance
+        : 0,
   };
 }
 
@@ -782,6 +802,7 @@ export function resolveWidgetInputsFromRules(
         max: toOptionalNumber(entry.max),
         minFrom: toBoundReference(entry.min_from),
         maxFrom: toBoundReference(entry.max_from),
+        range: toRangePairing(entry.range),
         step: toOptionalNumber(entry.step),
         defaultValue: entry.default,
         trueValue: entry.true_value,

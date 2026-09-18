@@ -1368,6 +1368,87 @@ describe("GenerationInputs", () => {
     expect(screen.getByText("80%")).toBeInTheDocument();
   });
 
+  it("draws a declared start/end pair as one range slider", () => {
+    const onWidgetChange = vi.fn();
+    const window = (
+      param: string,
+      label: string,
+      currentValue: number,
+      max: number,
+      extra: object = {},
+    ) => ({
+      nodeId: "26",
+      param,
+      currentValue,
+      config: {
+        label,
+        control: "slider" as const,
+        controlAfterGenerate: false,
+        min: 0,
+        max,
+        step: 1,
+        sliderDisplay: "number" as const,
+        valueType: "int" as const,
+        groupId: "time_to_move",
+        groupTitle: "Time-to-Move",
+        ...extra,
+      },
+    });
+
+    const renderWindow = (values: Record<string, unknown>) =>
+      render(
+        <GenerationInputs
+          inputs={[]}
+          textValues={{}}
+          onTextValueCommit={vi.fn()}
+          mediaInputs={{}}
+          onInputDrop={vi.fn()}
+          onExternalInputDrop={vi.fn()}
+          onInputClear={vi.fn()}
+          onSwapMediaInputs={vi.fn()}
+          onMoveMediaInput={vi.fn()}
+          onClickSelect={vi.fn()}
+          widgetInputs={[
+            window("start_step", "Lock-in step", 1, 19, {
+              range: {
+                endNodeId: "26",
+                endParam: "end_step",
+                label: "Motion hold",
+                collapsedLabel: "seed only",
+                minDistance: 0,
+              },
+            }),
+            window("end_step", "Release step", 2, 20),
+          ]}
+          widgetValues={{ "26": values }}
+          randomizeToggles={{}}
+          onWidgetChange={onWidgetChange}
+          onToggleRandomize={vi.fn()}
+        />,
+      );
+
+    const { unmount } = renderWindow({});
+    expect(screen.getByText("Motion hold")).toBeInTheDocument();
+    expect(screen.getByText("1 – 2")).toBeInTheDocument();
+    const low = screen.getByRole("slider", { name: "Lock-in step" });
+    const high = screen.getByRole("slider", { name: "Release step" });
+    // The shared track spans to the end's ceiling, past the start's own.
+    expect(low).toHaveAttribute("aria-valuemax", "20");
+
+    // Each end writes only its own widget.
+    fireEvent.keyDown(high, { key: "ArrowRight" });
+    expect(onWidgetChange).toHaveBeenLastCalledWith("26", "end_step", 3);
+    // The start may meet the end (an empty hold is a real setting).
+    onWidgetChange.mockClear();
+    fireEvent.keyDown(low, { key: "ArrowRight" });
+    expect(onWidgetChange).toHaveBeenLastCalledWith("26", "start_step", 2);
+    unmount();
+
+    // A release at or before the lock-in reads as the seed-only setting.
+    renderWindow({ start_step: 4, end_step: 3 });
+    expect(screen.getByText("4 · seed only")).toBeInTheDocument();
+  });
+
   it("renders numeric slider widgets using their unit instead of percent", () => {
     render(
       <GenerationInputs

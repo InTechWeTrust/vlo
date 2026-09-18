@@ -1367,11 +1367,11 @@
       },
       "widgets_values": [
         1,
-        2
+        3
       ],
       "widgets_values_named": {
         "start_step": 1,
-        "end_step": 2
+        "end_step": 3
       }
     },
     {

@@ -380,6 +380,21 @@ export interface WidgetInputConfig {
    */
   minFrom?: WidgetBoundReference;
   maxFrom?: WidgetBoundReference;
+  /**
+   * Draws this widget and `end` as one range slider, this one the low end.
+   * The values stay separate; only the presentation is shared.
+   */
+  range?: WidgetRangePairing;
+}
+
+export interface WidgetRangePairing {
+  endNodeId: string;
+  endParam: string;
+  /** Row label for the pair; the widgets' own labels name the thumbs. */
+  label?: string;
+  /** Readout suffix when the ends meet (e.g. "seed only"). */
+  collapsedLabel?: string;
+  minDistance: number;
 }
 
 export interface WidgetBoundReference {

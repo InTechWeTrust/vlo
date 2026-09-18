@@ -70,6 +70,7 @@ export type {
   WorkflowRuleWidgetDefaultOverride,
   WorkflowRuleWidgetEntry,
   WorkflowRuleWidgetInputPresenceCondition,
+  WorkflowRuleWidgetRange,
   WorkflowValidationConfig,
   WorkflowSingleSamplerDenoiseRule,
   WorkflowVideoAudioRetakeRule,

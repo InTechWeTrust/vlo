@@ -66,6 +66,24 @@ export {
 } from "./components/NestedMenuTree";
 export type { SliderControlProps } from "./components/SliderControl";
 export { SliderControl } from "./components/SliderControl";
+export type { RangeSliderControlProps } from "./components/RangeSliderControl";
+export { RangeSliderControl } from "./components/RangeSliderControl";
+export {
+  SliderFrame,
+  SliderReadoutInput,
+  SliderReadoutText,
+  SliderTrack,
+  type SliderFrameProps,
+} from "./components/SliderFrame";
+export {
+  constrainRangeEnd,
+  isRangeCollapsed,
+  normalizeRange,
+  type RangeConstraints,
+  type RangeEnd,
+  type RangeEndLimits,
+  type RangeValue,
+} from "./components/rangeSliderConstraints";
 export {
   useLiveParameterPreviewSession,
   type LiveParameterChanges,

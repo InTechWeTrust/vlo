@@ -657,6 +657,50 @@ describe("resolvePresentedInputs", () => {
     expect(startStep?.config.max).toBe(60);
   });
 
+  it("carries a rule's range pairing onto the widget config", () => {
+    const widgets = resolveWidgetInputs(
+      {
+        "26": {
+          class_type: "vloTimeToMove",
+          inputs: { start_step: 1, end_step: 2 },
+        },
+      },
+      {
+        version: 3,
+        nodes: {
+          "26": {
+            widgets: {
+              start_step: {
+                control: "slider",
+                range: {
+                  end: {
+                    kind: "workflow_param",
+                    node_id: "26",
+                    param: "end_step",
+                  },
+                  label: "Motion hold",
+                  collapsed_label: "seed only",
+                },
+              },
+              end_step: { control: "slider" },
+            },
+          },
+        },
+        slots: {},
+      },
+    );
+
+    const byParam = new Map(widgets.map((widget) => [widget.param, widget]));
+    expect(byParam.get("start_step")?.config.range).toEqual({
+      endNodeId: "26",
+      endParam: "end_step",
+      label: "Motion hold",
+      collapsedLabel: "seed only",
+      minDistance: 0,
+    });
+    expect(byParam.get("end_step")?.config.range).toBeUndefined();
+  });
+
   it("carries a rule's default_node_bypass onto the widget config", () => {
     const widgets = resolveWidgetInputs(
       {

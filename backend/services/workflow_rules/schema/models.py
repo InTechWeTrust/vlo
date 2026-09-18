@@ -273,6 +273,25 @@ class WorkflowRuleWidgetBound(WorkflowRuleBaseModel):
     offset: int | float = 0
 
 
+class WorkflowRuleWidgetRange(WorkflowRuleBaseModel):
+    """Draws this widget and ``end`` as one range slider, this one the low end.
+
+    Both stay separate workflow values — only the panel presents them as a
+    pair — so a window whose ends must stay ordered (a sampling window's start
+    and end step) is shown as one control instead of two sliders that can
+    silently cross. The pair falls back to two sliders when ``end`` is not
+    on the panel next to this widget.
+    """
+
+    end: WorkflowParamValueReference
+    # Row label for the pair; the two widgets' own labels name the thumbs.
+    label: str | None = None
+    # Readout suffix when the ends meet, for pairs where an empty range is a
+    # meaningful setting rather than a degenerate one.
+    collapsed_label: str | None = None
+    min_distance: int | float = Field(default=0, ge=0)
+
+
 class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     label: str | None = None
     when: ConditionExpression | None = None
@@ -301,6 +320,7 @@ class WorkflowRuleWidgetEntry(WorkflowRuleBaseModel):
     # min/max above whenever the referenced widget resolves.
     min_from: WorkflowRuleWidgetBound | None = None
     max_from: WorkflowRuleWidgetBound | None = None
+    range: WorkflowRuleWidgetRange | None = None
     step: int | float | None = None
     default: Any | None = None
     value_type: PipelineControlValueType | None = None

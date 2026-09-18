@@ -1,5 +1,5 @@
 import { memo, useCallback, useMemo } from "react";
-import { Box, Button, Checkbox, IconButton, MenuItem, Slider, TextField, Tooltip, Typography } from "@mui/material";
+import { Box, Button, Checkbox, IconButton, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
 import { Casino, InfoOutlined } from "@mui/icons-material";
 import type { Asset } from "../../../types/Asset";
 import {
@@ -9,6 +9,11 @@ import {
   BufferedNumberInput,
   BufferedTextInput,
   PanelSection,
+  RangeSliderControl,
+  SliderControl,
+  SliderFrame,
+  SliderReadoutText,
+  SliderTrack,
   type AssetBatchSlotItem,
 } from "../../panelUI";
 import {
@@ -27,6 +32,7 @@ import {
   getWorkflowInputValue,
 } from "../utils/workflowInputs";
 import { getNodeBypassWidgetKey } from "../utils/nodeBypassWidgets";
+import { pairRangeWidgets } from "../utils/rangeWidgetPairs";
 import { useMediaInputPreparationStore } from "../store/useMediaInputPreparationStore";
 import { generationTextInputClaims } from "../services/GenerationTextInputClaims";
 import { useGenerationTextInputClaim } from "../hooks/useGenerationTextInputClaim";
@@ -235,6 +241,18 @@ function parseEnumValue(
   return matched ?? raw;
 }
 
+function WidgetDescription({ widget }: { widget: WorkflowWidgetInput }) {
+  if (!widget.config.description) return null;
+  return (
+    <Typography
+      variant="caption"
+      sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
+    >
+      {widget.config.description}
+    </Typography>
+  );
+}
+
 function isResolutionLadderWidget(widget: WorkflowWidgetInput): boolean {
   return (widget.config.resolutionLadder?.length ?? 0) > 0;
 }
@@ -279,81 +297,68 @@ function ResolutionLadderRow({
 
   return (
     <Box sx={{ mb: 1.5 }}>
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          mb: 0.25,
-        }}
+      <SliderFrame
+        label={widget.config.label}
+        readout={
+          <SliderReadoutText>
+            {resolution}p{isCustom ? " (custom)" : ""}
+          </SliderReadoutText>
+        }
       >
-        <Typography variant="caption" sx={{ color: "text.secondary" }}>
-          {widget.config.label}
-        </Typography>
-        <Typography variant="caption" sx={{ color: "text.secondary" }}>
-          {resolution}p{isCustom ? " (custom)" : ""}
-        </Typography>
-      </Box>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-        <Box sx={{ px: 1, flexGrow: 1 }}>
-          <Slider
-            aria-label={widget.config.label}
-            size="small"
-            disabled={disabled}
-            value={resolution}
-            min={min}
-            max={max}
-            // Restricted values: the thumb can only land on a rung.
-            step={null}
-            marks={marks}
-            valueLabelDisplay="off"
-            onChange={(_, nextValue) => {
-              if (typeof nextValue !== "number") return;
-              onWidgetChange(widget.nodeId, widget.param, nextValue);
-            }}
-            sx={{
-              color: isCustom ? "text.disabled" : "primary.light",
-              "& .MuiSlider-markLabel": {
-                fontSize: "0.6rem",
-                color: "text.disabled",
-              },
-            }}
-          />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <SliderTrack
+              aria-label={widget.config.label}
+              size="small"
+              disabled={disabled}
+              value={resolution}
+              min={min}
+              max={max}
+              // Restricted values: the thumb can only land on a rung.
+              step={null}
+              marks={marks}
+              valueLabelDisplay="off"
+              onChange={(_, nextValue) => {
+                if (typeof nextValue !== "number") return;
+                onWidgetChange(widget.nodeId, widget.param, nextValue);
+              }}
+              sx={{
+                color: isCustom ? "text.disabled" : "primary.light",
+                "& .MuiSlider-markLabel": {
+                  fontSize: "0.6rem",
+                  color: "text.disabled",
+                },
+              }}
+            />
+          </Box>
+          <Box sx={{ flexShrink: 0, width: 92 }}>
+            <BufferedNumberInput
+              label="Custom"
+              disabled={disabled}
+              value={String(resolution)}
+              inputProps={{ min: 1, step: 1, "aria-label": "Custom resolution" }}
+              onCommit={(nextValue) => {
+                const nextResolution = Number(nextValue.trim());
+                if (!Number.isFinite(nextResolution) || nextResolution <= 0) {
+                  return;
+                }
+                onWidgetChange(
+                  widget.nodeId,
+                  widget.param,
+                  Math.round(nextResolution),
+                );
+              }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  bgcolor: "#1a1a1a",
+                  fontSize: "0.8rem",
+                },
+              }}
+            />
+          </Box>
         </Box>
-        <Box sx={{ flexShrink: 0, width: 92 }}>
-          <BufferedNumberInput
-            label="Custom"
-            disabled={disabled}
-            value={String(resolution)}
-            inputProps={{ min: 1, step: 1, "aria-label": "Custom resolution" }}
-            onCommit={(nextValue) => {
-              const nextResolution = Number(nextValue.trim());
-              if (!Number.isFinite(nextResolution) || nextResolution <= 0) {
-                return;
-              }
-              onWidgetChange(
-                widget.nodeId,
-                widget.param,
-                Math.round(nextResolution),
-              );
-            }}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                bgcolor: "#1a1a1a",
-                fontSize: "0.8rem",
-              },
-            }}
-          />
-        </Box>
-      </Box>
-      {widget.config.description ? (
-        <Typography
-          variant="caption"
-          sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
-        >
-          {widget.config.description}
-        </Typography>
-      ) : null}
+      </SliderFrame>
+      <WidgetDescription widget={widget} />
     </Box>
   );
 }
@@ -978,61 +983,22 @@ function WidgetRow({
   }
 
   if (isSlider) {
-    const min = widget.config.min ?? 0;
-    const max = widget.config.max ?? 1;
-    const step = widget.config.step ?? 0.01;
-
     return (
       <Box sx={{ mb: 1.5 }}>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            mb: 0.75,
+        <SliderControl
+          label={widget.config.label}
+          value={sliderValue}
+          min={widget.config.min ?? 0}
+          max={widget.config.max ?? 1}
+          step={widget.config.step ?? 0.01}
+          formatValue={(nextValue) => formatSliderValue(widget, nextValue)}
+          disabled={nodeBypassed}
+          onChange={(_, nextValue) => {
+            if (typeof nextValue !== "number") return;
+            onWidgetChange(widget.nodeId, widget.param, nextValue);
           }}
-        >
-          <Typography
-            variant="caption"
-            sx={{ color: "text.secondary", display: "block" }}
-          >
-            {widget.config.label}
-          </Typography>
-          <Typography
-            variant="caption"
-            sx={{ color: "text.secondary", display: "block" }}
-          >
-            {formatSliderValue(widget, sliderValue)}
-          </Typography>
-        </Box>
-        <Box sx={{ px: 1 }}>
-          <Slider
-            aria-label={widget.config.label}
-            size="small"
-            disabled={nodeBypassed}
-            value={sliderValue}
-            min={min}
-            max={max}
-            step={step}
-            valueLabelDisplay="off"
-            valueLabelFormat={(nextValue) =>
-              formatSliderValue(widget, nextValue)
-            }
-            onChange={(_, nextValue) => {
-              if (typeof nextValue !== "number") return;
-              onWidgetChange(widget.nodeId, widget.param, nextValue);
-            }}
-            sx={{ color: "primary.light" }}
-          />
-        </Box>
-        {widget.config.description ? (
-          <Typography
-            variant="caption"
-            sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
-          >
-            {widget.config.description}
-          </Typography>
-        ) : null}
+        />
+        <WidgetDescription widget={widget} />
       </Box>
     );
   }
@@ -1072,14 +1038,7 @@ function WidgetRow({
             },
           }}
         />
-        {widget.config.description ? (
-          <Typography
-            variant="caption"
-            sx={{ color: "text.secondary", display: "block", mt: 0.75 }}
-          >
-            {widget.config.description}
-          </Typography>
-        ) : null}
+        <WidgetDescription widget={widget} />
       </Box>
     );
   }
@@ -1251,23 +1210,92 @@ function WidgetRow({
           ) : null}
         </Box>
       ) : null}
-      {widget.config.description ? (
-        <Typography
-          variant="caption"
-          sx={{
-            color: "text.secondary",
-            display: "block",
-            mt: 0.75,
-          }}
-        >
-          {widget.config.description}
-        </Typography>
-      ) : null}
+      <WidgetDescription widget={widget} />
     </Box>
   );
 }
 
 const MemoizedWidgetRow = memo(WidgetRow);
+
+function toSliderNumber(value: unknown, fallback: number): number {
+  const parsed = typeof value === "string" ? Number(value) : value;
+  return typeof parsed === "number" && Number.isFinite(parsed)
+    ? parsed
+    : fallback;
+}
+
+interface RangeWidgetRowProps {
+  low: WorkflowWidgetInput;
+  high: WorkflowWidgetInput;
+  lowValue: unknown;
+  highValue: unknown;
+  disabled: boolean;
+  onWidgetChange: (nodeId: string, param: string, value: unknown) => void;
+}
+
+/**
+ * Two slider widgets whose rules pair them as a start/end range.
+ *
+ * Each end keeps its own bounds (which may follow another widget, like the
+ * step count) and its own workflow value; the shared track only adds the rule
+ * that the ends stay ordered.
+ */
+function RangeWidgetRow({
+  low,
+  high,
+  lowValue,
+  highValue,
+  disabled,
+  onWidgetChange,
+}: RangeWidgetRowProps) {
+  const pairing = low.config.range;
+  const min = Math.min(low.config.min ?? 0, high.config.min ?? 0);
+  const max = Math.max(low.config.max ?? 1, high.config.max ?? 1);
+  const stored: [number, number] = [
+    toSliderNumber(lowValue, toSliderNumber(low.currentValue, min)),
+    toSliderNumber(highValue, toSliderNumber(high.currentValue, min)),
+  ];
+  const collapsedLabel = pairing?.collapsedLabel;
+
+  return (
+    <Box sx={{ mb: 1.5 }}>
+      <RangeSliderControl
+        label={pairing?.label ?? low.config.label}
+        value={stored}
+        min={min}
+        max={max}
+        step={low.config.step ?? high.config.step ?? 0.01}
+        minDistance={pairing?.minDistance ?? 0}
+        lowLimits={{ min: low.config.min, max: low.config.max }}
+        highLimits={{ min: high.config.min, max: high.config.max }}
+        endLabels={[low.config.label, high.config.label]}
+        formatValue={(value) => formatSliderValue(low, value)}
+        formatReadout={([start, end]) => {
+          const startText = formatSliderValue(low, start);
+          if (collapsedLabel && end <= start) {
+            return `${startText} · ${collapsedLabel}`;
+          }
+          return `${startText} – ${formatSliderValue(high, end)}`;
+        }}
+        disabled={disabled}
+        onChange={(next, end) => {
+          // Only the dragged end is written. A stored end below the start is
+          // drawn collapsed, and writing that drawn value back would turn an
+          // empty range (which the workflow may treat as its own setting)
+          // into a real one the user never asked for.
+          if (end === "low") {
+            onWidgetChange(low.nodeId, low.param, next[0]);
+          } else {
+            onWidgetChange(high.nodeId, high.param, next[1]);
+          }
+        }}
+      />
+      <WidgetDescription widget={low} />
+    </Box>
+  );
+}
+
+const MemoizedRangeWidgetRow = memo(RangeWidgetRow);
 
 interface WidgetGroupSectionProps {
   group: WidgetGroup;
@@ -1301,6 +1329,19 @@ function WidgetGroupSection({
   showDivider,
   bypassedNodeIds,
 }: WidgetGroupSectionProps) {
+  const rows = useMemo(() => pairRangeWidgets(group.widgets), [group.widgets]);
+  // A node switched off through its bypass choice keeps its remaining
+  // controls on screen — the panel would otherwise give no sign they
+  // exist — but greyed out, since this run leaves the node out.
+  const isNodeBypassed = (widget: WorkflowWidgetInput): boolean =>
+    !widget.config.nodeBypassOption && bypassedNodeIds.has(widget.nodeId);
+  const widgetValue = (widget: WorkflowWidgetInput): unknown =>
+    bypassedWidgetTargets.has(
+      getNodeBypassWidgetKey(widget.nodeId, widget.param),
+    )
+      ? widget.config.nodeBypassOption?.value
+      : (widgetValues[widget.nodeId]?.[widget.param] ?? widget.currentValue);
+
   return (
     <Box
       sx={{
@@ -1314,20 +1355,26 @@ function WidgetGroupSection({
       >
         {group.title}
       </Typography>
-      {group.widgets.map((widget) => {
+      {rows.map((row) => {
+        if (row.kind === "range") {
+          const { low, high } = row;
+          return (
+            <MemoizedRangeWidgetRow
+              key={`${low.nodeId}:${low.param}~${high.nodeId}:${high.param}`}
+              low={low}
+              high={high}
+              lowValue={widgetValue(low)}
+              highValue={widgetValue(high)}
+              disabled={isNodeBypassed(low) || isNodeBypassed(high)}
+              onWidgetChange={onWidgetChange}
+            />
+          );
+        }
+
+        const { widget } = row;
         const key = `${widget.nodeId}:${widget.param}`;
-        // A node switched off through its bypass choice keeps its remaining
-        // controls on screen — the panel would otherwise give no sign they
-        // exist — but greyed out, since this run leaves the node out.
-        const nodeBypassed =
-          !widget.config.nodeBypassOption &&
-          bypassedNodeIds.has(widget.nodeId);
-        const nodeValues = widgetValues[widget.nodeId] ?? {};
-        const value = bypassedWidgetTargets.has(
-          getNodeBypassWidgetKey(widget.nodeId, widget.param),
-        )
-          ? widget.config.nodeBypassOption?.value
-          : (nodeValues[widget.param] ?? widget.currentValue);
+        const nodeBypassed = isNodeBypassed(widget);
+        const value = widgetValue(widget);
         const isRandomized = randomizeToggles[key] ?? false;
 
         return (

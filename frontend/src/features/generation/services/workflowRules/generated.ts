@@ -208,6 +208,7 @@ export interface WorkflowFrontendControl {
   max?: number | null;
   min_from?: WorkflowRuleWidgetBound | null;
   max_from?: WorkflowRuleWidgetBound | null;
+  range?: WorkflowRuleWidgetRange | null;
   step?: number | null;
   default?: unknown | null;
   value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown" | null;
@@ -385,6 +386,7 @@ export interface WorkflowRuleWidgetEntry {
   max?: number | null;
   min_from?: WorkflowRuleWidgetBound | null;
   max_from?: WorkflowRuleWidgetBound | null;
+  range?: WorkflowRuleWidgetRange | null;
   step?: number | null;
   default?: unknown | null;
   value_type?: "int" | "float" | "string" | "boolean" | "enum" | "unknown" | null;
@@ -398,6 +400,13 @@ export interface WorkflowRuleWidgetInputPresenceCondition {
   kind?: "input_presence";
   inputs?: Array<string>;
   match?: "all_present" | "all_missing" | "any_present" | "any_missing";
+}
+
+export interface WorkflowRuleWidgetRange {
+  end: WorkflowParamValueReference;
+  label?: string | null;
+  collapsed_label?: string | null;
+  min_distance?: number;
 }
 
 export interface WorkflowSection {

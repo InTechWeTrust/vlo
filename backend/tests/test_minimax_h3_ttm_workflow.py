@@ -241,3 +241,27 @@ def test_ttm_window_is_bounded_by_the_steps_the_sampler_runs():
             assert window[param]["max"] == steps["max"], (
                 f"{param}'s fallback ceiling must match the Steps slider's"
             )
+
+
+def test_ttm_window_renders_as_one_range():
+    """Lock-in and release are one window, so they share one ordered slider.
+
+    As two sliders they could cross without any sign that crossing means
+    something (vloTimeToMove reads an end at or before the start as "seed the
+    reference, never hold it"), so the pair names that state instead.
+    """
+    workflow = _workflow()
+    ttm_id = str(_only(workflow, "vloTimeToMove")["id"])
+
+    for directory in WORKFLOW_DIRS:
+        rules, warnings = load_rules_model_for_workflow(directory, WORKFLOW_NAME)
+        assert warnings == []
+        window = rules.nodes[ttm_id].widgets
+        pairing = window["start_step"].range
+
+        assert pairing is not None
+        assert (pairing.end.node_id, pairing.end.param) == (ttm_id, "end_step")
+        # An empty hold is a real setting, so the ends may meet.
+        assert pairing.min_distance == 0
+        assert pairing.collapsed_label
+        assert window["end_step"].range is None
