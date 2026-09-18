@@ -10,7 +10,12 @@ import type {
   MaskBooleanExpression,
   MaskTimelineClip,
 } from "../../../types/TimelineTypes";
-import type { MaskBooleanExpressionAnalysis } from "../model/maskBooleanExpression";
+import {
+  collectMaskBooleanLeafVariants,
+  getMaskBooleanLeafKey,
+  type MaskBooleanExpressionAnalysis,
+  type MaskBooleanLeafVariant,
+} from "../model/maskBooleanExpression";
 import {
   createMaskBooleanBlendFilter,
   type MaskBooleanBlendFilter,
@@ -127,8 +132,11 @@ export class MaskTextureResolver {
     this.pool.ensurePerMaskRenderTexture(options.contentSize);
     this.pool.ensureEffectMaskRenderTexture(options.contentSize);
     this.pool.ensurePresentationMaskRenderTexture(options.contentSize);
+    const leafVariants = collectMaskBooleanLeafVariants(options.expression);
     this.pool.reconcileLeafMaskRenderTextures(
-      referencedMaskIds,
+      leafVariants.map((variant) =>
+        getMaskBooleanLeafKey(variant.maskId, variant.inverted),
+      ),
       options.contentSize,
     );
     this.pool.ensureExpressionRenderTextureCount(
@@ -137,7 +145,7 @@ export class MaskTextureResolver {
     );
 
     this.renderLeafMaskTextures(
-      referencedMaskIds,
+      leafVariants,
       options.maskClipByLocalId,
       options.contentSize,
     );
@@ -208,7 +216,7 @@ export class MaskTextureResolver {
   }
 
   private renderLeafMaskTextures(
-    referencedMaskIds: string[],
+    leafVariants: readonly MaskBooleanLeafVariant[],
     maskClipByLocalId: Map<string, MaskTimelineClip>,
     contentSize: { width: number; height: number },
   ): void {
@@ -217,19 +225,26 @@ export class MaskTextureResolver {
       contentSize.height / 2,
     );
 
-    referencedMaskIds.forEach((maskId) => {
-      const leafTexture = this.pool.getLeafMaskRenderTexture(maskId);
+    leafVariants.forEach((variant) => {
+      const leafTexture = this.pool.getLeafMaskRenderTexture(
+        getMaskBooleanLeafKey(variant.maskId, variant.inverted),
+      );
       if (!leafTexture) {
         return;
       }
 
-      const maskClip = maskClipByLocalId.get(maskId);
+      const maskClip = maskClipByLocalId.get(variant.maskId);
       if (!maskClip || !this.isMaskClipRenderable(maskClip)) {
         return;
       }
 
-      if (!maskClip.maskInverted) {
-        const growAmount = getSam2MaskGrowAmount(maskClip);
+      // Equation-level inversion composes with the clip's own inversion, so
+      // inverting an inverted mask is a passthrough to its plain coverage
+      // (per-mask grow is applied before inversion, so it survives intact).
+      const renderInverted = maskClip.maskInverted !== variant.inverted;
+      const growAmount = getSam2MaskGrowAmount(maskClip);
+
+      if (!renderInverted) {
         this.renderMaskSubsetToTexture(
           new Set<string>([maskClip.id]),
           leafTexture,
@@ -248,7 +263,6 @@ export class MaskTextureResolver {
         return;
       }
 
-      const growAmount = getSam2MaskGrowAmount(maskClip);
       const perMaskRenderTexture = this.pool.getPerMaskRenderTexture();
       if (!perMaskRenderTexture) {
         return;
@@ -289,6 +303,7 @@ export class MaskTextureResolver {
     if (expression.kind === "mask_ref") {
       return this.resolveRenderableLeafMaskTexture(
         expression.maskId,
+        !!expression.inverted,
         maskClipByLocalId,
       );
     }
@@ -352,6 +367,7 @@ export class MaskTextureResolver {
 
   private resolveRenderableLeafMaskTexture(
     maskId: string,
+    inverted: boolean,
     maskClipByLocalId: Map<string, MaskTimelineClip>,
   ): Texture | null {
     const maskClip = maskClipByLocalId.get(maskId);
@@ -359,7 +375,9 @@ export class MaskTextureResolver {
       return null;
     }
 
-    return this.pool.getLeafMaskRenderTexture(maskId);
+    return this.pool.getLeafMaskRenderTexture(
+      getMaskBooleanLeafKey(maskId, inverted),
+    );
   }
 
   private renderCompositeMaskEdgeTexture(

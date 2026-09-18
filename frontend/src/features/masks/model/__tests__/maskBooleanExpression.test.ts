@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type {
+  MaskBooleanExpression,
   MaskTimelineClip,
   StandardTimelineClip,
 } from "../../../../types/TimelineTypes";
 import {
+  collectMaskBooleanLeafVariants,
+  collectUnionMaskIds,
+  getMaskBooleanLeafKey,
+  sanitizeMaskBooleanExpression,
+  toggleMaskBooleanExpressionInversionAtPath,
   resolveEditableMaskBooleanExpression,
   resolveMaskBooleanExpression,
   resolveRenderableMaskBooleanExpression,
@@ -110,5 +116,86 @@ describe("maskBooleanExpression helpers", () => {
     expect(resolveEditableMaskBooleanExpression(parent, [maskA])).toEqual(
       expected,
     );
+  });
+});
+
+describe("mask reference inversion", () => {
+  const union: MaskBooleanExpression = {
+    kind: "operation",
+    operator: "union",
+    left: { kind: "mask_ref", maskId: "a" },
+    right: { kind: "mask_ref", maskId: "b" },
+  };
+
+  it("toggles the inversion of the reference at a path and back", () => {
+    const inverted = toggleMaskBooleanExpressionInversionAtPath(union, [
+      "right",
+    ]);
+    expect(inverted).toEqual({
+      ...union,
+      right: { kind: "mask_ref", maskId: "b", inverted: true },
+    });
+
+    // Restoring drops the flag entirely rather than persisting `false`.
+    expect(
+      toggleMaskBooleanExpressionInversionAtPath(inverted, ["right"]),
+    ).toEqual(union);
+  });
+
+  it("leaves operation nodes untouched", () => {
+    expect(toggleMaskBooleanExpressionInversionAtPath(union, [])).toEqual(
+      union,
+    );
+  });
+
+  it("collects distinct (mask, inversion) leaf variants", () => {
+    const expression: MaskBooleanExpression = {
+      kind: "operation",
+      operator: "subtract",
+      left: {
+        kind: "operation",
+        operator: "union",
+        left: { kind: "mask_ref", maskId: "a" },
+        right: { kind: "mask_ref", maskId: "a", inverted: true },
+      },
+      right: { kind: "mask_ref", maskId: "a" },
+    };
+    expect(collectMaskBooleanLeafVariants(expression)).toEqual([
+      { maskId: "a", inverted: false },
+      { maskId: "a", inverted: true },
+    ]);
+    expect(getMaskBooleanLeafKey("a", false)).not.toBe(
+      getMaskBooleanLeafKey("a", true),
+    );
+  });
+
+  it("keeps leaf keys distinct for mask IDs that look like encoded variants", () => {
+    const keys = [
+      getMaskBooleanLeafKey("a", true),
+      getMaskBooleanLeafKey("a::inverted", false),
+      getMaskBooleanLeafKey("a::inverted", true),
+      getMaskBooleanLeafKey('["a",true]', false),
+    ];
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("does not treat a union containing an inverted reference as a simple union", () => {
+    expect(collectUnionMaskIds(union)).toEqual(["a", "b"]);
+    expect(
+      collectUnionMaskIds(
+        toggleMaskBooleanExpressionInversionAtPath(union, ["left"]),
+      ),
+    ).toBeNull();
+  });
+
+  it("keeps the inversion flag when sanitizing", () => {
+    const inverted = toggleMaskBooleanExpressionInversionAtPath(union, [
+      "left",
+    ]);
+    expect(sanitizeMaskBooleanExpression(inverted, ["a"])).toEqual({
+      kind: "mask_ref",
+      maskId: "a",
+      inverted: true,
+    });
   });
 });

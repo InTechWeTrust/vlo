@@ -1043,15 +1043,22 @@ export const MaskPanel = memo(function MaskPanel() {
                         onChange={handleSharedMaskEdgeInvertChange}
                       />
                     }
-                    label="Inverse Masking"
+                    label="Inverse Mask Algebra"
                   />
                   <Tooltip
-                    title="Inverse masking performs operations on the mask 'holes', which is useful for inpainting, intuitively allowing union and intersection of areas to be replaced. Normal masking acts on opaque areas, which is useful for intuitively stacking parts which we want to remain visible."
+                    title={
+                      <>
+                        Normal Mask Algebra joins together the visible regions
+                        of each mask. Inverse Mask Algebra joins the{" "}
+                        <em>invisible</em> regions, i.e. the holes left by each
+                        mask.
+                      </>
+                    }
                     placement="top"
                   >
                     <IconButton
                       size="small"
-                      aria-label="Inverse masking information"
+                      aria-label="Inverse mask algebra information"
                       sx={{ color: "text.secondary" }}
                     >
                       <InfoOutlined sx={{ fontSize: 18 }} />

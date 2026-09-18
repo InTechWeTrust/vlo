@@ -734,7 +734,7 @@ describe("MaskPanel", () => {
     render(<MaskPanel />);
 
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Inverse Masking" }),
+      screen.getByRole("checkbox", { name: "Inverse Mask Algebra" }),
     );
 
     expect(mockSetMaskCompositionAlgebra).toHaveBeenCalledWith("normal");
@@ -752,7 +752,7 @@ describe("MaskPanel", () => {
     render(<MaskPanel />);
 
     fireEvent.click(
-      screen.getByRole("checkbox", { name: "Inverse Masking" }),
+      screen.getByRole("checkbox", { name: "Inverse Mask Algebra" }),
     );
 
     expect(mockSetMaskCompositionAlgebra).toHaveBeenCalledWith("normal");

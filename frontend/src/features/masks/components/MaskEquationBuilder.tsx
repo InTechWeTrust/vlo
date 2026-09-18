@@ -36,6 +36,7 @@ import {
   replaceMaskBooleanExpressionAtPath,
   setMaskBooleanExpressionOperatorAtPath,
   swapMaskBooleanExpressionNodes,
+  toggleMaskBooleanExpressionInversionAtPath,
 } from "../model/maskBooleanExpression";
 
 interface MaskEquationBuilderProps {
@@ -246,6 +247,17 @@ export function MaskEquationBuilder({
     setSelectedPath(secondPath);
   };
 
+  const handleToggleInversion = (path: MaskBooleanExpressionPath) => {
+    if (!expression) {
+      return;
+    }
+
+    onExpressionChange(
+      toggleMaskBooleanExpressionInversionAtPath(expression, path),
+    );
+    setSelectedPath(path);
+  };
+
   const handleEquationKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (
       event.key !== "Delete" &&
@@ -352,14 +364,29 @@ export function MaskEquationBuilder({
       const isMaskDropTarget = !!draggedMaskId;
       const isDropTarget = isPathDropTarget || isMaskDropTarget;
       const isHovered = hoverDropKey === pathKey;
+      const maskLabel = maskLabelById.get(node.maskId) ?? `Mask ${node.maskId}`;
+      const isInverted = !!node.inverted;
 
       return (
         <Chip
           data-testid={`mask-equation-mask-${pathKey}`}
           data-mask-equation-editor="true"
-          label={maskLabelById.get(node.maskId) ?? `Mask ${node.maskId}`}
+          data-inverted={isInverted ? "true" : "false"}
+          label={maskLabel}
+          aria-label={isInverted ? `Inverse of ${maskLabel}` : maskLabel}
+          title={
+            isInverted
+              ? "Inverted — right-click to restore"
+              : "Right-click to invert"
+          }
           size="small"
-          color={isSelected || isHovered ? "primary" : "default"}
+          color={
+            isInverted
+              ? "error"
+              : isSelected || isHovered
+                ? "primary"
+                : "default"
+          }
           variant={isSelected || isHovered ? "filled" : "outlined"}
           tabIndex={0}
           onClick={(event) => {
@@ -370,6 +397,12 @@ export function MaskEquationBuilder({
           }}
           onFocus={() => {
             handleSelectPath(path);
+            setSelectedLocalId(node.maskId);
+          }}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleToggleInversion(path);
             setSelectedLocalId(node.maskId);
           }}
           draggable
@@ -436,6 +469,8 @@ export function MaskEquationBuilder({
             "& .MuiChip-label": {
               overflow: "hidden",
               textOverflow: "ellipsis",
+              // Complement notation: an overbar marks an inverted reference.
+              textDecoration: isInverted ? "overline" : "none",
             },
           }}
         />

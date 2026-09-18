@@ -226,6 +226,12 @@ export type MaskBooleanOperator = "union" | "intersect" | "subtract";
 export interface MaskBooleanMaskRefExpression {
   kind: "mask_ref";
   maskId: string;
+  /**
+   * Use the complement of the mask's coverage at this point in the equation.
+   * Absent/false = the mask as rendered (including its own `maskInverted`).
+   * Independent of the mask clip, so the same mask can appear both ways.
+   */
+  inverted?: boolean;
 }
 
 export interface MaskBooleanOperationExpression {

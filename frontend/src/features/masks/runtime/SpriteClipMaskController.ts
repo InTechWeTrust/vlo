@@ -540,6 +540,12 @@ export class SpriteClipMaskController {
     }
 
     const singleMask = activeMaskClips.length === 1 ? activeMaskClips[0] : null;
+    // Equation-level inversion on a lone reference composes with the clip's own.
+    const singleMaskInverted = singleMask
+      ? (singleMask.maskInverted ?? false) !==
+        (resolvedMaskExpression.kind === "mask_ref" &&
+          !!resolvedMaskExpression.inverted)
+      : false;
     const sharedMaskCompositeState = this.resolveMaskCompositeState(
       parentClip,
       logicalDimensions,
@@ -552,9 +558,9 @@ export class SpriteClipMaskController {
     const hasCompositeInvert =
       sharedMaskCompositeState.compositeInvert &&
       resolvedMaskExpressionAnalysis.operationCount > 0;
-    const hasInvertedMask = activeMaskClips.some(
-      (maskClip) => maskClip.maskInverted,
-    );
+    const hasInvertedMask =
+      singleMaskInverted ||
+      activeMaskClips.some((maskClip) => maskClip.maskInverted);
     const simpleUnionMasks =
       hasSharedEdgeOps || hasCompositeInvert
         ? null
@@ -627,7 +633,7 @@ export class SpriteClipMaskController {
     ) {
       this.maskApplicationController.applyMaskEffect(
         this.maskContainer,
-        singleMask ? (singleMask.maskInverted ?? false) : false,
+        singleMaskInverted,
         true,
         maskApplicationSignature,
       );
@@ -636,7 +642,7 @@ export class SpriteClipMaskController {
 
     this.maskApplicationController.applyMaskEffect(
       this.maskContainer,
-      singleMask ? (singleMask.maskInverted ?? false) : false,
+      singleMaskInverted,
       false,
       maskApplicationSignature,
     );

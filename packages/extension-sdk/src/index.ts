@@ -924,7 +924,12 @@ export interface ExtensionTimelineTransformSnapshot {
  * `ExtensionTimelineMaskSnapshot.localId`.
  */
 export type ExtensionMaskExpression =
-  | { readonly kind: "mask"; readonly maskId: string }
+  | {
+      readonly kind: "mask";
+      readonly maskId: string;
+      /** The leaf stands for the complement of the mask. Absent when false. */
+      readonly inverted?: true;
+    }
   | {
       readonly kind: "operation";
       readonly operator: "union" | "intersect" | "subtract";

@@ -518,6 +518,7 @@ function toExtensionMaskExpression(
     return Object.freeze({
       kind: "mask" as const,
       maskId: parseMaskClipId(expression.maskId)?.maskId ?? expression.maskId,
+      ...(expression.inverted ? { inverted: true as const } : {}),
     });
   }
   return Object.freeze({

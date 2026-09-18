@@ -424,6 +424,65 @@ export function setMaskBooleanExpressionOperatorAtPath(
   );
 }
 
+/** Flip the equation-level inversion of the mask reference at `path`. */
+export function toggleMaskBooleanExpressionInversionAtPath(
+  expression: MaskBooleanExpression,
+  path: MaskBooleanExpressionPath,
+): MaskBooleanExpression {
+  return (
+    updateMaskBooleanExpressionAtPath(expression, path, (node) => {
+      if (node.kind !== "mask_ref") {
+        return structuredClone(node);
+      }
+
+      return node.inverted
+        ? createMaskBooleanMaskRef(node.maskId)
+        : { kind: "mask_ref", maskId: node.maskId, inverted: true };
+    }) ?? structuredClone(expression)
+  );
+}
+
+export interface MaskBooleanLeafVariant {
+  maskId: string;
+  /** Equation-level inversion carried by the reference. */
+  inverted: boolean;
+}
+
+/**
+ * Distinct (mask, inversion) leaves referenced by the expression, in first-use
+ * order. A mask referenced both plainly and inverted yields two variants.
+ */
+export function collectMaskBooleanLeafVariants(
+  expression: MaskBooleanExpression | null | undefined,
+): MaskBooleanLeafVariant[] {
+  const variants = new Map<string, MaskBooleanLeafVariant>();
+  const visit = (node: MaskBooleanExpression) => {
+    if (node.kind === "operation") {
+      visit(node.left);
+      visit(node.right);
+      return;
+    }
+    const inverted = !!node.inverted;
+    const key = getMaskBooleanLeafKey(node.maskId, inverted);
+    if (!variants.has(key)) {
+      variants.set(key, { maskId: node.maskId, inverted });
+    }
+  };
+  if (expression) {
+    visit(expression);
+  }
+  return [...variants.values()];
+}
+
+/**
+ * Unambiguous pool key for a leaf variant. Mask IDs are unrestricted strings,
+ * so the pair is JSON-encoded rather than suffixed (a suffix would let a plain
+ * mask named `a::inverted` collide with the inverted variant of `a`).
+ */
+export function getMaskBooleanLeafKey(maskId: string, inverted: boolean): string {
+  return JSON.stringify([maskId, inverted]);
+}
+
 export function swapMaskBooleanExpressionOperandsAtPath(
   expression: MaskBooleanExpression,
   path: MaskBooleanExpressionPath,
@@ -494,7 +553,7 @@ export function collectUnionMaskIds(
   }
 
   if (expression.kind === "mask_ref") {
-    return [expression.maskId];
+    return expression.inverted ? null : [expression.maskId];
   }
 
   if (expression.operator !== "union") {
