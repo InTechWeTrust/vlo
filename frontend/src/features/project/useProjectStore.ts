@@ -52,7 +52,7 @@ const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
   fps: 30,
   fitMode: "cover",
   layoutMode: "compact",
-  assetBrowserDisplay: "grouped",
+  assetBrowserDisplay: "ungrouped",
 };
 
 const VALID_FIT_MODES = new Set<ProjectFitMode>(["contain", "cover"]);

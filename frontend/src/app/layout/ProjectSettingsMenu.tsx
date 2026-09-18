@@ -75,7 +75,7 @@ export function ProjectSettingsMenu() {
   const currentLayout = config.layoutMode || "compact";
   const currentFps = config.fps || 30;
   const currentAspectRatio = config.aspectRatio || "16:9";
-  const currentAssetBrowserDisplay = config.assetBrowserDisplay || "grouped";
+  const currentAssetBrowserDisplay = config.assetBrowserDisplay || "ungrouped";
   const currentOutputResolution =
     config.outputResolution || DEFAULT_PROJECT_OUTPUT_RESOLUTION;
   const [customAspectRatioOpen, setCustomAspectRatioOpen] = useState(false);
