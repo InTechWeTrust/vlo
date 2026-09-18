@@ -1,5 +1,8 @@
 {
   "version": 2,
+  "hidden_workflows": [
+    "vlo_minimax_h3_masked_guide.json"
+  ],
   "nodes": [
     {
       "id": "video",

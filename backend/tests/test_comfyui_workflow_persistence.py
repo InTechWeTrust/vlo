@@ -305,6 +305,18 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
     }
 
 
+def test_packaged_workflow_menu_hides_experimental_workflows(tmp_path, monkeypatch):
+    monkeypatch.setattr(comfyui, "WORKFLOWS_DIR", tmp_path / "workflows")
+    monkeypatch.setattr(
+        comfyui, "CUSTOM_WORKFLOW_MENU_PATH", tmp_path / "workflow_menu.json"
+    )
+
+    workflow_ids = {item["id"] for item in asyncio.run(comfyui.list_workflows())}
+
+    assert "vlo_minimax_h3_masked_guide.json" not in workflow_ids
+    assert "vlo_minimax_h3_inpaint.json" in workflow_ids
+
+
 def test_resolve_workflow_rules_uses_graph_data_for_randomized_control_after_generate():
     payload = {
         "workflow_id": "wf.json",
