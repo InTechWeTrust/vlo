@@ -49,7 +49,7 @@
           "value_type": "int",
           "control": "slider",
           "slider_display": "number",
-          "min": 0,
+          "min": 1,
           "max": 60,
           "max_from": {
             "ref": { "kind": "workflow_param", "node_id": "28", "param": "steps" },
@@ -71,7 +71,7 @@
           "value_type": "int",
           "control": "slider",
           "slider_display": "number",
-          "min": 0,
+          "min": 1,
           "max": 60,
           "max_from": {
             "ref": { "kind": "workflow_param", "node_id": "28", "param": "steps" },

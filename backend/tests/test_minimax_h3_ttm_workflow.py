@@ -241,6 +241,9 @@ def test_ttm_window_is_bounded_by_the_steps_the_sampler_runs():
             assert window[param]["max"] == steps["max"], (
                 f"{param}'s fallback ceiling must match the Steps slider's"
             )
+            # Step 0 seeds at sigma 1.0, where the reference washes out and TTM
+            # does nothing, so the panel does not offer it.
+            assert window[param]["min"] == 1
 
 
 def test_ttm_window_renders_as_one_range():
