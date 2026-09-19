@@ -90,6 +90,8 @@ export interface TimelineClipPresentationLookup {
   } | null;
   /** Quantized visible start for a clip, or null when it has no presentation. */
   getPresentationStart(clipId: string): number | null;
+  /** The clip's presentation entry, or null when it has none (mask clips). */
+  getPresentation(clipId: string): TimelineClipPresentation | null;
   /**
    * Map a presentation tick that is known to fall within `clip`'s footprint
    * to the corresponding effective track tick. Returns the input unchanged
@@ -426,6 +428,9 @@ export function buildTimelineClipPresentationLookup(
     getPresentationStart(clipId) {
       return internalMap.get(clipId)?.start ?? null;
     },
+    getPresentation(clipId) {
+      return internalMap.get(clipId) ?? null;
+    },
     resolveEffectiveTrackTickWithinClip(clip, presentationTick) {
       const entry = internalMap.get(clip.id);
       if (!entry) return presentationTick;
@@ -596,6 +601,27 @@ let effectiveTickLookupCache: {
   lookup: TimelineClipPresentationLookup;
 } | null = null;
 
+function getMemoizedPresentationLookup(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  fps: number,
+): TimelineClipPresentationLookup {
+  if (
+    !effectiveTickLookupCache ||
+    effectiveTickLookupCache.tracks !== tracks ||
+    effectiveTickLookupCache.clips !== clips ||
+    effectiveTickLookupCache.fps !== fps
+  ) {
+    effectiveTickLookupCache = {
+      tracks,
+      clips,
+      fps,
+      lookup: buildTimelineClipPresentationLookup(tracks, clips, fps),
+    };
+  }
+  return effectiveTickLookupCache.lookup;
+}
+
 /**
  * Map a presentation (playhead) tick to a clip's effective track tick, applying
  * the same adjustment-layer retiming the renderer uses (`getPresentationLookup`
@@ -611,21 +637,25 @@ export function resolveClipEffectiveTrackTick(
   clip: TimelineClip,
   presentationTick: number,
 ): number {
-  if (
-    !effectiveTickLookupCache ||
-    effectiveTickLookupCache.tracks !== tracks ||
-    effectiveTickLookupCache.clips !== clips ||
-    effectiveTickLookupCache.fps !== fps
-  ) {
-    effectiveTickLookupCache = {
-      tracks,
-      clips,
-      fps,
-      lookup: buildTimelineClipPresentationLookup(tracks, clips, fps),
-    };
-  }
-  return effectiveTickLookupCache.lookup.resolveEffectiveTrackTickWithinClip(
-    clip,
-    presentationTick,
+  return getMemoizedPresentationLookup(
+    tracks,
+    clips,
+    fps,
+  ).resolveEffectiveTrackTickWithinClip(clip, presentationTick);
+}
+
+/**
+ * The clip's presentation entry within a timeline snapshot, from the same
+ * memoized lookup as `resolveClipEffectiveTrackTick`. Null for clips with no
+ * presentation of their own (mask clips).
+ */
+export function resolveClipPresentation(
+  tracks: readonly TimelineTrack[],
+  clips: readonly TimelineClip[],
+  fps: number,
+  clip: TimelineClip,
+): TimelineClipPresentation | null {
+  return getMemoizedPresentationLookup(tracks, clips, fps).getPresentation(
+    clip.id,
   );
 }

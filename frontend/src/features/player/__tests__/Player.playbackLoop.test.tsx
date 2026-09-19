@@ -273,7 +273,6 @@ vi.mock("../../timelineSelection", async () => {
       selectionEndTick: tick,
     }),
     getDefaultSelectionEnd: (startTick: number) => startTick + TICKS_PER_SECOND,
-    getClipsInSelection: (clips: TimelineClip[]) => clips,
     resolveSelectionRenderResolution: ({
       override,
       recommended,

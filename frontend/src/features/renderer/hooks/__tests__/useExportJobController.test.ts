@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 
 vi.mock("../../../timeline/api", () => ({
+  collectTimelineRegionClips: vi.fn(() => []),
   getTimelineClips: vi.fn(() => []),
   getTimelineDuration: vi.fn(() => 5000),
   getTimelineTracks: vi.fn(() => [{ id: "t1" }]),
@@ -16,7 +17,6 @@ vi.mock("../../../masks/api", () => ({
   prepareBrushMasksForTimelineRender: vi.fn(async () => undefined),
 }));
 vi.mock("../../../timelineSelection", () => ({
-  getClipsInSelection: vi.fn(() => []),
   resolveSelectionFps: vi.fn(() => 30),
 }));
 vi.mock("../../services/renderSelectionToVideoFile", () => {

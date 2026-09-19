@@ -588,12 +588,12 @@ describe("timelineSelection helpers", () => {
       sourceDuration: 300,
       transformedDuration: 300,
       transformedOffset: 0,
-      timelineDuration: 100,
-      croppedSourceDuration: 100,
+      timelineDuration: TICKS_PER_SECOND,
+      croppedSourceDuration: TICKS_PER_SECOND,
       offset: 0,
       transformations: [],
       trackId: "track-visual",
-      start: 200,
+      start: TICKS_PER_SECOND,
       components: [
         {
           id: "mask-ref-1",
@@ -611,12 +611,12 @@ describe("timelineSelection helpers", () => {
       sourceDuration: 100,
       transformedDuration: 100,
       transformedOffset: 0,
-      timelineDuration: 100,
-      croppedSourceDuration: 100,
+      timelineDuration: TICKS_PER_SECOND,
+      croppedSourceDuration: TICKS_PER_SECOND,
       offset: 0,
       transformations: [],
       trackId: "track-mask",
-      start: 200,
+      start: TICKS_PER_SECOND,
       maskType: "circle" as const,
       maskMode: "apply" as const,
       maskInverted: false,
@@ -635,13 +635,65 @@ describe("timelineSelection helpers", () => {
     });
 
     expect(selection).toEqual({
-      start: 200,
-      end: 300,
+      start: TICKS_PER_SECOND,
+      end: 2 * TICKS_PER_SECOND,
       clips: [visualClip, maskClip],
       tracks: [visualTrack, maskTrack],
       fps: 24,
       frameStep: 4,
     });
     expect(selection?.clips[0]).not.toBe(visualClip);
+  });
+
+  it("bounds a clip-id selection by presentation and carries its ripple context", () => {
+    const track = (id: string, type: "visual" | "adjustment") => ({
+      id, type, label: id, isVisible: true, isMuted: false, isLocked: false,
+    });
+    const ripple = {
+      id: "ripple",
+      type: "adjustment" as const,
+      name: "Ripple",
+      trackId: "track-adjustment",
+      start: 0,
+      timelineDuration: TICKS_PER_SECOND,
+      sourceDuration: 2 * TICKS_PER_SECOND,
+      croppedSourceDuration: 2 * TICKS_PER_SECOND,
+      transformedDuration: TICKS_PER_SECOND,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [
+        { id: "speed", type: "speed" as const, isEnabled: true, parameters: { factor: 2 } },
+      ],
+      depth: 1,
+      retimingMode: "ripple" as const,
+    };
+    const shifted = {
+      id: "clip-shifted",
+      type: "video" as const,
+      name: "Shifted",
+      assetId: "asset-1",
+      trackId: "track-visual",
+      start: 2 * TICKS_PER_SECOND,
+      timelineDuration: TICKS_PER_SECOND,
+      sourceDuration: TICKS_PER_SECOND,
+      croppedSourceDuration: TICKS_PER_SECOND,
+      transformedDuration: TICKS_PER_SECOND,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [],
+    };
+
+    const selection = createTimelineSelectionFromClipIds({
+      clipIds: [shifted.id],
+      clips: [ripple, shifted],
+      tracks: [track("track-adjustment", "adjustment"), track("track-visual", "visual")],
+    });
+
+    // Where the clip is shown, not where it is stored.
+    expect(selection).toMatchObject({
+      start: TICKS_PER_SECOND,
+      end: 2 * TICKS_PER_SECOND,
+    });
+    expect(selection?.clips.map((clip) => clip.id)).toEqual([ripple.id, shifted.id]);
   });
 });

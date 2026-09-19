@@ -6,7 +6,6 @@ export {
 export {
   getIncludedClipsForSelection,
   getIncludedTracksForSelection,
-  getClipsInSelection,
   getTicksPerFrame,
   normalizeTimelineSelection,
   normalizeDetachedTimelineSelection,

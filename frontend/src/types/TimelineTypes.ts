@@ -75,6 +75,17 @@ export interface TimelineRegionData {
   frameOffset?: number;
 }
 
+/**
+ * A detached, absolute-time timeline region. It renders from its own snapshot,
+ * so its presentation is rebuilt from `clips` + `tracks` alone:
+ * - `start` / `end` are PRESENTATION ticks (where the timeline draws clips);
+ *   the clips keep their STORED ticks.
+ * - `clips` is the region's render topology — the clips in the range plus the
+ *   retiming adjustments that place them, even when those end before the
+ *   range. Build it with `collectTimelineRegionClips` /
+ *   `getTimelineSelectionClips`; a bare range query drops that context and
+ *   re-places retimed clips at their stored ticks.
+ */
 export interface TimelineSelection extends TimelineRegionData {
   start: number;
   end?: number;

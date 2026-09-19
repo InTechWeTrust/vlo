@@ -53,6 +53,8 @@ export {
   clipSourceTimeWindow,
   clipVisualToSourceTime,
   presentationToClipSourceTime,
+  clipPresentationFootprint,
+  clipSourceTimeToPresentation,
   type ClipPresentationContext,
   type GraphTimeAxis,
 } from "./utils/clipTimeDomains";

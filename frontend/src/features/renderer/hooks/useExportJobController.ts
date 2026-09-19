@@ -11,6 +11,7 @@ import {
   type ExportRunHandle,
 } from "../../../core/export/exportRunLog";
 import {
+  collectTimelineRegionClips,
   getTimelineClips,
   getTimelineDuration,
   getTimelineTracks,
@@ -18,10 +19,7 @@ import {
 } from "../../timeline/api";
 import { addLocalAsset, getAssets } from "../../userAssets";
 import { prepareBrushMasksForTimelineRender } from "../../masks/api";
-import {
-  getClipsInSelection,
-  resolveSelectionFps,
-} from "../../timelineSelection";
+import { resolveSelectionFps } from "../../timelineSelection";
 import {
   ExportRenderer,
   type ProjectData,
@@ -303,10 +301,12 @@ export function useExportJobController({
         const selectionTimelineSelection = {
           start: selectionStartTick,
           end: selectionEndTick,
-          clips: getClipsInSelection(projectData.clips, {
+          clips: collectTimelineRegionClips({
+            tracks: projectData.tracks,
+            clips: projectData.clips,
+            fps: projectData.fps,
             start: selectionStartTick,
             end: selectionEndTick,
-            clips: [],
           }),
           tracks: projectData.tracks,
           transitions: projectData.transitions,

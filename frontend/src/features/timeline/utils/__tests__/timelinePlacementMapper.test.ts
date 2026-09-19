@@ -6,14 +6,20 @@ import type {
   TimelineTrack,
   VideoTimelineClip,
 } from "../../../../types/TimelineTypes";
-import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
 import {
+  ADJUSTMENT_RETIMING_RIPPLE,
+  ADJUSTMENT_RETIMING_STATIC,
+} from "../../../../types/TimelineTypes";
+import {
+  collectTimelineRegionClips,
   createTimelinePlacementMapper,
   timelinePresentationRange,
+  type TimelinePresentationRange,
 } from "../timelinePlacementMapper";
 import {
   presentationTick,
   storedTrackTick,
+  timelineTimeValue,
 } from "../timelineTimeDomains";
 
 const FPS = 30;
@@ -200,3 +206,156 @@ describe("timelinePlacementMapper", () => {
     });
   });
 });
+
+const TRACKS = [track("adjustment", "adjustment"), track("visual", "visual")];
+
+function blurAdjustment(start: number): AdjustmentTimelineClip {
+  return {
+    ...rippleAdjustment(),
+    id: "blur",
+    start,
+    sourceDuration: TICKS_PER_SECOND,
+    croppedSourceDuration: TICKS_PER_SECOND,
+    transformations: [
+      {
+        id: "blur",
+        type: "filter",
+        isEnabled: true,
+        filterName: "BlurFilter",
+        parameters: { strength: 4 },
+      } as AdjustmentTimelineClip["transformations"][number],
+    ],
+  };
+}
+
+/**
+ * The selection invariant: a region captured with `collectTimelineRegionClips`
+ * and rendered detached must place every clip in the range exactly where the
+ * full timeline does. Returns the in-range clip ids it checked.
+ */
+function expectDetachedRegionParity(
+  clips: TimelineClip[],
+  range: TimelinePresentationRange,
+): string[] {
+  const full = createTimelinePlacementMapper({ tracks: TRACKS, clips, fps: FPS });
+  const detached = createTimelinePlacementMapper({
+    tracks: TRACKS,
+    clips: collectTimelineRegionClips({
+      tracks: TRACKS,
+      clips,
+      fps: FPS,
+      start: range.start,
+      end: range.end,
+    }),
+    fps: FPS,
+  });
+  const inRange = full
+    .getClipIdsInPresentationRange(range)
+    .filter((id) => clips.find((clip) => clip.id === id)?.type !== "adjustment");
+  for (const clipId of inRange) {
+    expect(detached.getPresentationFootprint(clipId)).toEqual(
+      full.getPresentationFootprint(clipId),
+    );
+    const segment = full.intersectClipWithPresentationRange(clipId, range)!;
+    const segmentStart = timelineTimeValue(segment.presentationStart);
+    const segmentEnd = timelineTimeValue(segment.presentationEnd);
+    for (const fraction of [0, 0.25, 0.5, 0.75]) {
+      const tick = presentationTick(
+        segmentStart + fraction * (segmentEnd - segmentStart),
+      );
+      expect(detached.mapPresentationTickToStoredTick(clipId, tick)).toBeCloseTo(
+        full.mapPresentationTickToStoredTick(clipId, tick)!,
+        6,
+      );
+    }
+  }
+  return inRange;
+}
+
+describe("detached region topology", () => {
+  it("carries a ripple adjustment that ends before the range", () => {
+    const adjustment = rippleAdjustment();
+    const source = video(2 * TICKS_PER_SECOND);
+    const clips = [adjustment, source];
+    const range = timelinePresentationRange(TICKS_PER_SECOND, 2 * TICKS_PER_SECOND);
+
+    // The adjustment is not in the range, yet it is what places the clip there.
+    expect(mapper(clips).getClipIdsInPresentationRange(range)).toEqual([source.id]);
+    expect(
+      collectTimelineRegionClips({
+        tracks: TRACKS,
+        clips,
+        fps: FPS,
+        start: range.start,
+        end: range.end,
+      }).map((clip) => clip.id),
+    ).toEqual([adjustment.id, source.id]);
+    expect(expectDetachedRegionParity(clips, range)).toEqual([source.id]);
+    // Without it the clip falls back to its stored tick, outside the range.
+    expect(mapper([source]).getPresentationFootprint(source.id)).toEqual({
+      start: 2 * TICKS_PER_SECOND,
+      end: 3 * TICKS_PER_SECOND,
+    });
+  });
+
+  it("carries a static adjustment covering the head of a clip in the range", () => {
+    const adjustment: AdjustmentTimelineClip = {
+      ...rippleAdjustment(),
+      retimingMode: ADJUSTMENT_RETIMING_STATIC,
+    };
+    const source = video(0, 4 * TICKS_PER_SECOND);
+    const clips = [adjustment, source];
+    const footprint = mapper(clips).getPresentationFootprint(source.id)!;
+    const footprintEnd = timelineTimeValue(footprint.end);
+    const range = timelinePresentationRange(
+      footprintEnd - TICKS_PER_SECOND,
+      footprintEnd,
+    );
+
+    expect(mapper(clips).getClipIdsInPresentationRange(range)).toEqual([source.id]);
+    expect(expectDetachedRegionParity(clips, range)).toEqual([source.id]);
+    // Without it the tail of the clip maps to different source content.
+    expect(
+      mapper([source]).mapPresentationTickToStoredTick(source.id, range.start),
+    ).not.toBeCloseTo(
+      mapper(clips).mapPresentationTickToStoredTick(source.id, range.start)!,
+      0,
+    );
+  });
+
+  it("leaves out adjustments that cannot reach the range", () => {
+    const before = blurAdjustment(0);
+    const after: AdjustmentTimelineClip = {
+      ...rippleAdjustment(),
+      id: "after",
+      start: 3 * TICKS_PER_SECOND,
+    };
+    const source = video(TICKS_PER_SECOND);
+    const clips = [before, after, source];
+
+    expect(
+      collectTimelineRegionClips({
+        tracks: TRACKS,
+        clips,
+        fps: FPS,
+        start: TICKS_PER_SECOND,
+        end: 2 * TICKS_PER_SECOND,
+      }).map((clip) => clip.id),
+    ).toEqual([source.id]);
+  });
+
+  it("captures the retiming context for a single-frame region", () => {
+    const adjustment = rippleAdjustment();
+    const source = video(2 * TICKS_PER_SECOND);
+
+    expect(
+      collectTimelineRegionClips({
+        tracks: TRACKS,
+        clips: [adjustment, source],
+        fps: FPS,
+        start: TICKS_PER_SECOND + HALF_SECOND,
+      }).map((clip) => clip.id),
+    ).toEqual([adjustment.id, source.id]);
+  });
+});
+

@@ -9,6 +9,7 @@ import {
   type TimelineClipPresentation,
 } from "./clipPresentation";
 import { getResizedClipLeft, getResizedClipRight } from "./clipMath";
+import { hasEnabledSpeedTransform } from "../../renderer/utils/deriveAdjustmentGroups";
 import {
   clipOffsetTick,
   presentationTick,
@@ -70,6 +71,27 @@ export interface TimelinePlacementMapper {
   ): ProjectedTimelineClipSegment | null;
   getClipIdsAtPresentationTick(presentationTick: PresentationTick): string[];
   getClipIdsInPresentationRange(range: TimelinePresentationRange): string[];
+  /**
+   * Clip ids a detached copy of `range` (a `TimelineSelection`) must carry to
+   * reproduce this snapshot's presentation of it: the clips in the range
+   * (`getClipIdsInPresentationRange`) plus every retiming adjustment whose
+   * footprint starts before the range ends, with their mask children.
+   *
+   * A selection is rendered by rebuilding presentation from its own clips, and
+   * adjustment retiming is carried forward past the adjustment's window: a
+   * ripple adjustment that ends before the range still shifts every later clip,
+   * and a static one covering the head of a clip still offsets that clip's
+   * source mapping. Dropping them re-places the range's clips at their stored
+   * ticks. Adjustments starting at or after the range end cannot reach it.
+   */
+  getRegionTopologyClipIds(range: TimelinePresentationRange): string[];
+  /**
+   * The retiming half of `getRegionTopologyClipIds`: adjustments with an
+   * enabled speed transform whose footprint starts before `range` ends, plus
+   * their mask children. For builders that pick their own clips (by id) but
+   * still render detached.
+   */
+  getTimingContextClipIds(range: TimelinePresentationRange): string[];
   projectRegionToLocalTimeline(
     range: TimelinePresentationRange,
     clipIds: readonly string[],
@@ -264,6 +286,40 @@ export function createTimelinePlacementMapper({
       .map((clip) => clip.id);
   };
 
+  const getTimingContextClipIds = (
+    range: TimelinePresentationRange,
+  ): string[] => {
+    const timingParentIds = new Set(
+      snapshotClips
+        .filter((clip) => {
+          if (clip.type !== "adjustment") return false;
+          if (!hasEnabledSpeedTransform(clip.transformations)) return false;
+          const footprint = getPresentationFootprint(clip.id);
+          return footprint !== null && footprint.start < range.end;
+        })
+        .map((clip) => clip.id),
+    );
+    return snapshotClips
+      .filter((clip) => {
+        if (timingParentIds.has(clip.id)) return true;
+        const parentId = resolveMaskParentId(clip);
+        return parentId !== null && timingParentIds.has(parentId);
+      })
+      .map((clip) => clip.id);
+  };
+
+  const getRegionTopologyClipIds = (
+    range: TimelinePresentationRange,
+  ): string[] => {
+    const topologyIds = new Set([
+      ...getClipIdsInPresentationRange(range),
+      ...getTimingContextClipIds(range),
+    ]);
+    return snapshotClips
+      .filter((clip) => topologyIds.has(clip.id))
+      .map((clip) => clip.id);
+  };
+
   const getClipIdsAtPresentationTick = (
     targetPresentationTick: PresentationTick,
   ): string[] => {
@@ -366,6 +422,37 @@ export function createTimelinePlacementMapper({
     intersectClipWithPresentationRange,
     getClipIdsAtPresentationTick,
     getClipIdsInPresentationRange,
+    getRegionTopologyClipIds,
+    getTimingContextClipIds,
     projectRegionToLocalTimeline,
   };
+}
+
+export interface CollectTimelineRegionClipsOptions
+  extends CreateTimelinePlacementMapperOptions {
+  start: number;
+  /** Omitted for a single-frame (point) region at `start`. */
+  end?: number;
+}
+
+/**
+ * The clips a `TimelineSelection` over a presentation range must capture: its
+ * render topology (see `getRegionTopologyClipIds`), in snapshot order and by
+ * reference. Every selection builder goes through this, so a selection always
+ * renders the same frames the timeline shows for its range.
+ */
+export function collectTimelineRegionClips({
+  tracks,
+  clips,
+  fps,
+  start,
+  end,
+}: CollectTimelineRegionClipsOptions): TimelineClip[] {
+  const mapper = createTimelinePlacementMapper({ tracks, clips, fps });
+  const topologyIds = new Set(
+    mapper.getRegionTopologyClipIds(
+      timelinePresentationRange(start, end ?? start + 1),
+    ),
+  );
+  return clips.filter((clip) => topologyIds.has(clip.id));
 }

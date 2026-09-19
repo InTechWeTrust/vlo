@@ -5,6 +5,8 @@ const BOUNDARY_FILES = import.meta.glob(
     "../features/timeline/api.ts",
     "../features/timeline/useTimelineStore.ts",
     "../features/timelineSelection/utils/composite.ts",
+    "../features/timelineSelection/utils/createTimelineSelection.ts",
+    "../features/generation/utils/miniEditorEdit.ts",
   ],
   {
     query: "?raw",

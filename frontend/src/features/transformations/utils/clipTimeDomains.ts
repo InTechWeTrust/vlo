@@ -1,5 +1,8 @@
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
-import { resolveClipEffectiveTrackTick } from "../../timeline/utils/clipPresentation";
+import {
+  resolveClipEffectiveTrackTick,
+  resolveClipPresentation,
+} from "../../timeline/utils/clipPresentation";
 import {
   calculateClipTime,
   mapSourceTimeToVisualTime,
@@ -91,6 +94,51 @@ export function presentationToClipSourceTime(
     presentationTick,
   );
   return clipVisualToSourceTime(clip, effectiveTrackTick - clip.start);
+}
+
+/**
+ * Inverse of {@link presentationToClipSourceTime}: the global presentation tick
+ * at which `clip` shows `sourceTimeTicks`. Use it to seed presentation-time UI
+ * (the selection overlay, markers) from source-owned data such as range masks
+ * — `clip.start + clipSourceTimeToVisual(...)` is a *stored* tick, which
+ * adjustment retiming can move away from where the clip is drawn.
+ */
+export function clipSourceTimeToPresentation(
+  ctx: ClipPresentationContext,
+  clip: TimelineClip,
+  sourceTimeTicks: number,
+): number {
+  const clipOffset = clipSourceTimeToVisual(clip, sourceTimeTicks);
+  const presentation = resolveClipPresentation(
+    ctx.tracks,
+    ctx.clips,
+    ctx.fps,
+    clip,
+  );
+  return presentation
+    ? presentation.start + presentation.mapClipOffsetToPresentationOffset(clipOffset)
+    : clip.start + clipOffset;
+}
+
+/**
+ * Where `clip` is drawn and rendered, in global presentation ticks: the
+ * frame-quantized footprint the timeline, selection and renderer all share.
+ * Compare presentation-time ranges (selections, the playhead) against this,
+ * never against `clip.start`/`clip.timelineDuration`, which are stored ticks.
+ */
+export function clipPresentationFootprint(
+  ctx: ClipPresentationContext,
+  clip: TimelineClip,
+): { start: number; end: number } {
+  const presentation = resolveClipPresentation(
+    ctx.tracks,
+    ctx.clips,
+    ctx.fps,
+    clip,
+  );
+  return presentation
+    ? { start: presentation.start, end: presentation.end }
+    : { start: clip.start, end: clip.start + clip.timelineDuration };
 }
 
 /**

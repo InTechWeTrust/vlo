@@ -15,8 +15,15 @@ vi.mock("../inputSelection", () => ({
 }));
 
 import type { ProjectData } from "../../../renderer";
+import { useProjectStore } from "../../../project";
 import type { ResolvedEditorSource } from "../../../miniEditor";
-import type { TimelineSelection, VideoTimelineClip } from "../../../../types/TimelineTypes";
+import type {
+  AdjustmentTimelineClip,
+  TimelineSelection,
+  TimelineTrack,
+  VideoTimelineClip,
+} from "../../../../types/TimelineTypes";
+import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
 import type { RangeMaskComponent } from "../../../../types/Components";
 import {
   buildEditedTimelineSelection,
@@ -74,6 +81,14 @@ function clipComponents(selection: TimelineSelection, index = 0) {
 
 describe("timeline selection mini editor round trips", () => {
   const crop = { cropStartTicks: 0, cropEndTicks: 10_000 };
+
+  // Clip placement resolves on the project frame grid; 96 fps is 1000 ticks a
+  // frame, so every fixture tick below sits on a frame boundary.
+  beforeEach(() => {
+    useProjectStore.setState((state) => ({
+      config: { ...state.config, fps: 96 },
+    }));
+  });
 
   it("restores a full-length mask and replaces it with the smaller edited range", () => {
     const source: TimelineSelection = {
@@ -221,6 +236,60 @@ describe("timeline selection mini editor round trips", () => {
       cropStartTicks: 0, cropEndTicks: 4_000, ranges: [],
     });
     expect(clipComponents(edited)).toEqual([outside]);
+  });
+
+  it("maps ranges through a ripple adjustment that shifts the clip", () => {
+    // A 2x ripple adjustment over [0, 10k) pulls the clip stored at 30k back
+    // to presentation 20k; the selection is taken where the clip is shown.
+    const track = (id: string, type: TimelineTrack["type"]): TimelineTrack => ({
+      id, type, label: id, isVisible: true, isMuted: false, isLocked: false,
+    });
+    const tracks = [track("adjustment", "adjustment"), track("track-1", "visual")];
+    const ripple: AdjustmentTimelineClip = {
+      id: "ripple",
+      type: "adjustment",
+      name: "Ripple",
+      trackId: "adjustment",
+      start: 0,
+      timelineDuration: 10_000,
+      sourceDuration: 20_000,
+      croppedSourceDuration: 20_000,
+      transformedDuration: 10_000,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [
+        { id: "speed", type: "speed", isEnabled: true, parameters: { factor: 2 } },
+      ],
+      depth: 1,
+      retimingMode: ADJUSTMENT_RETIMING_RIPPLE,
+    };
+    const source: TimelineSelection = {
+      start: 20_000,
+      end: 30_000,
+      tracks,
+      clips: [
+        ripple,
+        videoClip({
+          start: 30_000,
+          components: [rangeComponent({
+            parameters: { startSourceTicks: 2_000, endSourceTicks: 4_000, isActive: true },
+          })],
+        }),
+      ],
+    };
+
+    const { ranges } = getTimelineSelectionEditorState(source);
+    expect(ranges).toHaveLength(1);
+    expect(ranges[0]).toMatchObject({ startSourceTicks: 2_000, endSourceTicks: 4_000 });
+
+    const edited = buildEditedTimelineSelection(source, {
+      ...crop,
+      ranges: [{ ...ranges[0], startSourceTicks: 5_000, endSourceTicks: 7_000 }],
+    });
+    expect(clipComponents(edited, 1)?.[0].parameters).toMatchObject({
+      startSourceTicks: 5_000,
+      endSourceTicks: 7_000,
+    });
   });
 });
 

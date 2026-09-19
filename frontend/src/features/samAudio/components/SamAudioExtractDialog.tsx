@@ -28,9 +28,11 @@ import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { TICKS_PER_SECOND } from "../../../core/time/constants";
 import { postHostToast } from "../../../core/shell/notificationCenter";
 import {
+  getTimelinePresentationContext,
   useTimelineClip,
   useTimelineTracks,
 } from "../../timeline/api";
+import { clipPresentationFootprint } from "../../transformations";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";
@@ -71,8 +73,14 @@ function createSeedRangeForClip(clip: TimelineClip): {
   startTick: number;
   endTick: number;
 } {
-  const clipStart = Math.max(0, clip.start);
-  const clipEnd = Math.max(clipStart + 1, clip.start + clip.timelineDuration);
+  // Seeded where the clip is shown: the selection overlay and the playhead are
+  // presentation ticks, which adjustment retiming can move off `clip.start`.
+  const footprint = clipPresentationFootprint(
+    getTimelinePresentationContext(),
+    clip,
+  );
+  const clipStart = Math.max(0, footprint.start);
+  const clipEnd = Math.max(clipStart + 1, footprint.end);
   const maxSeedDuration = Math.max(1, Math.min(TICKS_PER_SECOND, clipEnd - clipStart));
   const playbackTime = Number.isFinite(playbackClock.time)
     ? playbackClock.time

@@ -1,7 +1,10 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { useTimelineSelectionStore } from "../../timelineSelection/useTimelineSelectionStore";
-import { presentationToClipSourceTime } from "../../transformations";
+import {
+  clipPresentationFootprint,
+  presentationToClipSourceTime,
+} from "../../transformations";
 import type { ClipPresentationContext } from "../../transformations";
 import type { SamAudioPromptPayload } from "../services/samAudioApi";
 
@@ -28,8 +31,12 @@ export function createSpanAnchorsForClip(
     selection.selectionStartTick,
     selection.selectionEndTick,
   );
-  const clipStart = clip.start;
-  const clipEnd = clip.start + clip.timelineDuration;
+  // The range is in presentation ticks, so overlap is measured against where
+  // the clip is shown, which adjustment retiming can move off its stored start.
+  const { start: clipStart, end: clipEnd } = clipPresentationFootprint(
+    presentationContext,
+    clip,
+  );
   const overlapStart = Math.max(rangeStart, clipStart);
   const overlapEnd = Math.min(rangeEnd, clipEnd);
   if (overlapEnd <= overlapStart) {

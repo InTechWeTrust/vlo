@@ -65,6 +65,7 @@ import type {
 } from "./model/timelineCommands";
 import { computeFurthestPresentationEnd } from "./utils/clipPresentation";
 import {
+  collectTimelineRegionClips,
   createTimelinePlacementMapper,
   timelinePresentationRange,
 } from "./utils/timelinePlacementMapper";
@@ -338,6 +339,24 @@ export function getTimelineClipsInPresentationRange(
     mapper.getClipIdsInPresentationRange(timelinePresentationRange(start, end)),
   );
   return clips.filter((clip) => selectedIds.has(clip.id));
+}
+
+export { collectTimelineRegionClips };
+
+/**
+ * The clips a `TimelineSelection` over this presentation range must carry —
+ * the clips in the range plus the retiming adjustments that place them (see
+ * `collectTimelineRegionClips`). Use this, not
+ * `getTimelineClipsInPresentationRange`, whenever the clips will be rendered
+ * detached from the live timeline; use the range query when acting on exactly
+ * the clips inside the range (e.g. replacing them with a composite).
+ */
+export function getTimelineSelectionClips(
+  start: number,
+  end?: number,
+): TimelineClip[] {
+  const { clips, tracks, fps } = getTimelinePresentationContext();
+  return collectTimelineRegionClips({ tracks, clips, fps, start, end });
 }
 
 /**

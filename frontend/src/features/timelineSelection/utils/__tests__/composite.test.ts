@@ -11,11 +11,24 @@ import { TICKS_PER_SECOND } from "../../../timeline";
 const GRID_FPS = TICKS_PER_SECOND;
 import type {
   AdjustmentTimelineClip,
+  CompositeContent,
   TimelineSelection,
   TimelineTrack,
   VideoTimelineClip,
 } from "../../../../types/TimelineTypes";
 import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
+
+/**
+ * Captures a selection resolved against only its own clips — right for these
+ * fixtures, which hold the whole timeline. Real captures pass the full
+ * timeline as the presentation context (see `groupSelectionIntoComposite`).
+ */
+function captureAgainstOwnClips(
+  selection: TimelineSelection,
+  fps: number,
+): CompositeContent {
+  return selectionToCompositeContent(selection, fps, selection.clips);
+}
 
 function videoClip(
   id: string,
@@ -50,7 +63,7 @@ describe("composite adapters", () => {
       frameOffset: 5,
     };
 
-    const content = selectionToCompositeContent(selection, GRID_FPS);
+    const content = captureAgainstOwnClips(selection, GRID_FPS);
 
     expect(content.durationTicks).toBe(1000);
     expect(content.clips.map((clip) => clip.start)).toEqual([0, 300]);
@@ -76,7 +89,7 @@ describe("composite adapters", () => {
       ],
     };
 
-    const content = selectionToCompositeContent(selection, GRID_FPS);
+    const content = captureAgainstOwnClips(selection, GRID_FPS);
 
     expect(content.clips[0]).not.toBe(selection.clips[0]);
     expect(content.tracks?.[0]).not.toBe(selection.tracks?.[0]);
@@ -97,7 +110,7 @@ describe("composite adapters", () => {
       clips: [videoClip("a", 600, 2000)],
     };
 
-    const content = selectionToCompositeContent(selection, GRID_FPS);
+    const content = captureAgainstOwnClips(selection, GRID_FPS);
     expect(content.clips[0]).toEqual(
       expect.objectContaining({
         start: 0,
@@ -181,7 +194,7 @@ describe("composite adapters", () => {
       start: 100,
       clips: [videoClip("a", 100, 700)],
     };
-    expect(selectionToCompositeContent(selection, GRID_FPS).durationTicks).toBe(
+    expect(captureAgainstOwnClips(selection, GRID_FPS).durationTicks).toBe(
       700,
     );
   });
@@ -234,7 +247,7 @@ describe("composite adapters", () => {
       ],
     };
 
-    expect(selectionToCompositeContent(selection, GRID_FPS).durationTicks).toBe(
+    expect(captureAgainstOwnClips(selection, GRID_FPS).durationTicks).toBe(
       250,
     );
   });
@@ -250,7 +263,7 @@ describe("composite adapters", () => {
     };
 
     const replayed = compositeContentToSelection(
-      selectionToCompositeContent(selection, GRID_FPS),
+      captureAgainstOwnClips(selection, GRID_FPS),
     );
 
     expect(replayed.start).toBe(0);
@@ -262,7 +275,7 @@ describe("composite adapters", () => {
   });
 
   it("hashes the frame-count grid, so an offset change forces a re-bake", () => {
-    const base = selectionToCompositeContent(
+    const base = captureAgainstOwnClips(
       {
         start: 0,
         end: 1000,
@@ -272,7 +285,7 @@ describe("composite adapters", () => {
       },
       GRID_FPS,
     );
-    const offset = selectionToCompositeContent(
+    const offset = captureAgainstOwnClips(
       {
         start: 0,
         end: 1000,
@@ -288,7 +301,7 @@ describe("composite adapters", () => {
   });
 
   it("hashes stably and changes when bake-affecting content changes", () => {
-    const content = selectionToCompositeContent(
+    const content = captureAgainstOwnClips(
       {
         start: 0,
         end: 1000,
@@ -296,7 +309,7 @@ describe("composite adapters", () => {
       },
       GRID_FPS,
     );
-    const same = selectionToCompositeContent(
+    const same = captureAgainstOwnClips(
       {
         start: 0,
         end: 1000,
@@ -306,7 +319,7 @@ describe("composite adapters", () => {
     );
     expect(hashCompositeContent(content)).toBe(hashCompositeContent(same));
 
-    const edited = selectionToCompositeContent(
+    const edited = captureAgainstOwnClips(
       {
         start: 0,
         end: 1000,
@@ -385,7 +398,7 @@ describe("composite adapters", () => {
 
   it("re-namespaces content track ids so they never collide with the parent timeline", () => {
     const parentTrackId = "track_parent";
-    const content = selectionToCompositeContent(
+    const content = captureAgainstOwnClips(
       {
         start: 0,
         end: 1000,
@@ -468,7 +481,7 @@ describe("composite adapters", () => {
   });
 
   it("returns content unchanged when it carries no tracks", () => {
-    const content = selectionToCompositeContent(
+    const content = captureAgainstOwnClips(
       { start: 0, end: 1000, clips: [videoClip("a", 0, 1000)] },
       GRID_FPS,
     );

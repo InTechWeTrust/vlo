@@ -42,10 +42,12 @@ export {
 export { timelineSpanStyleX } from "./utils/timelineGeometry";
 export type { TimelineSpanStyleOptions } from "./utils/timelineGeometry";
 export {
+  collectTimelineRegionClips,
   createTimelinePlacementMapper,
   timelinePresentationRange,
 } from "./utils/timelinePlacementMapper";
 export type {
+  CollectTimelineRegionClipsOptions,
   CreateTimelinePlacementMapperOptions,
   ProjectedTimelineClipSegment,
   ProjectedTimelineRegion,
@@ -110,6 +112,7 @@ export {
   getTimelineSnapshot,
   getTimelinePresentationContext,
   getTimelineClipsInPresentationRange,
+  getTimelineSelectionClips,
   getTimelineClipsAtPlayhead,
   getTimelineMarkerPlacementsAtPlayhead,
   getTimelineSplitPointsAtPlayhead,

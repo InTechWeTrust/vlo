@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TICKS_PER_SECOND } from "../../../../core/time/constants";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
 import type { ClipPresentationContext } from "../../../transformations";
 import {
@@ -22,10 +23,12 @@ const clip: TimelineClip = {
   transformations: [],
 };
 
+// 960 fps is 100 ticks a frame, so the fixture ticks sit on the presentation
+// frame grid the overlap is measured on.
 const context: ClipPresentationContext = {
   tracks: [],
   clips: [clip],
-  fps: 30,
+  fps: 960,
 };
 
 describe("SAM-Audio prompt mapping", () => {
@@ -120,5 +123,55 @@ describe("SAM-Audio prompt mapping", () => {
         useVisualPrompt: true,
       }),
     ).toEqual({ text: "sound", rerankingCandidates: 1 });
+  });
+
+  it("measures overlap where a ripple adjustment shows the clip", () => {
+    const second = TICKS_PER_SECOND;
+    const track = (id: string, type: "audio" | "adjustment") => ({
+      id, type, label: id, isVisible: true, isMuted: false, isLocked: false,
+    });
+    const ripple: TimelineClip = {
+      id: "ripple",
+      type: "adjustment",
+      name: "Ripple",
+      trackId: "track-adjustment",
+      start: 0,
+      timelineDuration: second,
+      sourceDuration: 2 * second,
+      croppedSourceDuration: 2 * second,
+      transformedDuration: second,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [
+        { id: "speed", type: "speed", isEnabled: true, parameters: { factor: 2 } },
+      ],
+      depth: 1,
+      retimingMode: "ripple",
+    };
+    // Stored at 2s, shown at [1s, 2s) behind the 2x ripple.
+    const shifted: TimelineClip = {
+      ...clip,
+      trackId: "track-audio",
+      start: 2 * second,
+      timelineDuration: second,
+      sourceDuration: second,
+      croppedSourceDuration: second,
+      transformedDuration: second,
+      offset: 0,
+      transformedOffset: 0,
+    };
+    const rippleContext: ClipPresentationContext = {
+      tracks: [track("track-adjustment", "adjustment"), track("track-audio", "audio")],
+      clips: [ripple, shifted],
+      fps: 30,
+    };
+
+    expect(
+      createSpanAnchorsForClip(shifted, rippleContext, {
+        selectionMode: true,
+        selectionStartTick: second,
+        selectionEndTick: second + second / 2,
+      }),
+    ).toEqual([[["+", 0, 0.5]]]);
   });
 });

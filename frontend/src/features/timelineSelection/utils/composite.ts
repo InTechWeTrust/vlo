@@ -28,7 +28,10 @@ function cloneTracks(
 export function selectionToCompositeContent(
   selection: TimelineSelection,
   fps: number,
-  presentationContextClips: readonly TimelineClip[] = selection.clips,
+  // Required, never defaulted to `selection.clips`: a region's clips alone lack
+  // the retiming adjustments ahead of it that place them, so each caller must
+  // name the full timeline its presentation resolves against.
+  presentationContextClips: readonly TimelineClip[],
 ): CompositeContent {
   const start = selection.start;
   const tracks = selection.tracks ?? [];

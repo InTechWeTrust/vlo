@@ -21,6 +21,7 @@ function providerReturning(
   const lookup: TimelineClipPresentationLookup = {
     findActiveClipAt: () => result,
     getPresentationStart: () => 10,
+    getPresentation: () => null,
     resolveEffectiveTrackTickWithinClip: (_clip, tick) => tick,
   };
   return { getPresentationLookup: () => lookup };

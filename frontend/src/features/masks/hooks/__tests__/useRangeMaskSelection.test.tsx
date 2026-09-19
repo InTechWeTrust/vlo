@@ -10,6 +10,7 @@ import type {
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import type { RangeMaskComponent } from "../../../../types/Components";
+import { useProjectStore } from "../../../project";
 import { useTimelineStore } from "../../../timeline/useTimelineStore";
 import { useTimelineSelectionStore } from "../../../timelineSelection";
 import { useRangeMaskSelection } from "../useRangeMaskSelection";
@@ -68,6 +69,12 @@ function mask(activeRange?: { startSourceTicks: number; endSourceTicks: number }
 
 describe("useRangeMaskSelection", () => {
   beforeEach(() => {
+    // Seeds resolve against the clip's presentation footprint, which sits on
+    // the project frame grid; 960 fps (100 ticks a frame) keeps the fixture's
+    // tick-100 clip start on it.
+    useProjectStore.setState((state) => ({
+      config: { ...state.config, fps: 960 },
+    }));
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [track],
       clips: [clip()],
@@ -221,6 +228,60 @@ describe("useRangeMaskSelection", () => {
     expect(
       (useTimelineStore.getState().clips[0] as StandardTimelineClip).components,
     ).toBeUndefined();
+  });
+
+  it("seeds an existing range where a ripple adjustment shows the clip, and keeps it on confirm", () => {
+    // A 2x ripple over [0, 1000) pulls the clip stored at 2000 back to 1000.
+    const adjustmentTrack: TimelineTrack = {
+      id: "track-adjustment",
+      type: "adjustment",
+      label: "Adjustment",
+      isVisible: true,
+      isMuted: false,
+      isLocked: false,
+    };
+    const visualTrack: TimelineTrack = { ...track, type: "visual" };
+    const ripple = {
+      id: "ripple",
+      type: "adjustment",
+      name: "Ripple",
+      trackId: adjustmentTrack.id,
+      start: 0,
+      timelineDuration: 1000,
+      sourceDuration: 2000,
+      croppedSourceDuration: 2000,
+      transformedDuration: 1000,
+      transformedOffset: 0,
+      offset: 0,
+      transformations: [
+        { id: "speed", type: "speed", isEnabled: true, parameters: { factor: 2 } },
+      ],
+      depth: 1,
+      retimingMode: "ripple",
+    } as unknown as StandardTimelineClip;
+    const selected = {
+      ...clip([range("range-1", 500, 700, true)]),
+      start: 2000,
+    } as StandardTimelineClip;
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: [adjustmentTrack, visualTrack],
+      clips: [ripple, selected],
+    });
+    const { result } = renderSelectionHook({ standardSelectedClip: selected });
+
+    act(() => result.current.startEditRangeMask("range-1"));
+    expect(useTimelineSelectionStore.getState()).toMatchObject({
+      selectionStartTick: 1500,
+      selectionEndTick: 1700,
+    });
+    // Confirming the seeded range unchanged must not move the mask.
+    act(() => useExtractStore.getState().onConfirmSelection?.());
+    const updated = useTimelineStore
+      .getState()
+      .clips.find((candidate) => candidate.id === selected.id) as StandardTimelineClip;
+    expect(updated.components?.[0]).toMatchObject({
+      parameters: { startSourceTicks: 500, endSourceTicks: 700 },
+    });
   });
 
   it("sets and clears an existing selected mask active range", () => {

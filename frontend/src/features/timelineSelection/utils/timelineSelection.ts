@@ -264,10 +264,13 @@ export function selectionHasMaskClip(selection: TimelineSelection): boolean {
 }
 
 /**
- * Returns a subset of the timeline clip array that intersects with the given selection.
- * Including all clips and masks.
+ * Legacy repair heuristic for a saved selection that lost its clip list: the
+ * clips whose STORED extent intersects the selection. Stored ticks are not
+ * where clips appear under adjustment retiming, so this is not a selection
+ * builder — build live selections with `collectTimelineRegionClips` /
+ * `getTimelineSelectionClips`, which read presentation footprints.
  */
-export function getClipsInSelection(
+function getClipsInStoredRange(
   clips: TimelineClip[],
   selection: TimelineSelection,
 ): TimelineClip[] {
@@ -463,7 +466,7 @@ export function normalizeTimelineSelection(
     validClips.length > 0
       ? recoverReferencedSubordinateClips(validClips, availableClips)
       : availableClips.length > 0
-        ? getClipsInSelection(availableClips, {
+        ? getClipsInStoredRange(availableClips, {
             ...selection,
             clips: [],
           })

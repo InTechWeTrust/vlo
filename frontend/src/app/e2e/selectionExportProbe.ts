@@ -6,7 +6,7 @@ import {
 } from "../../features/renderer";
 import type { RenderedFramePixelCapture } from "../../features/renderer/services/ExportRenderer";
 import { prepareBrushMasksForTimelineRender } from "../../features/masks/api";
-import { getClipsInSelection } from "../../features/timelineSelection";
+import { collectTimelineRegionClips } from "../../features/timeline";
 import {
     readMediaTimestampRange,
     type MediaTimestampRange,
@@ -147,10 +147,12 @@ export async function runSelectionExportProbe(
         const selection = {
             start: request.startTick,
             end: request.endTick,
-            clips: getClipsInSelection(projectData.clips, {
+            clips: collectTimelineRegionClips({
+                tracks: projectData.tracks,
+                clips: projectData.clips,
+                fps: projectData.fps,
                 start: request.startTick,
                 end: request.endTick,
-                clips: [],
             }),
             tracks: projectData.tracks,
             transitions: projectData.transitions,

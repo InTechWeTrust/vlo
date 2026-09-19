@@ -3,10 +3,14 @@ import { TICKS_PER_SECOND } from "../../../core/time/constants";
 import {
   getTimelineClips,
   getTimelineDuration,
-  getTimelineClipsInPresentationRange,
+  getTimelineSelectionClips,
   getTimelineTracks,
   getTimelineTransitions,
 } from "../../timeline/api";
+import {
+  createTimelinePlacementMapper,
+  timelinePresentationRange,
+} from "../../timeline";
 import type {
   NonMaskTimelineClip,
   TimelineClip,
@@ -68,7 +72,7 @@ export function createTimelineSelection(
     project: useProjectStore.getState().config.outputResolution,
   });
 
-  const selectedClips = getTimelineClipsInPresentationRange(startTick, endTick);
+  const selectedClips = getTimelineSelectionClips(startTick, endTick);
   const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
   const selectedTransitions = transitions.filter(
     (transition) =>
@@ -106,7 +110,7 @@ export function createPointTimelineSelection(
   const transitions = getTimelineTransitions();
   const projectFps = Math.max(1, useProjectStore.getState().config.fps);
 
-  const selectedClips = getTimelineClipsInPresentationRange(tick);
+  const selectedClips = getTimelineSelectionClips(tick);
   const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
   const selectedTransitions = transitions.filter(
     (transition) =>
@@ -148,15 +152,39 @@ export function createTimelineSelectionFromClipIds({
     return null;
   }
 
-  const start = Math.min(...primaryClips.map((clip) => clip.start));
-  const end = Math.max(
-    ...primaryClips.map((clip) => clip.start + clip.timelineDuration),
+  // The selection's bounds are presentation ticks: where the clips appear on
+  // the timeline, which differs from their stored ticks under adjustment
+  // retiming.
+  const presentationFps = Math.max(1, useProjectStore.getState().config.fps);
+  const placementMapper = createTimelinePlacementMapper({
+    tracks: sourceTracks,
+    clips: sourceClips,
+    fps: presentationFps,
+  });
+  const footprints = primaryClips.map(
+    (clip) =>
+      placementMapper.getPresentationFootprint(clip.id) ?? {
+        start: clip.start,
+        end: clip.start + clip.timelineDuration,
+      },
   );
+  const start = Math.min(...footprints.map((footprint) => footprint.start));
+  const end = Math.max(...footprints.map((footprint) => footprint.end));
   const subordinateClipIds = new Set(
     getReferencedSubordinateClipIds(primaryClips),
   );
+  // Retiming adjustments ahead of or over the range place its clips; the
+  // selection renders detached, so it has to carry them.
+  const timingContextClipIds = new Set(
+    placementMapper.getTimingContextClipIds(
+      timelinePresentationRange(start, end),
+    ),
+  );
   const selectionClips = sourceClips.filter(
-    (clip) => selectedClipIds.has(clip.id) || subordinateClipIds.has(clip.id),
+    (clip) =>
+      selectedClipIds.has(clip.id) ||
+      subordinateClipIds.has(clip.id) ||
+      timingContextClipIds.has(clip.id),
   );
   const selectionTransitions = sourceTransitions.filter(
     (transition) =>

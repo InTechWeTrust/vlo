@@ -16,7 +16,8 @@ import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import {
-  mapSourceTimeToVisualTime,
+  clipPresentationFootprint,
+  clipSourceTimeToPresentation,
   type ClipPresentationContext,
 } from "../../transformations";
 import { toClipInputTimeTicks } from "../utils/clipTime";
@@ -113,8 +114,12 @@ export function useRangeMaskSelection({
     if (!selectedClipId || !standardSelectedClip) return;
 
     const clip = standardSelectedClip;
-    const clipStart = clip.start;
-    const clipEnd = clip.start + clip.timelineDuration;
+    // The overlay and the playhead are presentation ticks: seed from where
+    // the clip is shown, not its stored start.
+    const { start: clipStart, end: clipEnd } = clipPresentationFootprint(
+      getClipPresentationContext(),
+      clip,
+    );
     const defaultStart = Math.max(
       clipStart,
       Math.min(playbackClock.time, clipEnd),
@@ -146,14 +151,21 @@ export function useRangeMaskSelection({
       );
       if (!existing) return;
 
-      const clipStart = clip.start;
-      const clipEnd = clip.start + clip.timelineDuration;
-      const rawStart =
-        clipStart +
-        mapSourceTimeToVisualTime(clip, existing.parameters.startSourceTicks);
-      const rawEnd =
-        clipStart +
-        mapSourceTimeToVisualTime(clip, existing.parameters.endSourceTicks);
+      const presentationContext = getClipPresentationContext();
+      const { start: clipStart, end: clipEnd } = clipPresentationFootprint(
+        presentationContext,
+        clip,
+      );
+      const rawStart = clipSourceTimeToPresentation(
+        presentationContext,
+        clip,
+        existing.parameters.startSourceTicks,
+      );
+      const rawEnd = clipSourceTimeToPresentation(
+        presentationContext,
+        clip,
+        existing.parameters.endSourceTicks,
+      );
       const seededStart = Math.max(clipStart, Math.min(rawStart, clipEnd));
       const seededEnd = Math.max(clipStart, Math.min(rawEnd, clipEnd));
 
@@ -209,21 +221,25 @@ export function useRangeMaskSelection({
     }
 
     const clip = standardSelectedClip;
-    const clipStart = clip.start;
-    const clipEnd = clip.start + clip.timelineDuration;
+    const presentationContext = getClipPresentationContext();
+    const { start: clipStart, end: clipEnd } = clipPresentationFootprint(
+      presentationContext,
+      clip,
+    );
 
     let seededStart: number;
     let seededEnd: number;
     if (selectedMaskActiveRange) {
-      const rawStart =
-        clipStart +
-        mapSourceTimeToVisualTime(
-          clip,
-          selectedMaskActiveRange.startSourceTicks,
-        );
-      const rawEnd =
-        clipStart +
-        mapSourceTimeToVisualTime(clip, selectedMaskActiveRange.endSourceTicks);
+      const rawStart = clipSourceTimeToPresentation(
+        presentationContext,
+        clip,
+        selectedMaskActiveRange.startSourceTicks,
+      );
+      const rawEnd = clipSourceTimeToPresentation(
+        presentationContext,
+        clip,
+        selectedMaskActiveRange.endSourceTicks,
+      );
       seededStart = Math.max(clipStart, Math.min(rawStart, clipEnd));
       seededEnd = Math.max(clipStart, Math.min(rawEnd, clipEnd));
     } else {
