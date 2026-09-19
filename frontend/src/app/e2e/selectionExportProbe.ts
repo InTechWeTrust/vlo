@@ -7,6 +7,7 @@ import {
 } from "../../features/renderer";
 import type { RenderedFramePixelCapture } from "../../features/renderer/services/ExportRenderer";
 import { prepareBrushMasksForTimelineRender } from "../../features/masks/api";
+import { waitForClipAssets } from "./waitForClipAssets";
 import { collectTimelineRegionClips } from "../../features/timeline";
 import {
     readMediaTimestampRange,
@@ -140,6 +141,9 @@ export async function runSelectionExportProbe(
         // `TimelineSelection` carries its own clip set, so the inputs are built
         // once here and reused for both the selection and the render rather
         // than letting `renderSelectionToVideoFile` rebuild them.
+        // Assets hydrate after the document loads; snapshotting the project
+        // before they arrive renders blank frames.
+        await waitForClipAssets();
         await prepareBrushMasksForTimelineRender();
         const renderInputs = {
             ...buildProjectRenderInputs(),

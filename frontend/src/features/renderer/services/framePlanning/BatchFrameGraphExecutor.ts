@@ -1,3 +1,4 @@
+import { isAssetBackedClip } from "../../../../types/TimelineTypes";
 import { Texture } from "pixi.js";
 import { destroyTexture } from "../../utils/retiredTextureQueue";
 import {
@@ -217,6 +218,18 @@ export class BatchFrameGraphExecutor {
             liveReadyJobs.push(planned);
           }
         } else if (isPrepared === false) {
+          const { activeClip } = job;
+          if (
+            isAssetBackedClip(activeClip) &&
+            !resolution.assetsById.has(activeClip.assetId)
+          ) {
+            // An export renders from a caller-supplied project snapshot. If it
+            // omits the asset, no prepare can succeed and every frame of this
+            // clip would silently encode blank. Fail the run instead.
+            throw new Error(
+              `Export project data is missing asset '${activeClip.assetId}' required by clip '${activeClip.id}'`,
+            );
+          }
           exportPreparations.push(
             engine.awaitResolvedFrameJobPreparation(
               job,
