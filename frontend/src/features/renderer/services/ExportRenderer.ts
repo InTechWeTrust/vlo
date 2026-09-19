@@ -78,6 +78,12 @@ function createRenderAbortError(): Error {
 
 const AUDIO_EXPORT_CHUNK_DURATION_SEC = 10;
 const MAX_AUDIO_EXPORT_PREROLL_SEC = 30;
+/**
+ * Each chunk is mixed in a fresh context, so the renderer's 3 ms de-click
+ * fade-in would otherwise dip continuous audio at every chunk seam. Render a
+ * little earlier and discard it so the fade falls outside the kept audio.
+ */
+const AUDIO_EXPORT_SEAM_PREROLL_SEC = 0.01;
 const AUDIO_EXPORT_SAMPLE_RATE = 48_000;
 
 function collectActiveTemporalFrameScope(
@@ -106,7 +112,10 @@ function estimateAudioExportPrerollSeconds(
     if (transforms.length === 0) return maxTail;
     return Math.max(maxTail, estimateAudioEffectTailSeconds(transforms));
   }, 0);
-  return Math.min(MAX_AUDIO_EXPORT_PREROLL_SEC, tailSeconds);
+  return Math.min(
+    MAX_AUDIO_EXPORT_PREROLL_SEC,
+    Math.max(AUDIO_EXPORT_SEAM_PREROLL_SEC, tailSeconds),
+  );
 }
 
 function createAudioBufferSlice(

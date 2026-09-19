@@ -747,6 +747,52 @@ describe("ExportRenderer", () => {
     renderer.dispose();
   }, 10_000);
 
+  it("prerolls effect-free audio chunks so the de-click fade misses the seam", async () => {
+    const config = {
+      logicalWidth: 1920,
+      logicalHeight: 1080,
+      outputWidth: 1920,
+      outputHeight: 1080,
+    };
+    const duration = 96000 * 12;
+    const projectData = {
+      tracks: [{ id: "t1", type: "visual", isVisible: true }] as TimelineTrack[],
+      clips: [
+        {
+          id: "c1",
+          name: "Clip 1",
+          trackId: "t1",
+          assetId: "a1",
+          start: 0,
+          timelineDuration: duration,
+          sourceDuration: duration,
+          transformedDuration: duration,
+          transformedOffset: 0,
+          croppedSourceDuration: duration,
+          offset: 0,
+          type: "video",
+          transformations: [],
+        },
+      ] as TimelineClip[],
+      assets: [{ id: "a1", src: "test.mp4", type: "video" }] as Asset[],
+      duration,
+      fps: 30,
+    };
+
+    const renderer = await ExportRenderer.create(config);
+    await renderer.render(projectData as ProjectData, config, () => {});
+
+    const [firstContext, secondContext] = offlineAudioContextMocks.instances;
+    expect(firstContext.length).toBe(10 * 48000);
+    expect(secondContext.length).toBe(2 * 48000 + 480);
+    const secondProcess = audioRendererMocks.instances[1].process.mock.calls[0];
+    expect(secondProcess[4].baseTicks).toBe(96000 * 10 - 960);
+    // Only the post-seam audio is kept for encoding.
+    expect(secondContext.createBuffer).toHaveBeenCalledWith(2, 2 * 48000, 48000);
+
+    renderer.dispose();
+  }, 10_000);
+
   it("can render a video pass without applying timeline masks", async () => {
     const config = {
       logicalWidth: 1920,
