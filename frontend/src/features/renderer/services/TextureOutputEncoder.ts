@@ -16,6 +16,7 @@ import { V1_COLOR_MODEL } from "../../../core/color";
 
 import type { ExportPhase } from "../../../core/export/exportProgress";
 import { ExportFileTarget } from "./ExportFileTarget";
+import { ensureAacEncoder } from "./aacEncoderFallback";
 
 export type OutputVideoFormat = "mp4" | "webm";
 export type OutputContentProbe = "non_black_pixels";
@@ -237,9 +238,15 @@ export class TextureOutputEncoder {
 
         let audioSource: AudioBufferSource | null = null;
         if (definition.includeAudio) {
+          const audioCodec = isAlphaWebM ? "opus" : "aac";
+          const audioBitrate = definition.audioBitrate ?? 128_000;
+          if (audioCodec === "aac") {
+            await ensureAacEncoder(audioBitrate);
+            this.throwIfCancelled();
+          }
           audioSource = new AudioBufferSource({
-            codec: isAlphaWebM ? "opus" : "aac",
-            bitrate: definition.audioBitrate ?? 128_000,
+            codec: audioCodec,
+            bitrate: audioBitrate,
           });
           output.addAudioTrack(audioSource);
         }

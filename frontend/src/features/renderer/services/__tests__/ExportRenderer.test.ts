@@ -169,6 +169,10 @@ vi.mock("@decoder-worker-loader", () => {
 });
 
 // Mock Mediabunny
+vi.mock("../aacEncoderFallback", () => ({
+  ensureAacEncoder: vi.fn().mockResolvedValue("native"),
+}));
+
 vi.mock("mediabunny", () => {
   return {
     Output: class {

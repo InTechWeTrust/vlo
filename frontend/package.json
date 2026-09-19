@@ -31,6 +31,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@mediabunny/aac-encoder": "1.35.1",
     "@mui/icons-material": "^7.3.6",
     "@mui/material": "^7.3.6",
     "@revideo/player-react": "^0.10.4",
