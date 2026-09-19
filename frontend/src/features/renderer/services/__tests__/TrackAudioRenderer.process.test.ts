@@ -128,6 +128,7 @@ function createContext(currentTime = 0) {
     connect: ReturnType<typeof vi.fn>;
   }> = [];
   const mergedBuffers: Array<{
+    length: number;
     copyToChannel: ReturnType<typeof vi.fn>;
   }> = [];
 
@@ -387,6 +388,34 @@ describe("TrackAudioRenderer process lifecycle", () => {
     expect(mergedBuffers).toHaveLength(1);
     expect(mergedBuffers[0].copyToChannel).toHaveBeenCalledTimes(2);
     expect(sources[0].buffer).toBe(mergedBuffers[0]);
+  });
+
+  it("drops decoded audio that precedes the requested start time", async () => {
+    // The sink returns the packet containing 1.0 s, which starts 10 ms earlier.
+    mocks.bufferBatches = [[wrappedBuffer(0.04, 0.99, [[1, 2, 3, 4]])], []];
+    const renderer = new TrackAudioRenderer("track-1");
+    renderer.reset(0.85); // plus the 0.15 s pre-buffer: schedules from 1.0 s
+    const { context, mergedBuffers, sources } = createContext(0);
+
+    await renderer.process(
+      context,
+      destination,
+      [clip()],
+      vi.fn(async () => inputWithTrack()),
+      mapping,
+      { lookahead: 1.02, forceFlush: true },
+    );
+
+    expect(mocks.sinkStarts).toEqual([1]);
+    expect(mergedBuffers).toHaveLength(1);
+    expect(mergedBuffers[0].length).toBe(3);
+    expect(mergedBuffers[0].copyToChannel).toHaveBeenCalledWith(
+      new Float32Array([2, 3, 4]),
+      0,
+    );
+    expect(sources[0].buffer).toBe(mergedBuffers[0]);
+    expect(sources[0].start).toHaveBeenCalledWith(1);
+    expect(renderer.getNextScheduleTime()).toBeCloseTo(1.03);
   });
 
   it("applies keyframed gain curves and falls back when automation rejects", async () => {

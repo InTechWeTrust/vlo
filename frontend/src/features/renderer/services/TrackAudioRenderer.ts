@@ -74,12 +74,48 @@ export function createClipCurveEvaluators(
   };
 }
 
+/**
+ * Drops the part of an iterator's first buffer that precedes the requested
+ * source time. Scheduling the whole buffer at the requested time would play
+ * the audio late by up to one decoded buffer (~43 ms for 2048-frame packets).
+ * Returns null when nothing remains.
+ */
+function trimLeadingAudio(
+  ctx: BaseAudioContext,
+  decoded: WrappedAudioBuffer,
+  startSeconds: number | null,
+): WrappedAudioBuffer | null {
+  if (startSeconds === null) return decoded;
+  const { buffer, timestamp } = decoded;
+  const skipFrames = Math.round((startSeconds - timestamp) * buffer.sampleRate);
+  if (skipFrames <= 0) return decoded;
+  if (skipFrames >= buffer.length) return null;
+  const trimmed = ctx.createBuffer(
+    buffer.numberOfChannels,
+    buffer.length - skipFrames,
+    buffer.sampleRate,
+  );
+  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
+    trimmed.copyToChannel(buffer.getChannelData(ch).subarray(skipFrames), ch);
+  }
+  return {
+    buffer: trimmed,
+    timestamp: timestamp + skipFrames / buffer.sampleRate,
+    duration: trimmed.duration,
+  };
+}
+
 export interface TrackAudioRendererState {
   input: Input | null;
   sink: AudioBufferSink | null;
   iterator: AsyncGenerator<WrappedAudioBuffer, void, unknown> | null;
   currentClipId: string | null;
   lastAudioEndTimestamp: number | null;
+  /**
+   * Source time requested from a newly created iterator. Its first buffer is
+   * the one containing this time, and may start earlier.
+   */
+  iteratorStartSeconds: number | null;
   hasAudio: boolean;
   staging: {
     buffers: WrappedAudioBuffer[];
@@ -135,6 +171,7 @@ export class TrackAudioRenderer {
     iterator: null,
     currentClipId: null,
     lastAudioEndTimestamp: null,
+    iteratorStartSeconds: null,
     hasAudio: false,
     staging: {
       buffers: [],
@@ -328,6 +365,7 @@ export class TrackAudioRenderer {
       iterator: null,
       currentClipId: null,
       lastAudioEndTimestamp: null,
+      iteratorStartSeconds: null,
       hasAudio: false,
       staging: {
         buffers: [],
@@ -898,6 +936,7 @@ export class TrackAudioRenderer {
         c.iterator = null;
         if (c.sink) {
           c.iterator = c.sink.buffers(localTimeSeconds);
+          c.iteratorStartSeconds = localTimeSeconds;
         }
       }
 
@@ -918,7 +957,14 @@ export class TrackAudioRenderer {
         continue;
       }
 
-      const { buffer, timestamp } = result.value;
+      const decoded = trimLeadingAudio(ctx, result.value, c.iteratorStartSeconds);
+      c.iteratorStartSeconds = null;
+      if (!decoded) {
+        // Entirely before the requested time; stay sequential and pull on.
+        c.lastAudioEndTimestamp = result.value.timestamp + result.value.duration;
+        continue;
+      }
+      const { buffer, timestamp } = decoded;
       c.lastAudioEndTimestamp = timestamp + buffer.duration;
 
       // Accumulate
@@ -928,7 +974,7 @@ export class TrackAudioRenderer {
         c.staging.activeClip = activeClip;
       }
 
-      c.staging.buffers.push(result.value);
+      c.staging.buffers.push(decoded);
       c.staging.totalLength += buffer.length;
       c.staging.totalSourceDuration += buffer.duration;
 
