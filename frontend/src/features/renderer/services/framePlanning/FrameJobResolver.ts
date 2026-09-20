@@ -137,7 +137,7 @@ export class FrameJobResolver {
     }
     let fps = cached.fpsByProjectFps.get(projectFps);
     if (fps === undefined) {
-      fps = resolveCompositeRenderFps(content, projectFps);
+      fps = content.gridFps ?? resolveCompositeRenderFps(content, projectFps);
       cached.fpsByProjectFps.set(projectFps, fps);
     }
     const snapshotCacheHit = includeSnapshot && cached.snapshot !== undefined;

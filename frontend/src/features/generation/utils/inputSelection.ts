@@ -457,6 +457,7 @@ async function renderTimelineSelectionToOutputs(
     options.renderInputs ?? buildProjectRenderInputs();
   const normalizedSelection = normalizeDetachedTimelineSelection(
     preparedTimelineSelection,
+    projectData.fps,
   );
   // A caller-supplied config already states its own output size; only the
   // project's own geometry is resolved from the selection.
@@ -947,6 +948,7 @@ export async function renderTimelineSelectionToMp4WithMask(
   };
   const normalizedSelection = normalizeDetachedTimelineSelection(
     preparedTimelineSelection,
+    projectData.fps,
   );
   try {
     const maskOutput = createMaskOutputDefinition(maskType, {

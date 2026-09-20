@@ -3,7 +3,7 @@ import type {
   TimelineClip,
   TimelineSelection,
 } from "../../../types/TimelineTypes";
-import { projectTimelineSelection } from "../../timeline/time";
+import { timelineSelectionFromRegion } from "../../timeline/time";
 
 /**
  * Converters for moving timeline regions between absolute project time and
@@ -62,9 +62,8 @@ export function renamespaceCompositeContentTracks(
 }
 
 export function compositeContentToSelection(content: CompositeContent): TimelineSelection {
-  return projectTimelineSelection({
-    start: 0, end: content.durationTicks, ...structuredClone(content),
-  }, { clips: content.clips, tracks: content.tracks ?? [], fps: content.fps ?? 30 });
+  const { durationTicks, ...region } = content;
+  return timelineSelectionFromRegion(region, durationTicks);
 }
 
 /**
@@ -118,6 +117,7 @@ function projectContentForHash(content: CompositeContent): unknown {
   return {
     durationTicks: content.durationTicks,
     fps: content.fps ?? null,
+    gridFps: content.gridFps ?? null,
     frameStep: content.frameStep ?? null,
     frameOffset: content.frameOffset ?? null,
     includedTrackIds: content.includedTrackIds ?? null,

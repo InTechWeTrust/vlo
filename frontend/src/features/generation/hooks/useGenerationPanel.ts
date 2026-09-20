@@ -2026,8 +2026,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             }));
           if (!file) throw new Error(NO_SELECTION_AUDIO_TRACK_MESSAGE);
           const durationTicks =
-            typeof (selection.anchor + selection.durationTicks) === "number"
-              ? Math.max(0, (selection.anchor + selection.durationTicks) - selection.anchor)
+            !selection.isPoint
+              ? Math.max(0, selection.durationTicks)
               : await probeAudioDurationTicks(file);
           return {
             sourceUrl: URL.createObjectURL(file),
@@ -2235,8 +2235,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             (await renderTimelineSelectionToMp4(previewSelection));
           const videoUrl = URL.createObjectURL(file);
           const durationTicks =
-            typeof (selection.anchor + selection.durationTicks) === "number"
-              ? Math.max(0, (selection.anchor + selection.durationTicks) - selection.anchor)
+            !selection.isPoint
+              ? Math.max(0, selection.durationTicks)
               : await probeVideoDurationTicks(videoUrl);
           return {
             sourceUrl: videoUrl,

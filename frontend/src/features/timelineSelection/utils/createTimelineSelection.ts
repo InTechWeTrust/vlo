@@ -9,9 +9,9 @@ import {
   getTimelineTransitions,
 } from "../../timeline/api";
 import {
-  createTimelinePlacementMapper,
+  getTimelineTime,
   timelinePresentationRange,
-} from "../../timeline";
+} from "../../timeline/time";
 import type {
   NonMaskTimelineClip,
   TimelineClip,
@@ -157,7 +157,7 @@ export function createTimelineSelectionFromClipIds({
   // the timeline, which differs from their stored ticks under adjustment
   // retiming.
   const presentationFps = Math.max(1, useProjectStore.getState().config.fps);
-  const placementMapper = createTimelinePlacementMapper({
+  const placementMapper = getTimelineTime({
     tracks: sourceTracks,
     clips: sourceClips,
     fps: presentationFps,

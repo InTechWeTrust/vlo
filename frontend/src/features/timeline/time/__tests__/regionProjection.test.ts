@@ -16,16 +16,8 @@ import {
   findRegionPlacementDrift,
 } from "../../../../testUtils/regionPlacementParity";
 
-/**
- * Contract for every builder that captures a region of a live timeline (the
- * `capture` entries of the registry in `selectionBuilderRegistryGuard`): a
- * capture renders detached, so it must place each clip where the timeline
- * shows it and show the same source content — including when the retiming
- * that places those clips sits outside the captured range.
- *
- * Adding a capture builder: add it to BUILDERS below and to the registry.
- * Adding a retiming shape the builders must survive: add it to SCENARIOS.
- */
+/** Detached projection must preserve displayed placement and source time even
+ * when the adjustment responsible for that placement lies outside the range. */
 
 const FPS = 30;
 const SECOND = TICKS_PER_SECOND;

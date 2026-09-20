@@ -1,6 +1,7 @@
 import type { Asset } from "../../../types/Asset";
 import type { LegacyTimelineSelection, TimelineSelection } from "../../../types/TimelineTypes";
-import { normalizeDetachedTimelineSelection } from "./timelineSelection";
+import { useProjectStore } from "../../project/useProjectStore";
+import { parseTimelineSelection } from "./timelineSelection";
 
 /**
  * Resolves a TimelineSelection from an asset's creation metadata.
@@ -19,13 +20,13 @@ export function getTimelineSelectionFromAsset(
   if (!meta) return null;
 
   if (meta.source === "extracted" && meta.timelineSelection) {
-    return normalizeDetachedTimelineSelection(meta.timelineSelection);
+    return parseTimelineSelection(meta.timelineSelection, useProjectStore.getState().config.fps) ?? null;
   }
 
   if (meta.source === "generated") {
     for (const input of meta.inputs) {
       if (input.kind === "timelineSelection" && input.timelineSelection) {
-        return normalizeDetachedTimelineSelection(input.timelineSelection);
+        return parseTimelineSelection(input.timelineSelection, useProjectStore.getState().config.fps) ?? null;
       }
     }
   }

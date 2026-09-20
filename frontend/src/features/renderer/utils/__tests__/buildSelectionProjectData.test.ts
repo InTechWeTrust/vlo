@@ -69,7 +69,7 @@ describe("buildSelectionProjectData", () => {
       assets: [asset],
       composites: [],
       duration: selection.durationTicks,
-      fps: selection.region.fps,
+      fps: selection.region.gridFps,
     });
     expect(result.tracks).not.toContain(projectTrack);
     expect(result.clips).not.toContain(projectClip);

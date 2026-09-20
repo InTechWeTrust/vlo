@@ -215,7 +215,7 @@ function createDirectPlacementPlan(options: {
   childResolver.setAdjustmentSource(
     childTracks,
     childClips,
-    options.composite.content.fps ?? options.projectFps,
+    options.composite.content.gridFps ?? options.composite.content.fps ?? options.projectFps,
   );
 
   const includedTrackIds = new Set(

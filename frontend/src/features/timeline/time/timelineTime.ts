@@ -79,15 +79,25 @@ function createTimelineTime(snapshot: TimelineTimeSnapshot): TimelineTime {
     renderLookup: () => lookup,
     /** Isolate a multi-step mutation of an otherwise mutable draft. */
     snapshot(): TimelineTime {
-      return createTimelineTime(structuredClone(snapshot));
+      return createTimelineTimeSnapshot(snapshot);
     },
   };
 }
 
 
 
+/** Make an isolated clock from the current contents of a mutable draft, bypassing the cache. */
+export function createTimelineTimeSnapshot(snapshot: TimelineTimeSnapshot): TimelineTime {
+  return createTimelineTime(structuredClone(snapshot));
+}
+
 // One bounded identity cache, shared by UI, authoring and render snapshots.
 let cached: { snapshot: TimelineTimeSnapshot; time: TimelineTime } | undefined;
+/**
+ * Read an immutable state snapshot. Replace clips/tracks arrays when their contents
+ * change. Mutable transactions must use createTimelinePlacementMapper (an isolated
+ * snapshot) rather than reusing this identity-cached view after in-place edits.
+ */
 export function getTimelineTime(snapshot: TimelineTimeSnapshot): TimelineTime {
   if (!cached || cached.snapshot.tracks !== snapshot.tracks ||
       cached.snapshot.clips !== snapshot.clips || cached.snapshot.fps !== snapshot.fps) {

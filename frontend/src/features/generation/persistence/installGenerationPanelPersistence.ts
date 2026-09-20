@@ -138,7 +138,7 @@ export function installGenerationPanelPersistence(): () => void {
       try {
         const document = await projectPersistenceService.readGenerationPanel();
         if (currentProjectId !== projectId) return;
-        const snapshot = parseGenerationPanelSnapshot(document.panel);
+        const snapshot = parseGenerationPanelSnapshot(document.panel, useProjectStore.getState().config.fps);
         if (!snapshot) {
           // Nothing to restore: record what the file already says so opening
           // a project does not rewrite it with the same emptiness.

@@ -133,7 +133,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function parseInput(value: unknown): GeneratedCreationInput | null {
+function parseInput(value: unknown, projectFps: number): GeneratedCreationInput | null {
   if (!isRecord(value) || typeof value.nodeId !== "string") {
     return null;
   }
@@ -158,8 +158,8 @@ function parseInput(value: unknown): GeneratedCreationInput | null {
   }
 
   if (value.kind === "timelineSelection" && isRecord(value.timelineSelection)) {
-    const miniEditorEdit = parseMiniEditorEdit(value.miniEditorEdit);
-    const timelineSelection = parseTimelineSelection(value.timelineSelection);
+    const miniEditorEdit = parseMiniEditorEdit(value.miniEditorEdit, projectFps);
+    const timelineSelection = parseTimelineSelection(value.timelineSelection, projectFps);
     if (!timelineSelection) return null;
     return {
       nodeId: value.nodeId,
@@ -181,6 +181,7 @@ function parseInput(value: unknown): GeneratedCreationInput | null {
  */
 export function parseGenerationPanelSnapshot(
   value: unknown,
+  projectFps = 30,
 ): GenerationPanelSnapshot | null {
   if (!isRecord(value)) return null;
   if (value.version !== 1) return null;
@@ -189,7 +190,7 @@ export function parseGenerationPanelSnapshot(
 
   const inputs = Array.isArray(value.inputs)
     ? value.inputs.flatMap((entry) => {
-        const parsed = parseInput(entry);
+        const parsed = parseInput(entry, projectFps);
         return parsed ? [parsed] : [];
       })
     : [];

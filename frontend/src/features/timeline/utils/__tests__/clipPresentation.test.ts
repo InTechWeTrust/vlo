@@ -1,3 +1,4 @@
+import { computeFurthestPresentationEnd } from "../../time";
 import { describe, expect, it } from "vitest";
 import type {
   AdjustmentRetimingMode,
@@ -12,7 +13,6 @@ import {
   buildTimelineClipPresentationIndex,
   buildTimelineClipPresentationLookup,
   collectTimelineClipPresentationCollisions,
-  computeFurthestPresentationEnd,
   introducesTimelineClipPresentationCollision,
   resolveClipEffectiveTrackTick,
   resolveStoredEndForPresentationEnd,

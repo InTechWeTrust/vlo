@@ -28,6 +28,7 @@ import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
 import type { RangeMaskComponent } from "../../../../types/Components";
 import {
   buildEditedTimelineSelection,
+  addRangeMasksToClips,
   getTimelineSelectionEditorState,
   renderSyntheticEditedOutputs,
 } from "../miniEditorEdit";
@@ -404,5 +405,23 @@ describe("renderSyntheticEditedOutputs", () => {
 
     expect(renderTimelineSelectionToMp4WithMask).not.toHaveBeenCalled();
     expect(result.masks).toEqual({});
+  });
+});
+
+
+describe("detached selection fallback edits", () => {
+  it("turns an edited point selection into a ranged selection", () => {
+    const source = makeTimelineSelection({ start: 10000, clips: [videoClip()] });
+    expect(source.isPoint).toBe(true);
+    const edited = buildEditedTimelineSelection(source, { cropStartTicks: 0, cropEndTicks: source.durationTicks, ranges: [] });
+    expect(edited.isPoint).toBeUndefined();
+    expect(edited.anchor).toBe(source.anchor);
+  });
+
+  it("adds source-time masks when the placement has no entry for a detached clip", () => {
+    const clip = videoClip();
+    const [masked] = addRangeMasksToClips([clip], [{ id: "range", startSourceTicks: 100, endSourceTicks: 500, isActive: true }], clip.start);
+    if (masked.type === "mask") throw new Error("Expected a video clip");
+    expect(masked.components?.[0]).toMatchObject({ type: "range_mask", parameters: { startSourceTicks: 100, endSourceTicks: 500 } });
   });
 });

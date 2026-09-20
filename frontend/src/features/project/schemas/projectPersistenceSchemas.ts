@@ -332,6 +332,7 @@ const compositeContentSchema = z
     transitions: z.array(transitionSchema).optional(),
     includedTrackIds: z.array(z.string()).optional(),
     fps: z.number().positive().optional(),
+    gridFps: z.number().positive().optional(),
     frameStep: z.number().positive().optional(),
     frameOffset: z.number().positive().optional(),
     durationTicks: z.number(),

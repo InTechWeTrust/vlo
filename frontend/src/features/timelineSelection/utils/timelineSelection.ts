@@ -1,4 +1,4 @@
-import { convertLegacyTimelineSelection } from "../../timeline/time";
+import { convertLegacyTimelineSelection, updateTimelineSelection } from "../../timeline/time";
 import type { LegacyTimelineSelection } from "../../../types/TimelineTypes";
 import type {
   TimelineClip,
@@ -453,10 +453,9 @@ export function normalizeTimelineSelection(
   fallbackFps = 30,
 ): TimelineSelection {
   if ("version" in selection && selection.version === 2) {
-    return {
-      ...selection,
+    return updateTimelineSelection(selection, {
       region: { ...selection.region, clips: repairClipTransformations(selection.region.clips.filter(isTimelineClip)) },
-    };
+    });
   }
   const legacy = selection as LegacyTimelineSelection;
   const rawClips = Array.isArray(legacy.clips) ? legacy.clips : [];
@@ -516,7 +515,7 @@ export function normalizeDetachedTimelineSelection(
 }
 
 /** Validate the persisted envelope before replaying either selection version. */
-export function parseTimelineSelection(value: unknown): TimelineSelection | undefined {
+export function parseTimelineSelection(value: unknown, projectFps = 30): TimelineSelection | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   if (record.version === 2) {
@@ -527,5 +526,15 @@ export function parseTimelineSelection(value: unknown): TimelineSelection | unde
   } else if (record.version !== undefined || typeof record.start !== "number" || !Number.isFinite(record.start) ||
       (record.end !== undefined && (typeof record.end !== "number" || !Number.isFinite(record.end))) ||
       !Array.isArray(record.clips)) return undefined;
-  return normalizeDetachedTimelineSelection(value as TimelineSelection | LegacyTimelineSelection);
+  // Persisted inputs are independent: a corrupt topology must not abort loading
+  // the entire project. Validate cheap envelope fields before any projection.
+  const region = record.version === 2 ? record.region as Record<string, unknown> : record;
+  if (region.tracks !== undefined && (!Array.isArray(region.tracks) ||
+      region.tracks.some((track) => typeof track !== "object" || track === null || typeof track.id !== "string"))) return undefined;
+  if (region.gridFps !== undefined && (typeof region.gridFps !== "number" || !Number.isFinite(region.gridFps) || region.gridFps <= 0)) return undefined;
+  try {
+    return normalizeDetachedTimelineSelection(value as TimelineSelection | LegacyTimelineSelection, projectFps);
+  } catch {
+    return undefined;
+  }
 }

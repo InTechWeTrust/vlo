@@ -89,7 +89,7 @@ export async function renderSelectionToOutput(
     options.renderInputs ?? buildProjectRenderInputs();
   const selection = options.skipNormalize
     ? preparedTimelineSelection
-    : normalizeDetachedTimelineSelection(preparedTimelineSelection);
+    : normalizeDetachedTimelineSelection(preparedTimelineSelection, projectData.fps);
 
   // Strict rendering starts pulling frames immediately; referenced grade LUTs
   // must be cached up front or early frames would render without them.

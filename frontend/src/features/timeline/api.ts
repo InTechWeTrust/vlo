@@ -66,7 +66,7 @@ import type {
 import { computeFurthestPresentationEnd } from "./time/index";
 import {
   collectTimelineRegionClips,
-  createTimelinePlacementMapper,
+  getTimelineTime,
   timelinePresentationRange,
 } from "./time/index";
 import {
@@ -334,7 +334,7 @@ export function getTimelineClipsInPresentationRange(
     });
   }
 
-  const mapper = createTimelinePlacementMapper({ tracks, clips, fps });
+  const mapper = getTimelineTime({ tracks, clips, fps });
   const selectedIds = new Set(
     mapper.getClipIdsInPresentationRange(timelinePresentationRange(start, end)),
   );

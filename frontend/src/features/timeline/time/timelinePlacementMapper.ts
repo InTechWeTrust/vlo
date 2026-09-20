@@ -142,9 +142,9 @@ function resolveMaskParentId(clip: TimelineClip): string | null {
 }
 
 /**
- * Pins all stored/presentation mappings to one immutable timeline snapshot.
- * Callers can safely perform a multi-step mutation from its projections
- * without later steps observing partially edited adjustment topology.
+ * Builds mappings over caller-owned immutable arrays and a matching lookup.
+ * This internal engine does not clone. Mutable transactions must enter through
+ * the public snapshot constructor, which isolates the arrays and lookup together.
  */
 export function createTimelinePlacementMapper({
   tracks,

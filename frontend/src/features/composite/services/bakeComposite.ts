@@ -106,7 +106,7 @@ function buildCompositeRenderInputs(
     composites: [],
     assets: [...assets],
     duration: content.durationTicks,
-    fps,
+    fps: content.gridFps ?? fps,
   };
 
   return {

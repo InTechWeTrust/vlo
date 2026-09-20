@@ -13,6 +13,7 @@ function isFiniteNumber(value: unknown): value is number {
 /** Validate the edit instructions when reading a saved generation panel. */
 export function parseMiniEditorEdit(
   value: unknown,
+  projectFps = 30,
 ): GeneratedMiniEditorEdit | undefined {
   if (!isRecord(value) || !isRecord(value.spec)) return undefined;
   const { spec } = value;
@@ -40,7 +41,7 @@ export function parseMiniEditorEdit(
 
   const assetId = typeof value.assetId === "string" ? value.assetId : null;
   const selection = value.timelineSelection;
-  const timelineSelection = parseTimelineSelection(selection);
+  const timelineSelection = parseTimelineSelection(selection, projectFps);
   if (!assetId && !timelineSelection) return undefined;
 
   let render: GeneratedMiniEditorEdit["render"];

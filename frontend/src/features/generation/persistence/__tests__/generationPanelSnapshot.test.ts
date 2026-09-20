@@ -105,6 +105,7 @@ describe("generation panel snapshot", () => {
       inputs: [
         { nodeId: "774", kind: "draggedAsset", parentAssetId: "asset-1" },
         { nodeId: "775", kind: "somethingNewer", payload: {} },
+        { nodeId: "776", kind: "timelineSelection", timelineSelection: { start: 0, clips: [], tracks: [null] } },
         "not an input",
       ],
       unknownFutureField: true,

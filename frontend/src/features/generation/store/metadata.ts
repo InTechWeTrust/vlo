@@ -320,6 +320,7 @@ export async function restoreMediaInputsFromMetadata(
             ...(workflowInput.inputType === "audio" ? { ranges: [] } : {}),
           })
         : input.timelineSelection,
+      useProjectStore.getState().config.fps,
     );
     const sourceMappings = derivedMaskMappings.filter(
       (mapping) =>

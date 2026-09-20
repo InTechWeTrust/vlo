@@ -1,6 +1,6 @@
 import { collectTemporalRenderingRequirements } from "../../transformations/catalogue/temporalRenderingRequirements";
 import { mediaSecondsToTickExact } from "../../../core/time/mediaTime";
-import type { LegacyTimelineSelection, TimelineSelection, TimelineTrack } from "../../../types/TimelineTypes";
+import type { LegacyTimelineSelection, TimelineSelection, TimelineTrack, TimelineRegionData } from "../../../types/TimelineTypes";
 import { ticksPerFrame } from "../../../core/time/frameGrid";
 import { getTimelineTime, type TimelineTimeSnapshot } from "./timelineTime";
 import { presentationTick } from "../utils/timelineTimeDomains";
@@ -21,7 +21,11 @@ export function projectTimelineSelection(
   selection: LegacyTimelineSelection,
   snapshot: TimelineTimeSnapshot,
 ): TimelineSelection {
-  const { start, end, clips, tracks: _tracks, transitions, ...hints } = selection;
+  // Callers may pass a v2 object alongside legacy capture fields. Geometry and
+  // point intent must be derived afresh rather than leaking through the spread.
+  const { start, end, clips, tracks: _tracks, transitions, ...rest } = selection;
+  const hints = { ...rest } as Record<string, unknown>;
+  for (const key of ["version", "anchor", "durationTicks", "region", "isPoint", "gridFps"]) delete hints[key];
   const time = getTimelineTime(snapshot);
   const stop = end ?? start + ticksPerFrame(snapshot.fps);
   const ids = new Set(clips.map((clip) => clip.id));
@@ -46,7 +50,8 @@ export function projectTimelineSelection(
       clips: projected.clips,
       tracks: structuredClone(snapshot.tracks) as TimelineTrack[],
       ...(regionTransitions?.length ? { transitions: structuredClone(regionTransitions) } : {}),
-      fps: snapshot.fps,
+      gridFps: snapshot.fps,
+      ...(selection.fps ? { fps: selection.fps } : {}),
     },
   };
 }
@@ -58,8 +63,37 @@ export function convertLegacyTimelineSelection(
 ): TimelineSelection {
   if ("version" in selection && selection.version === 2) return selection;
   const legacy = selection as LegacyTimelineSelection;
-  return projectTimelineSelection(legacy, {
+  const snapshot = {
     tracks: inferSelectionTracks(legacy), clips: legacy.clips,
-    fps: legacy.fps && legacy.fps > 0 ? legacy.fps : fallbackFps,
-  });
+    fps: legacy.gridFps ?? fallbackFps,
+  };
+  // Old exports without an end ran to the furthest visible clip. Preserve that
+  // replay window, while retaining point intent for frame/provenance consumers.
+  const time = getTimelineTime(snapshot);
+  const end = legacy.end ?? legacy.clips.reduce((end, clip) =>
+    Math.max(end, time.footprint(clip.id)?.end ?? clip.start + clip.timelineDuration), legacy.start);
+  const projected = projectTimelineSelection({ ...legacy, end }, snapshot);
+  return legacy.end === undefined ? { ...projected, isPoint: true } : projected;
+}
+
+/** Geometry changes stay in the same boundary as selection construction. */
+export function updateTimelineSelection(
+  selection: TimelineSelection,
+  update: { anchor?: TimelineSelection["anchor"]; region?: TimelineSelection["region"] },
+): TimelineSelection {
+  return { ...selection, ...update };
+}
+
+/** Wrap an already-local region without projecting or quantizing it again. */
+export function timelineSelectionFromRegion(region: TimelineRegionData, durationTicks: number): TimelineSelection {
+  return {
+    version: 2,
+    anchor: presentationTick(0),
+    durationTicks,
+    region: structuredClone(region),
+    ...(region.fps ? { fps: region.fps } : {}),
+    ...(region.frameStep ? { frameStep: region.frameStep } : {}),
+    ...(region.frameOffset ? { frameOffset: region.frameOffset } : {}),
+    ...(region.includedTrackIds ? { includedTrackIds: region.includedTrackIds.slice() } : {}),
+  };
 }

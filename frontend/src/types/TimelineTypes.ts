@@ -62,6 +62,8 @@ export interface TimelineRegionData {
    * When omitted, consumers fall back to project FPS.
    */
   fps?: number;
+  /** Project frame grid used to quantize clip footprints, independent of output cadence. */
+  gridFps?: number;
   /**
    * Optional frame-step constraint for AI workflows that require frame counts
    * matching `frameStep * n + frameOffset` (for integer n >= 0). Defaults to 1.
@@ -124,12 +126,12 @@ export interface LegacyTimelineSelection extends TimelineRegionData {
 }
 
 /** A projected, self-contained region with its original placement anchor. */
-export interface TimelineSelection extends Omit<LegacyTimelineSelection, "start" | "end" | "clips" | "tracks" | "transitions"> {
+export interface TimelineSelection extends Omit<LegacyTimelineSelection, "start" | "end" | "clips" | "tracks" | "transitions" | "gridFps"> {
   version: 2;
   anchor: PresentationTick;
   durationTicks: number;
   region: TimelineRegionData;
-  /** Point selections retain their single-frame intent when replayed. */
+  /** Point selections retain their capture intent; legacy replay may cover the remaining clips. */
   isPoint?: true;
 }
 

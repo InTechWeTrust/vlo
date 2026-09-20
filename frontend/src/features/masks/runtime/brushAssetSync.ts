@@ -1,3 +1,4 @@
+import { updateTimelineSelection } from "../../timeline/time";
 import type {
   BrushPaintedBounds,
   MaskTimelineClip,
@@ -260,8 +261,7 @@ export async function prepareBrushMasksForTimelineRender(
   const currentClipsById = new Map(
     getTimelineClips().map((clip) => [clip.id, clip] as const),
   );
-  return {
-    ...selection,
+  return updateTimelineSelection(selection, {
     region: {
       ...selection.region,
       clips: selection.region.clips.map((clip) => {
@@ -272,5 +272,5 @@ export async function prepareBrushMasksForTimelineRender(
           : clip;
       }),
     },
-  };
+  });
 }

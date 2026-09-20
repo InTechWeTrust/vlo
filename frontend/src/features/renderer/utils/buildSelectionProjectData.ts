@@ -56,6 +56,6 @@ export function buildSelectionProjectData(
     clips: selection.region.clips,
     transitions: selection.region.transitions ?? [],
     duration: selection.durationTicks,
-    fps: selection.region.fps ?? projectData.fps,
+    fps: selection.region.gridFps ?? projectData.fps,
   };
 }

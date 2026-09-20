@@ -516,7 +516,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         tracks: get().tracks,
         clips: get().clips,
         fps,
-      }).snapshot();
+      });
       const didCommit = mutationPipeline.commitModelMutation(
         (draft) => {
           // Add first so the target track remains valid while splitting and

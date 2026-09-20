@@ -1,4 +1,4 @@
-import { getTimelineTime, sourceTick, type TimelineTime, projectTimelineSelection } from "../../timeline/time";
+import { getTimelineTime, clipPresentationFootprint, clipSourceTimeToPresentation, presentationToClipSourceTime, updateTimelineSelection, type TimelineTime, projectTimelineSelection } from "../../timeline/time";
 import type { Asset } from "../../../types/Asset";
 import type { RangeMaskComponent } from "../../../types/Components";
 import type {
@@ -38,7 +38,7 @@ function clamp(value: number, min: number, max: number): number {
 function selectionTime(selection: TimelineSelection): TimelineTime {
   return getTimelineTime({
     tracks: selection.region.tracks ?? [], clips: selection.region.clips,
-    fps: selection.region.fps ?? selection.fps ?? useProjectStore.getState().config.fps,
+    fps: selection.region.gridFps ?? useProjectStore.getState().config.fps,
   });
 }
 
@@ -54,13 +54,13 @@ function collectSelectionEditorRanges(
   const placement = selectionTime(selection);
   return selection.region.clips.flatMap((clip) => {
     if (clip.type === "mask" || clip.type === "audio") return [];
-    const footprint = placement.footprint(clip.id)!;
+    const footprint = clipPresentationFootprint(placement, clip);
     const start = Math.max(0, footprint.start);
     const end = Math.min(selection.durationTicks, footprint.end);
     return (clip.components ?? []).flatMap((component) => {
       if (component.type !== "range_mask") return [];
-      const a = placement.presentationOf(clip.id, sourceTick(component.parameters.startSourceTicks))!;
-      const b = placement.presentationOf(clip.id, sourceTick(component.parameters.endSourceTicks))!;
+      const a = clipSourceTimeToPresentation(placement, clip, component.parameters.startSourceTicks);
+      const b = clipSourceTimeToPresentation(placement, clip, component.parameters.endSourceTicks);
       const rangeStart = Math.max(start, Math.min(a, b));
       const rangeEnd = Math.min(end, Math.max(a, b));
       if (rangeEnd <= rangeStart) return [];
@@ -87,8 +87,7 @@ function removeSelectionEditorRanges(
   selection: TimelineSelection,
   entries: SelectionEditorRange[],
 ): TimelineSelection {
-  return {
-    ...selection,
+  return updateTimelineSelection(selection, {
     region: { ...selection.region, clips: selection.region.clips.map((clip) => {
       if (clip.type === "mask") return clip;
       const ids = new Set(
@@ -104,7 +103,7 @@ function removeSelectionEditorRanges(
         ),
       };
     }) },
-  };
+  });
 }
 
 /** Restore editable ranges and preview the underlying video without baking them in. */
@@ -152,7 +151,7 @@ export function addRangeMasksToClips(
       return clip;
     }
 
-    const { start: clipStart, end: clipEnd } = placement.footprint(clip.id)!;
+    const { start: clipStart, end: clipEnd } = clipPresentationFootprint(placement, clip);
     const newComponents: RangeMaskComponent[] = [];
 
     for (const range of validRanges) {
@@ -164,8 +163,8 @@ export function addRangeMasksToClips(
         continue;
       }
 
-      const a = placement.sourceAt(clip.id, presentationTick(overlapStart))!;
-      const b = placement.sourceAt(clip.id, presentationTick(overlapEnd))!;
+      const a = presentationToClipSourceTime(placement, clip, overlapStart);
+      const b = presentationToClipSourceTime(placement, clip, overlapEnd);
       const startSourceTicks = Math.round(Math.min(a, b));
       const endSourceTicks = Math.round(Math.max(a, b));
       if (endSourceTicks <= startSourceTicks) {
@@ -244,8 +243,8 @@ export function buildEditedTimelineSelection(
   const narrowed = projectTimelineSelection({
     ...source, start: newStart, end: newEnd, clips,
     tracks: source.region.tracks, transitions: source.region.transitions,
-  }, { clips, tracks: source.region.tracks ?? [], fps: source.region.fps ?? source.fps ?? 30 });
-  return { ...narrowed, anchor: presentationTick(source.anchor + newStart) };
+  }, { clips, tracks: source.region.tracks ?? [], fps: source.region.gridFps ?? useProjectStore.getState().config.fps });
+  return updateTimelineSelection(narrowed, { anchor: presentationTick(source.anchor + newStart) });
 }
 
 interface EditedRenderInputs {

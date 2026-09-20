@@ -3,7 +3,7 @@ import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 // the whole transformations barrel into an import cycle — the same shape
 // `clipMath` and `snapDragOverlay` already use.
 import { presentationToClipSourceTime } from "./authoring";
-import { getTimelineTime as createTimelinePlacementMapper } from "./timelineTime";
+import { getTimelineTime } from "./timelineTime";
 import type { TimelinePlacementMapper } from "./timelinePlacementMapper";
 import { presentationTick } from "../utils/timelineTimeDomains";
 
@@ -88,7 +88,7 @@ export function resolveClipsAtPlayhead({
   includeMaskChildren = false,
 }: PlayheadCoverageInput): TimelineClip[] {
   return collectClipsAtPlayhead(
-    createTimelinePlacementMapper({ tracks, clips, fps }),
+    getTimelineTime({ tracks, clips, fps }),
     clips,
     playheadTick,
     includeMaskChildren,
@@ -159,7 +159,7 @@ export function resolveSplitPointsAtPlayhead({
   presentationTick: playheadTick,
   selectedClipIds = [],
 }: ResolveSplitPointsInput): SplitPoint[] {
-  const mapper = createTimelinePlacementMapper({ tracks, clips, fps });
+  const mapper = getTimelineTime({ tracks, clips, fps });
   const covered = collectClipsAtPlayhead(mapper, clips, playheadTick, false);
   const selected = new Set(selectedClipIds);
   const targets =

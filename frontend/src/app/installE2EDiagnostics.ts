@@ -87,6 +87,7 @@ declare global {
       runSelectionExportProbe?: (request: {
         startTick: number;
         endTick: number;
+        legacyReplay?: boolean;
       }) => Promise<unknown>;
       runGlitchConsistencyProbe?: () => Promise<unknown>;
       runRgbSplitConsistencyProbe?: () => Promise<unknown>;

@@ -19,11 +19,11 @@ export {
 export type { TimelineClipPresentation, TimelineClipPresentationLookup, ProposedClipTimingChange, TimelineClipPresentationCollision } from "./clipPresentation";
 
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
-import { getTimelineTime, type TimelineTimeSnapshot } from "./timelineTime";
+import { getTimelineTime, createTimelineTimeSnapshot, type TimelineTimeSnapshot } from "./timelineTime";
 import { timelinePresentationRange } from "./timelinePlacementMapper";
 
 export function createTimelinePlacementMapper(snapshot: TimelineTimeSnapshot) {
-  return getTimelineTime(snapshot);
+  return createTimelineTimeSnapshot(snapshot);
 }
 export interface CollectTimelineRegionClipsOptions extends TimelineTimeSnapshot { start: number; end?: number }
 export function collectTimelineRegionClips({ start, end, ...snapshot }: CollectTimelineRegionClipsOptions) {
@@ -49,4 +49,4 @@ export function resolveClipEffectiveTrackTick(tracks: readonly TimelineTrack[], 
 export function resolveClipPresentation(tracks: readonly TimelineTrack[], clips: readonly TimelineClip[], fps: number, clip: TimelineClip) {
   return getTimelineTime({ tracks, clips, fps }).renderLookup().getPresentation(clip.id);
 }
-export { projectTimelineSelection, convertLegacyTimelineSelection, inferSelectionTracks } from "./selection";
+export { projectTimelineSelection, convertLegacyTimelineSelection, inferSelectionTracks, updateTimelineSelection, timelineSelectionFromRegion } from "./selection";

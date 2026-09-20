@@ -1,3 +1,4 @@
+import { updateTimelineSelection } from "../../timeline/time";
 import type { GenerationMediaInputValue, WorkflowInput } from "../types";
 import type { PromptResponse } from "../services/comfyuiApi";
 import type {
@@ -599,10 +600,9 @@ function cloneSlotValues(
       case "video_selection":
         next[key] = {
           ...value,
-          selection: {
-            ...value.selection,
+          selection: updateTimelineSelection(value.selection, {
             region: { ...value.selection.region, clips: value.selection.region.clips.slice() },
-          },
+          }),
         };
         break;
     }
