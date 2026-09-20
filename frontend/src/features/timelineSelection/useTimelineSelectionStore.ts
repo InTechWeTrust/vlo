@@ -1,3 +1,4 @@
+import type { PresentationTick } from "../timeline/time";
 import { create } from "zustand";
 import { normalizeProjectOutputResolution } from "../project/outputResolutionOptions";
 
@@ -6,8 +7,8 @@ export type TimelineSelectionStage = "range" | "tracks";
 export interface TimelineSelectionState {
   selectionMode: boolean;
   selectionStage: TimelineSelectionStage;
-  selectionStartTick: number;
-  selectionEndTick: number;
+  selectionStartTick: PresentationTick;
+  selectionEndTick: PresentationTick;
   selectionMessage: string | null;
   selectionIncludeModeEnabled: boolean;
   selectionAllowIncludeAll: boolean;

@@ -1,3 +1,4 @@
+import { convertLegacyTimelineSelection, projectTimelineSelection } from "../../timeline/time";
 import type { ExportPhase } from "../../../core/export/exportProgress";
 import { Application, Container, RenderTexture } from "pixi.js";
 import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
@@ -10,7 +11,6 @@ import type {
   Transition,
 } from "../../../types/TimelineTypes";
 import type { Asset } from "../../../types/Asset";
-import { computeFurthestPresentationEnd } from "../../timeline/utils/clipPresentation";
 import {
   frameIndexToOutputTimestamp,
   mediaSecondsToTickExact,
@@ -461,18 +461,20 @@ export class ExportRenderer {
       this.throwIfCancelled();
       options.onPhaseChange?.("preparing");
 
-      const renderProjectData = options.timelineSelection
-        ? buildSelectionProjectData(projectData, options.timelineSelection)
+      const savedSelection = options.timelineSelection
+        ? convertLegacyTimelineSelection(options.timelineSelection, projectData.fps) : undefined;
+      const renderProjectData = savedSelection
+        ? buildSelectionProjectData(projectData, savedSelection)
         : projectData;
       const { tracks, clips, assets, fps } = renderProjectData;
       const { logicalWidth, logicalHeight, outputWidth, outputHeight } = config;
 
-      const timelineSelection = options.timelineSelection ?? {
+      const timelineSelection: TimelineSelection = savedSelection ?? projectTimelineSelection({
         start: 0,
         end: renderProjectData.duration,
         clips,
         tracks,
-      };
+      }, projectData);
       const selectedClips = getIncludedClipsForSelection(
         timelineSelection,
         clips,
@@ -481,25 +483,9 @@ export class ExportRenderer {
         timelineSelection,
         tracks,
       );
-      const startTick = timelineSelection.start;
+      const startTick = 0;
       const renderFps = resolveSelectionFps(timelineSelection, fps);
-      // Falls back to the clips' furthest presentation end when the selection
-      // omits an explicit end. A supplied selection is a self-contained render
-      // topology, so presentation must resolve against its saved snapshot.
-      // Quantize presentation on the canonical PROJECT-fps timeline grid (not
-      // renderFps) so export and preview resolve identical clip footprints for
-      // the same tick. renderFps only drives the export sample cadence + output
-      // timestamps below.
-      const inferredEndTick = computeFurthestPresentationEnd(
-        renderProjectData.tracks,
-        renderProjectData.clips,
-        fps,
-        selectedClips,
-      );
-      const requestedEndTick = Math.max(
-        startTick,
-        timelineSelection.end ?? inferredEndTick,
-      );
+      const requestedEndTick = timelineSelection.durationTicks;
       const frameStep = resolveSelectionFrameStep(timelineSelection);
       const frameOffset = resolveSelectionFrameOffset(timelineSelection);
       const ticksPerFrame = getTicksPerFrame(renderFps);
@@ -820,7 +806,7 @@ export class ExportRenderer {
           });
           await options.onBeforeEncodeFrame({
             frameIndex: i,
-            presentationTick: currentTime,
+            presentationTick: timelineSelection.anchor + currentTime,
             width: extracted.width,
             height: extracted.height,
             pixels: new Uint8ClampedArray(extracted.pixels),
@@ -881,7 +867,7 @@ export class ExportRenderer {
   public async renderStill(
     projectData: ProjectData,
     config: ExportConfig,
-    tick: number,
+    requestedTick: number,
     options: RenderStillOptions = {},
   ): Promise<Blob> {
     this.isCancelled = false;
@@ -907,8 +893,11 @@ export class ExportRenderer {
     const onAbort = () => this.cancel();
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
+    const selection = options.timelineSelection
+      ? convertLegacyTimelineSelection(options.timelineSelection, projectData.fps) : undefined;
+    const tick = selection ? requestedTick - selection.anchor : requestedTick;
     const renderProjectData = options.timelineSelection
-      ? buildSelectionProjectData(projectData, options.timelineSelection)
+      ? buildSelectionProjectData(projectData, selection!)
       : projectData;
     const { assets, fps } = renderProjectData;
     const availableTracks = renderProjectData.tracks;

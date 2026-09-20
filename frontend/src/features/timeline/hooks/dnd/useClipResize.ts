@@ -18,7 +18,7 @@ import {
   buildTimelineClipPresentationIndex,
   resolveStoredEndForPresentationEnd,
   resolveStoredStartForPresentationStart,
-} from "../../utils/clipPresentation";
+} from "../../time/index";
 
 export const useClipResize = () => {
   // No subscriptions!

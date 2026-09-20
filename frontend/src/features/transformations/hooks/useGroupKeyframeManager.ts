@@ -2,15 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutGroup, ControlDefinition } from "../../panelUI/types";
 import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import {
-  getTimelinePresentationContext,
   setTimelineClipTransforms,
   updateTimelineClipTransform,
   useTimelineClip,
+  getTimelinePresentationContext,
 } from "../../timeline/api";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
-import {
-  presentationToClipSourceTime,
-} from "../utils/clipTimeDomains";
+import { clampedClipSourceTime } from "../../timeline/time";
 import { resolveScalar } from "../utils/resolveScalar";
 import { isSplineParameter, type SplineParameter } from "../types";
 import { useTransformationViewStore } from "../store/useTransformationViewStore";
@@ -112,15 +110,13 @@ export function useGroupKeyframeManager({
       const currentTransform = transformRef.current;
       if (!currentClip) return;
 
-      const clipEnd = currentClip.start + currentClip.timelineDuration;
-      const clampedTime = Math.min(Math.max(ticks, currentClip.start), clipEnd);
 
       // Presentation-aware and source-anchored: this is the source-media time
       // (in project ticks) displayed at the playhead.
-      const keyframeTime = presentationToClipSourceTime(
+      const keyframeTime = clampedClipSourceTime(
         getTimelinePresentationContext(),
         currentClip,
-        clampedTime,
+        ticks,
       );
 
       keyframeTimeRef.current = keyframeTime;

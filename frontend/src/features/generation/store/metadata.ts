@@ -376,7 +376,7 @@ export async function restoreMediaInputsFromMetadata(
 
     if (workflowInput.inputType === "image") {
       const frameFile = await captureFramePngAtTick(
-        timelineSelection.start,
+        timelineSelection.anchor,
         "generation-frame",
         timelineSelection,
       );
@@ -393,7 +393,7 @@ export async function restoreMediaInputsFromMetadata(
       workflowInput.inputType === "audio"
         ? createAudioSelectionPlaceholderFile()
         : await captureFramePngAtTick(
-            timelineSelection.start,
+            timelineSelection.anchor,
             "generation-selection-thumb",
             timelineSelection,
           );

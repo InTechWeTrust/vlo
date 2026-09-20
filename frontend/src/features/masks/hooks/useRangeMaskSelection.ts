@@ -15,11 +15,7 @@ import {
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
-import {
-  clipPresentationFootprint,
-  clipSourceTimeToPresentation,
-  type ClipPresentationContext,
-} from "../../transformations";
+import { clipPresentationFootprint, clipSourceTimeToPresentation, type ClipPresentationContext } from "../../timeline/time";
 import { toClipInputTimeTicks } from "../utils/clipTime";
 
 interface UpdateClipMaskFn {

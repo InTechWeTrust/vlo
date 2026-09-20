@@ -42,3 +42,5 @@ export {
   compositeContentToSelection,
   hashCompositeContent,
 } from "./utils/composite";
+
+export { parseTimelineSelection } from "./utils/timelineSelection";

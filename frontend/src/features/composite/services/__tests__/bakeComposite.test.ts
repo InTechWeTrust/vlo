@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import type {
@@ -12,11 +13,11 @@ const mocks = vi.hoisted(() => ({
     width: 1280,
     height: 720,
   })),
-  compositeContentToSelection: vi.fn<() => TimelineSelection>(() => ({
+  compositeContentToSelection: vi.fn<() => TimelineSelection>(() => (makeTimelineSelection({
     start: 0,
     end: 100,
     clips: [],
-  })),
+  }))),
   hashCompositeContent: vi.fn(() => "content-hash"),
   getAssets: vi.fn(() => [{ id: "asset-1" }]),
   addLocalAsset: vi.fn(),
@@ -108,7 +109,7 @@ describe("bakeComposite", () => {
     });
 
     expect(mocks.renderSelectionToVideoFile).toHaveBeenCalledWith(
-      expect.objectContaining({ start: 0, end: 100 }),
+      expect.objectContaining({anchor: 0,durationTicks: (100) - (0)}),
       {
         renderInputs: {
           brushMasksPrepared: true,
@@ -204,12 +205,12 @@ describe("bakeComposite", () => {
   });
 
   it("renders every playback frame without overwriting authored selection metadata", async () => {
-    const authoredSelection = {
+    const authoredSelection = makeTimelineSelection({
       start: 0,
       end: 96000,
       clips: [],
       frameStep: 4,
-    };
+    });
     mocks.compositeContentToSelection.mockReturnValueOnce(authoredSelection);
 
     await bakeComposite(content({ frameStep: 4 }));
@@ -231,7 +232,7 @@ describe("bakeComposite", () => {
       type: "video/webm",
     });
     mocks.renderSelectionToVideoFile.mockResolvedValueOnce(renderedFile);
-    const selection = { start: 25, end: 50, clips: [] };
+    const selection = makeTimelineSelection({ start: 25, end: 50, clips: [] });
 
     const result = await renderCompositeToVideoFile(content(), { selection });
 

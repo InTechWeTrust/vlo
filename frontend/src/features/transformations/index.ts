@@ -46,18 +46,8 @@ export {
   pullTimeThroughTransforms,
   solveTimelineDuration,
 } from "./utils/timeCalculation";
-export {
-  buildClipGraphTimeAxis,
-  buildLinearGraphTimeAxis,
-  clipSourceTimeToVisual,
-  clipSourceTimeWindow,
-  clipVisualToSourceTime,
-  presentationToClipSourceTime,
-  clipPresentationFootprint,
-  clipSourceTimeToPresentation,
-  type ClipPresentationContext,
-  type GraphTimeAxis,
-} from "./utils/clipTimeDomains";
+export { buildClipGraphTimeAxis, buildLinearGraphTimeAxis, clipSourceTimeToVisual, clipSourceTimeWindow, clipVisualToSourceTime, type GraphTimeAxis } from "./utils/clipTimeDomains";
+export { presentationToClipSourceTime, clipPresentationFootprint, clipSourceTimeToPresentation, type ClipPresentationContext } from "../timeline/time";
 export { resolveScalar } from "./utils/resolveScalar";
 export {
   ExtensionTransformationRegistry,

@@ -1,3 +1,4 @@
+import { getTimelineTime, sourceTick, type TimelineTime, projectTimelineSelection } from "../../timeline/time";
 import type { Asset } from "../../../types/Asset";
 import type { RangeMaskComponent } from "../../../types/Components";
 import type {
@@ -13,16 +14,9 @@ import type {
 } from "../pipeline/types";
 import {
   createClipFromAsset,
-  createTimelinePlacementMapper,
   presentationTick,
-  storedTrackTick,
-  timelineTimeValue,
 } from "../../timeline";
 import { tickToMediaSeconds } from "../../../core/time";
-import {
-  clipSourceTimeToVisual,
-  clipVisualToSourceTime,
-} from "../../transformations";
 import { getTicksPerFrame, snapTickToFrame } from "../../timelineSelection";
 import { useProjectStore } from "../../project";
 import type {
@@ -41,63 +35,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-/**
- * Where a selection's clips appear, resolved against the selection's own
- * snapshot. Selection bounds and editor ranges are presentation ticks; a clip's
- * `start` is a stored tick, and the two differ under adjustment retiming (a
- * ripple adjustment ahead of the clip shifts it, a static one over its head
- * offsets its source mapping). Range masks are converted through this so they
- * land on the source frames the editor showed.
- */
-export interface SelectionClipPlacement {
-  footprint(clip: TimelineClip): { start: number; end: number };
-  /** Presentation tick (clamped to the clip's footprint) → source-media ticks. */
-  presentationToSourceTime(clip: TimelineClip, tick: number): number;
-  /** Source-media ticks → the presentation tick showing them. */
-  sourceTimeToPresentation(clip: TimelineClip, sourceTicks: number): number;
-}
-
-export function createSelectionClipPlacement(
-  selection: Pick<TimelineSelection, "clips" | "tracks">,
-): SelectionClipPlacement {
-  // Presentation quantizes on the project grid, like the renderer, whatever
-  // fps the selection itself renders at.
-  const mapper = createTimelinePlacementMapper({
-    tracks: selection.tracks ?? [],
-    clips: selection.clips,
-    fps: Math.max(1, useProjectStore.getState().config.fps),
+function selectionTime(selection: TimelineSelection): TimelineTime {
+  return getTimelineTime({
+    tracks: selection.region.tracks ?? [], clips: selection.region.clips,
+    fps: selection.region.fps ?? selection.fps ?? useProjectStore.getState().config.fps,
   });
-  const footprint = (clip: TimelineClip) =>
-    mapper.getPresentationFootprint(clip.id) ?? {
-      start: clip.start,
-      end: clip.start + clip.timelineDuration,
-    };
-  return {
-    footprint,
-    presentationToSourceTime(clip, tick) {
-      const { start, end } = footprint(clip);
-      const stored =
-        mapper.mapPresentationTickToStoredTick(
-          clip.id,
-          presentationTick(clamp(tick, start, end)),
-        ) ?? storedTrackTick(clamp(tick, start, end));
-      const clipOffset = clamp(
-        timelineTimeValue(stored) - clip.start,
-        0,
-        clip.timelineDuration,
-      );
-      return Math.max(0, clipVisualToSourceTime(clip, clipOffset));
-    },
-    sourceTimeToPresentation(clip, sourceTicks) {
-      const stored = storedTrackTick(
-        clip.start + clipSourceTimeToVisual(clip, sourceTicks),
-      );
-      const mapped = mapper.mapStoredTickToPresentationTick(clip.id, stored);
-      return mapped === null
-        ? timelineTimeValue(stored)
-        : timelineTimeValue(mapped);
-    },
-  };
 }
 
 interface SelectionEditorRange {
@@ -109,22 +51,16 @@ interface SelectionEditorRange {
 function collectSelectionEditorRanges(
   selection: TimelineSelection,
 ): SelectionEditorRange[] {
-  const placement = createSelectionClipPlacement(selection);
-  return selection.clips.flatMap((clip) => {
+  const placement = selectionTime(selection);
+  return selection.region.clips.flatMap((clip) => {
     if (clip.type === "mask" || clip.type === "audio") return [];
-    const footprint = placement.footprint(clip);
-    const start = Math.max(selection.start, footprint.start);
-    const end = Math.min(selection.end ?? footprint.end, footprint.end);
+    const footprint = placement.footprint(clip.id)!;
+    const start = Math.max(0, footprint.start);
+    const end = Math.min(selection.durationTicks, footprint.end);
     return (clip.components ?? []).flatMap((component) => {
       if (component.type !== "range_mask") return [];
-      const a = placement.sourceTimeToPresentation(
-        clip,
-        component.parameters.startSourceTicks,
-      );
-      const b = placement.sourceTimeToPresentation(
-        clip,
-        component.parameters.endSourceTicks,
-      );
+      const a = placement.presentationOf(clip.id, sourceTick(component.parameters.startSourceTicks))!;
+      const b = placement.presentationOf(clip.id, sourceTick(component.parameters.endSourceTicks))!;
       const rangeStart = Math.max(start, Math.min(a, b));
       const rangeEnd = Math.min(end, Math.max(a, b));
       if (rangeEnd <= rangeStart) return [];
@@ -138,8 +74,8 @@ function collectSelectionEditorRanges(
               component.isEnabled !== false && component.parameters.isActive,
             // Component ids need only be unique within their owning clip.
             id: JSON.stringify([clip.id, component.id]),
-            startSourceTicks: Math.round(rangeStart - selection.start),
-            endSourceTicks: Math.round(rangeEnd - selection.start),
+            startSourceTicks: Math.round(rangeStart),
+            endSourceTicks: Math.round(rangeEnd),
           },
         },
       ];
@@ -153,7 +89,7 @@ function removeSelectionEditorRanges(
 ): TimelineSelection {
   return {
     ...selection,
-    clips: selection.clips.map((clip) => {
+    region: { ...selection.region, clips: selection.region.clips.map((clip) => {
       if (clip.type === "mask") return clip;
       const ids = new Set(
         entries
@@ -167,7 +103,7 @@ function removeSelectionEditorRanges(
           (component) => !ids.has(component.id),
         ),
       };
-    }),
+    }) },
   };
 }
 
@@ -200,7 +136,7 @@ export function addRangeMasksToClips(
   clips: TimelineClip[],
   ranges: EditorRangeMask[],
   selectionStartTicks: number,
-  placement: SelectionClipPlacement = createSelectionClipPlacement({ clips }),
+  placement: TimelineTime = getTimelineTime({ clips, tracks: [], fps: useProjectStore.getState().config.fps }),
 ): TimelineClip[] {
   const validRanges = ranges.filter(
     (range) => range.endSourceTicks > range.startSourceTicks,
@@ -216,7 +152,7 @@ export function addRangeMasksToClips(
       return clip;
     }
 
-    const { start: clipStart, end: clipEnd } = placement.footprint(clip);
+    const { start: clipStart, end: clipEnd } = placement.footprint(clip.id)!;
     const newComponents: RangeMaskComponent[] = [];
 
     for (const range of validRanges) {
@@ -228,8 +164,8 @@ export function addRangeMasksToClips(
         continue;
       }
 
-      const a = placement.presentationToSourceTime(clip, overlapStart);
-      const b = placement.presentationToSourceTime(clip, overlapEnd);
+      const a = placement.sourceAt(clip.id, presentationTick(overlapStart))!;
+      const b = placement.sourceAt(clip.id, presentationTick(overlapEnd))!;
       const startSourceTicks = Math.round(Math.min(a, b));
       const endSourceTicks = Math.round(Math.max(a, b));
       if (endSourceTicks <= startSourceTicks) {
@@ -274,8 +210,8 @@ export function buildEditedTimelineSelection(
   source: TimelineSelection,
   spec: MiniEditorEditSpec,
 ): TimelineSelection {
-  const base = source.start;
-  const sourceDuration = Math.max(0, (source.end ?? base) - base);
+  const base = 0;
+  const sourceDuration = source.durationTicks;
 
   const fps =
     typeof source.fps === "number" && source.fps > 0 ? source.fps : null;
@@ -293,8 +229,8 @@ export function buildEditedTimelineSelection(
   const entries = collectSelectionEditorRanges(source);
   const owners = new Map(entries.map((entry) => [entry.range.id, entry.clipId]));
   const editableSource = removeSelectionEditorRanges(source, entries);
-  const placement = createSelectionClipPlacement(source);
-  const clips = editableSource.clips.flatMap((clip) =>
+  const placement = selectionTime(source);
+  const clips = editableSource.region.clips.flatMap((clip) =>
     addRangeMasksToClips(
       [clip],
       spec.ranges.filter(
@@ -305,12 +241,11 @@ export function buildEditedTimelineSelection(
     ),
   );
 
-  return {
-    ...source,
-    start: newStart,
-    end: newEnd,
-    clips,
-  };
+  const narrowed = projectTimelineSelection({
+    ...source, start: newStart, end: newEnd, clips,
+    tracks: source.region.tracks, transitions: source.region.transitions,
+  }, { clips, tracks: source.region.tracks ?? [], fps: source.region.fps ?? source.fps ?? 30 });
+  return { ...narrowed, anchor: presentationTick(source.anchor + newStart) };
 }
 
 interface EditedRenderInputs {
@@ -427,13 +362,13 @@ function buildSyntheticRenderInputs(
     fps,
   };
 
-  const selection: TimelineSelection = {
+  const selection: TimelineSelection = projectTimelineSelection({
     start: 0,
     end: cropLen,
     clips: [clip],
     tracks: [track],
     fps,
-  };
+  }, projectData);
 
   return { exportConfig, projectData, selection };
 }

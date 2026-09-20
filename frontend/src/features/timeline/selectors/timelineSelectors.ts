@@ -9,7 +9,7 @@ import { isNonMaskTimelineClip } from "../../../types/TimelineTypes";
 import { resolveMaskBooleanExpression } from "../../masks/model/maskBooleanExpression";
 import { clipReferencesAssetId } from "../model/timelineCommands";
 import { getChildMaskClipIds } from "../model/maskClipModel";
-import { computeFurthestPresentationEnd } from "../utils/clipPresentation";
+import { computeFurthestPresentationEnd } from "../time/index";
 
 export interface TimelineClipCollectionState {
   clips: TimelineClip[];

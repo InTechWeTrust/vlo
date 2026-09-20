@@ -1,3 +1,4 @@
+import { projectTimelineSelection } from "../../timeline/time";
 import { useProjectStore } from "../../project";
 import { TICKS_PER_SECOND } from "../../../core/time/constants";
 import {
@@ -80,7 +81,7 @@ export function createTimelineSelection(
       selectedClipIds.has(transition.incomingClipId),
   );
 
-  return {
+  return projectTimelineSelection({
     start: startTick,
     end: endTick,
     clips: selectedClips,
@@ -100,7 +101,7 @@ export function createTimelineSelection(
     // travels with it, so the extraction it produced stays readable from the
     // selection alone.
     ...(selectionAudioOnly ? { audioOnly: true as const } : {}),
-  };
+  }, { tracks, clips: getTimelineClips(), fps: projectFps });
 }
 
 export function createPointTimelineSelection(
@@ -117,7 +118,7 @@ export function createPointTimelineSelection(
       selectedClipIds.has(transition.outgoingClipId) &&
       selectedClipIds.has(transition.incomingClipId),
   );
-  return {
+  return projectTimelineSelection({
     start: tick,
     clips: selectedClips,
     tracks,
@@ -125,7 +126,7 @@ export function createPointTimelineSelection(
       ? { transitions: selectedTransitions }
       : {}),
     fps: projectFps,
-  };
+  }, { tracks, clips: getTimelineClips(), fps: projectFps });
 }
 
 export function createTimelineSelectionFromClipIds({
@@ -192,7 +193,7 @@ export function createTimelineSelectionFromClipIds({
       selectedClipIds.has(transition.incomingClipId),
   );
 
-  return {
+  return projectTimelineSelection({
     start,
     end,
     clips: structuredClone(selectionClips),
@@ -211,7 +212,7 @@ export function createTimelineSelectionFromClipIds({
     ...(typeof fps === "number" ? { fps } : {}),
     ...(typeof frameStep === "number" ? { frameStep } : {}),
     ...(typeof frameOffset === "number" ? { frameOffset } : {}),
-  };
+  }, { tracks: sourceTracks, clips: sourceClips, fps: presentationFps });
 }
 
 export interface DefaultSelectionEndGrid {

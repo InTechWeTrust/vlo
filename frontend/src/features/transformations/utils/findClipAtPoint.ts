@@ -5,7 +5,7 @@ import type {
 import {
   buildTimelineClipPresentationIndex,
   type TimelineClipPresentation,
-} from "../../timeline/utils/clipPresentation";
+} from "../../timeline/time/index";
 
 interface FindClipAtPointInput {
   tracks: readonly TimelineTrack[];

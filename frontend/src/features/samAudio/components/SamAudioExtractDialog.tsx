@@ -32,7 +32,7 @@ import {
   useTimelineClip,
   useTimelineTracks,
 } from "../../timeline/api";
-import { clipPresentationFootprint } from "../../transformations";
+import { clipPresentationFootprint } from "../../timeline/time";
 import { useTimelineSelectionStore } from "../../timelineSelection";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { revealAssetInBrowser } from "../../userAssets/useAssetBrowserRevealStore";

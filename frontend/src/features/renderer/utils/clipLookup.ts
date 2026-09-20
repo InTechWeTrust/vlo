@@ -1,5 +1,5 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import type { TimelineClipPresentationLookup } from "../../timeline/utils/clipPresentation";
+import type { TimelineClipPresentationLookup } from "../../timeline/time/index";
 
 export function sortTrackClipsByStart(trackClips: TimelineClip[]): TimelineClip[] {
   if (trackClips.length <= 1) return trackClips;

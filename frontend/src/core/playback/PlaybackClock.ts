@@ -1,3 +1,4 @@
+import type { PresentationTick } from "../../features/timeline/time";
 import { getTicksPerFrame } from "../time/ticksPerFrame";
 
 type TimeListener = (time: number) => void;
@@ -6,7 +7,7 @@ export class PlaybackClock {
   private currentTime: number = 0;
   private listeners = new Set<TimeListener>();
 
-  get time() {
+  get time(): PresentationTick {
     return this.currentTime;
   }
 

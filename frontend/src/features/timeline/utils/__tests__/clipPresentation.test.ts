@@ -17,7 +17,7 @@ import {
   resolveClipEffectiveTrackTick,
   resolveStoredEndForPresentationEnd,
   resolveStoredStartForPresentationStart,
-} from "../clipPresentation";
+} from "../../time/clipPresentation";
 import { TICKS_PER_SECOND } from "../../constants";
 
 // These unit tests operate on abstract integer-tick geometry. Driving the

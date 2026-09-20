@@ -1,9 +1,6 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
-import {
-  clipVisualToSourceTime,
-  presentationToClipSourceTime,
-  type ClipPresentationContext,
-} from "../../transformations";
+import { clipVisualToSourceTime } from "../../transformations";
+import { presentationToClipSourceTime, type ClipPresentationContext } from "../../timeline/time";
 
 export function toClipInputTimeTicks(
   parentClip: TimelineClip,

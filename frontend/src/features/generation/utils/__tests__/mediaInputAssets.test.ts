@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockEnsureAssetFileLoaded } = vi.hoisted(() => ({
@@ -55,11 +56,11 @@ describe("mediaInputAssets", () => {
     const baseSelection = {
       kind: "timelineSelection" as const,
       mediaType: "video" as const,
-      timelineSelection: {
+      timelineSelection: makeTimelineSelection({
         start: 0,
         end: 100,
         clips: [],
-      } as never,
+      }) as never,
       thumbnailFile: new File([""], "thumb.png", { type: "image/png" }),
       thumbnailUrl: "blob:thumb",
       isExtracting: true,

@@ -7,14 +7,14 @@ import type {
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
 import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
-import { buildTimelineClipPresentationIndex } from "../../utils/clipPresentation";
+import { buildTimelineClipPresentationIndex } from "../../time/clipPresentation";
 import { mapSourceTimeToVisualTime } from "../../../transformations";
 import { TICKS_PER_SECOND } from "../../constants";
 import {
   resolveClipsAtPlayhead,
   resolveMarkerPlacementsAtPlayhead,
   resolveSplitPointsAtPlayhead,
-} from "../playheadPlacement";
+} from "../../time/playheadPlacement";
 import { splitClipInDraft } from "../timelineCommands";
 
 // One tick per frame makes frame quantization an identity on integers, so the

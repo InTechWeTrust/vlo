@@ -1,3 +1,4 @@
+import { projectTimelineSelection } from "../../timeline/time";
 import type {
   StandardTimelineClip,
   TimelineSelection,
@@ -693,14 +694,14 @@ export async function renderAssetToMaskMp4(
     fps,
   };
 
-  const timelineSelection: TimelineSelection = {
+  const timelineSelection: TimelineSelection = projectTimelineSelection({
     start: 0,
     end: durationTicks,
     clips: [syntheticClip],
     tracks: [syntheticTrack],
     fps,
     frameStep: 1,
-  };
+  }, projectData);
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {
@@ -1061,10 +1062,10 @@ export async function renderTimelineSelectionToFrameBatch(
         : (options.frameOffset ?? timelineSelection.frameOffset),
   });
   const ticksPerFrame = getTicksPerFrame(clampedFps);
-  const startTick = timelineSelection.start;
+  const startTick = timelineSelection.anchor;
   const requestedEndTick = Math.max(
     startTick + ticksPerFrame,
-    timelineSelection.end ?? startTick + ticksPerFrame,
+    timelineSelection.anchor + timelineSelection.durationTicks,
   );
   const rawFrameCount = Math.max(
     1,

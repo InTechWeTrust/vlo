@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as comfyApi from "../services/comfyuiApi";
 import { TEMP_WORKFLOW_ID, useGenerationStore } from "../useGenerationStore";
@@ -738,11 +739,11 @@ describe("useGenerationStore metadata replay", () => {
           {
             nodeId: "145",
             kind: "timelineSelection",
-            timelineSelection: {
+            timelineSelection: makeTimelineSelection({
               start: 10,
               end: 40,
               clips: [],
-            },
+            }),
           },
         ],
         comfyuiPrompt: {
@@ -790,13 +791,13 @@ describe("useGenerationStore metadata replay", () => {
             nodeId: "142",
             inputId: "142:files",
             kind: "timelineSelection",
-            timelineSelection: { start: 10, end: 20, clips: [] },
+            timelineSelection: makeTimelineSelection({ start: 10, end: 20, clips: [] }),
           },
           {
             nodeId: "142",
             inputId: "142:files::repeat::1",
             kind: "timelineSelection",
-            timelineSelection: { start: 30, end: 40, clips: [] },
+            timelineSelection: makeTimelineSelection({ start: 30, end: 40, clips: [] }),
           },
         ],
         replayState: {
@@ -836,7 +837,7 @@ describe("useGenerationStore metadata replay", () => {
         ],
       ).toMatchObject({
         kind: "timelineSelection",
-        timelineSelection: { start: 30, end: 40 },
+        timelineSelection: {anchor: 30,durationTicks: (40) - (30)},
         isExtracting: false,
       });
     });
@@ -846,7 +847,7 @@ describe("useGenerationStore metadata replay", () => {
     });
     expect(state.mediaInputs["142:files"]).toMatchObject({
       kind: "timelineSelection",
-      timelineSelection: { start: 10, end: 20 },
+      timelineSelection: {anchor: 10,durationTicks: (20) - (10)},
       isExtracting: false,
     });
   });
@@ -962,11 +963,11 @@ describe("useGenerationStore metadata replay", () => {
           {
             nodeId: "145",
             kind: "timelineSelection",
-            timelineSelection: {
+            timelineSelection: makeTimelineSelection({
               start: 10,
               clips: [],
               fps: 24,
-            },
+            }),
           },
         ],
         replayState: {
@@ -1006,8 +1007,8 @@ describe("useGenerationStore metadata replay", () => {
       kind: "frame",
       file: restoredFrame,
       timelineSelection: {
-        start: 10,
-        clips: [],
+        anchor: 10,
+        region: { clips: [] },
         fps: 24,
       },
     });
@@ -1036,11 +1037,11 @@ describe("useGenerationStore metadata replay", () => {
           {
             nodeId: "145",
             kind: "timelineSelection",
-            timelineSelection: {
+            timelineSelection: makeTimelineSelection({
               start: 10,
               end: 40,
               clips: [],
-            },
+            }),
           },
         ],
         replayState: {
@@ -1079,11 +1080,7 @@ describe("useGenerationStore metadata replay", () => {
 
     expect(mocks.captureFramePngAtTick).not.toHaveBeenCalled();
     expect(mocks.extractAudioFromSelection).toHaveBeenCalledWith(
-      {
-        start: 10,
-        end: 40,
-        clips: [],
-      },
+      expect.objectContaining({anchor: 10,durationTicks: 30,region: expect.objectContaining({clips: []})}),
       { exportFps: undefined },
     );
     expect(restoredInput).toMatchObject({
@@ -1119,9 +1116,8 @@ describe("useGenerationStore metadata replay", () => {
             nodeId: "145",
             kind: "timelineSelection",
             timelineSelection: {
-              start: 10,
-              end: 40,
-              clips: [null as unknown as never],
+              version: 2, anchor: 10, durationTicks: 30,
+              region: { clips: [null as unknown as never] },
             },
           },
         ],
@@ -1156,11 +1152,7 @@ describe("useGenerationStore metadata replay", () => {
       .loadWorkflowFromAssetMetadata(generatedAsset);
 
     expect(mocks.extractAudioFromSelection).toHaveBeenCalledWith(
-      {
-        start: 10,
-        end: 40,
-        clips: [],
-      },
+      expect.objectContaining({anchor: 10,durationTicks: 30,region: expect.objectContaining({clips: []})}),
       { exportFps: undefined },
     );
   });

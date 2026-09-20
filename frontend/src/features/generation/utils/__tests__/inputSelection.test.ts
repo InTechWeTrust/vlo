@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExportRenderer } from "../../../renderer";
 import { useProjectStore } from "../../../project/useProjectStore";
@@ -39,12 +40,12 @@ describe("resolveSelectionOutputDimensions", () => {
 
   it("uses the resolution the selection carries", () => {
     expect(
-      resolveSelectionOutputDimensions({ start: 0, clips: [], resolution: 720 }),
+      resolveSelectionOutputDimensions(makeTimelineSelection({ start: 0, clips: [], resolution: 720 })),
     ).toEqual({ outputWidth: 1280, outputHeight: 720 });
   });
 
   it("falls back to the project resolution", () => {
-    expect(resolveSelectionOutputDimensions({ start: 0, clips: [] })).toEqual({
+    expect(resolveSelectionOutputDimensions(makeTimelineSelection({ start: 0, clips: [] }))).toEqual({
       outputWidth: 1920,
       outputHeight: 1080,
     });
@@ -56,7 +57,7 @@ describe("resolveSelectionOutputDimensions", () => {
     });
 
     expect(
-      resolveSelectionOutputDimensions({ start: 0, clips: [], resolution: 720 }),
+      resolveSelectionOutputDimensions(makeTimelineSelection({ start: 0, clips: [], resolution: 720 })),
     ).toEqual({ outputWidth: 720, outputHeight: 1280 });
   });
 
@@ -65,7 +66,7 @@ describe("resolveSelectionOutputDimensions", () => {
   it("lets an explicit override win", () => {
     expect(
       resolveSelectionOutputDimensions(
-        { start: 0, clips: [], resolution: 720 },
+        makeTimelineSelection({ start: 0, clips: [], resolution: 720 }),
         { outputWidth: 640, outputHeight: 480 },
       ),
     ).toEqual({ outputWidth: 640, outputHeight: 480 });
@@ -73,7 +74,7 @@ describe("resolveSelectionOutputDimensions", () => {
 
   it("keeps a non-rung resolution the workflow asked for", () => {
     expect(
-      resolveSelectionOutputDimensions({ start: 0, clips: [], resolution: 832 }),
+      resolveSelectionOutputDimensions(makeTimelineSelection({ start: 0, clips: [], resolution: 832 })),
     ).toEqual({ outputWidth: 1480, outputHeight: 832 });
   });
 });
@@ -175,12 +176,12 @@ describe("inputSelection", () => {
       .spyOn(ExportRenderer, "create")
       .mockResolvedValue({ render: renderSpy } as unknown as ExportRenderer);
 
-    const timelineSelection = {
+    const timelineSelection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: useTimelineStore.getState().clips,
       fps: 24,
-    };
+    });
 
     const result = await renderTimelineSelectionToMp4WithMask(
       timelineSelection,
@@ -221,12 +222,12 @@ describe("inputSelection", () => {
       .spyOn(ExportRenderer, "create")
       .mockResolvedValue({ render: renderSpy } as unknown as ExportRenderer);
 
-    const timelineSelection = {
+    const timelineSelection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: useTimelineStore.getState().clips,
       fps: 25,
-    };
+    });
 
     const result = await renderTimelineSelectionToMaskMp4(
       timelineSelection,
@@ -269,17 +270,17 @@ describe("inputSelection", () => {
     } as unknown as ExportRenderer);
 
     const [visualClip] = useTimelineStore.getState().clips;
-    const timelineSelection = {
+    const timelineSelection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: [visualClip],
       fps: 24,
-    };
+    });
 
     await renderTimelineSelectionToMaskMp4(timelineSelection, "binary");
 
     expect(
-      renderSpy.mock.calls[0]?.[3]?.timelineSelection?.clips?.map(
+      renderSpy.mock.calls[0]?.[3]?.timelineSelection?.region.clips?.map(
         (clip: { id: string }) => clip.id,
       ),
     ).toEqual(["clip_1"]);
@@ -297,12 +298,12 @@ describe("inputSelection", () => {
       render: renderSpy,
     } as unknown as ExportRenderer);
 
-    const timelineSelection = {
+    const timelineSelection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: useTimelineStore.getState().clips,
       fps: 24,
-    };
+    });
 
     await renderTimelineSelectionToMp4WithDerivedMasks(timelineSelection, [
       {
@@ -361,13 +362,13 @@ describe("inputSelection", () => {
       render: renderSpy,
     } as unknown as ExportRenderer);
 
-    const timelineSelection = {
+    const timelineSelection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: useTimelineStore.getState().clips,
       fps: 24,
       includedTrackIds: ["track_1"],
-    };
+    });
 
     await renderTimelineSelectionToMp4WithDerivedMasks(timelineSelection, [
       {
@@ -435,11 +436,11 @@ describe("inputSelection", () => {
     const captureSpy = vi
       .spyOn(rendererModule, "renderProjectFrameFileAtTick")
       .mockResolvedValue(frame);
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: [],
-    };
+    });
 
     await expect(
       captureFramePngAtTick(12, "preview", selection),
@@ -469,11 +470,11 @@ describe("inputSelection", () => {
       });
 
     await expect(
-      renderTimelineSelectionToMp4({
+      renderTimelineSelectionToMp4(makeTimelineSelection({
         start: 0,
         end: 24,
         clips: [],
-      }),
+      })),
     ).rejects.toThrow(/contained no decoded frames/);
     expect(renderSpy).toHaveBeenCalledWith(
       expect.anything(),
@@ -502,11 +503,11 @@ describe("inputSelection", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     await expect(
-      renderTimelineSelectionToMp4({
+      renderTimelineSelectionToMp4(makeTimelineSelection({
         start: 0,
         end: 24,
         clips: [],
-      }),
+      })),
     ).resolves.toBe(file);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("degraded frames"),
@@ -526,7 +527,7 @@ describe("inputSelection", () => {
 
     await expect(
       renderTimelineSelectionToMp4(
-        { start: 0, end: 24, clips: [] },
+        makeTimelineSelection({ start: 0, end: 24, clips: [] }),
         { signal: controller.signal },
       ),
     ).rejects.toMatchObject({ name: "AbortError" });
@@ -547,11 +548,11 @@ describe("inputSelection", () => {
     } as unknown as ExportRenderer);
 
     const result = await renderTimelineSelectionToMp4WithMask(
-      {
+      makeTimelineSelection({
         start: 0,
         end: 24,
         clips: useTimelineStore.getState().clips,
-      },
+      }),
       "soft",
       {
         sourceVideoTreatment: "preserve_transparency",
@@ -578,15 +579,15 @@ describe("inputSelection", () => {
     const renderSpy = vi
       .fn()
       .mockResolvedValueOnce({ outputs: { mask: new Blob(["mask"]) } })
-      .mockResolvedValueOnce({ outputs: { video: new Blob(["video"]) } });
+      .mockResolvedValueOnce({ video: new Blob(["video"]), outputs: { video: new Blob(["video"]) } });
     vi.spyOn(ExportRenderer, "create").mockResolvedValue({
       render: renderSpy,
     } as unknown as ExportRenderer);
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: useTimelineStore.getState().clips,
-    };
+    });
 
     await expect(
       renderTimelineSelectionToMp4WithMask(selection, "binary", {
@@ -606,11 +607,11 @@ describe("inputSelection", () => {
     const createSpy = vi.spyOn(ExportRenderer, "create");
 
     const result = await renderTimelineSelectionToMp4WithDerivedMasks(
-      {
+      makeTimelineSelection({
         start: 0,
         end: 24,
         clips: useTimelineStore.getState().clips,
-      },
+      }),
       [{ maskType: "binary", purpose: "video" }],
       {
         preparedVideoFile: preparedVideo,
@@ -627,11 +628,11 @@ describe("inputSelection", () => {
   });
 
   it("rejects conflicting source selection modes and video treatments", async () => {
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: useTimelineStore.getState().clips,
-    };
+    });
     await expect(
       renderTimelineSelectionToMp4WithDerivedMasks(selection, [
         {
@@ -665,7 +666,7 @@ describe("inputSelection", () => {
   it("renders multiple unique derived masks and deduplicates equal keys", async () => {
     const renderSpy = vi
       .fn()
-      .mockResolvedValueOnce({ outputs: { video: new Blob(["video"]) } })
+      .mockResolvedValueOnce({ video: new Blob(["video"]), outputs: { video: new Blob(["video"]) } })
       .mockResolvedValue({
         outputs: { mask: new Blob(["mask"]) },
         outputAnalyses: { mask: { hasVisibleContent: true } },
@@ -673,11 +674,11 @@ describe("inputSelection", () => {
     vi.spyOn(ExportRenderer, "create").mockResolvedValue({
       render: renderSpy,
     } as unknown as ExportRenderer);
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 24,
       clips: useTimelineStore.getState().clips,
-    };
+    });
 
     const result = await renderTimelineSelectionToMp4WithDerivedMasks(
       selection,
@@ -911,13 +912,13 @@ describe("inputSelection", () => {
       .mockImplementation(async (tick) =>
         new File(["png"], `frame-${tick}.png`),
       );
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 96000,
       clips: [],
       fps: 24,
       frameStep: 4,
-    };
+    });
 
     const frames = await renderTimelineSelectionToFrameBatch(selection, 30, {
       maxFrames: 10,

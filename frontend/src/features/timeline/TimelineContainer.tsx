@@ -41,7 +41,7 @@ import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
 import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
-import { buildTimelineClipPresentationIndex } from "./utils/clipPresentation";
+import { buildTimelineClipPresentationIndex } from "./time/index";
 import { resolveTransitions } from "./model/transitionModel";
 import { TransitionOverlay } from "../transitions/components/TransitionOverlay";
 

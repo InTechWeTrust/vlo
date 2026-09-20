@@ -14,8 +14,8 @@ function inferTrackType(clips: readonly TimelineClip[]): TrackType {
 }
 
 function getSelectionTracks(selection: TimelineSelection): TimelineTrack[] {
-  if (selection.tracks) {
-    return selection.tracks;
+  if (selection.region.tracks) {
+    return selection.region.tracks;
   }
 
   if (import.meta.env.DEV) {
@@ -25,7 +25,7 @@ function getSelectionTracks(selection: TimelineSelection): TimelineTrack[] {
   }
 
   const clipsByTrackId = new Map<string, TimelineClip[]>();
-  for (const clip of selection.clips) {
+  for (const clip of selection.region.clips) {
     const trackClips = clipsByTrackId.get(clip.trackId) ?? [];
     trackClips.push(clip);
     clipsByTrackId.set(clip.trackId, trackClips);
@@ -41,15 +41,6 @@ function getSelectionTracks(selection: TimelineSelection): TimelineTrack[] {
   }));
 }
 
-function getSelectionDuration(selection: TimelineSelection): number {
-  const furthestClipEnd = selection.clips.reduce(
-    (end, clip) => Math.max(end, clip.start + clip.timelineDuration),
-    selection.start,
-  );
-
-  return Math.max(selection.end ?? selection.start, furthestClipEnd);
-}
-
 /**
  * Treats a persisted timeline selection as a self-contained mini-project.
  * Assets and composites remain project-level resources resolved by stable id,
@@ -62,8 +53,9 @@ export function buildSelectionProjectData(
   return {
     ...projectData,
     tracks: getSelectionTracks(selection),
-    clips: selection.clips,
-    transitions: selection.transitions ?? [],
-    duration: getSelectionDuration(selection),
+    clips: selection.region.clips,
+    transitions: selection.region.transitions ?? [],
+    duration: selection.durationTicks,
+    fps: selection.region.fps ?? projectData.fps,
   };
 }

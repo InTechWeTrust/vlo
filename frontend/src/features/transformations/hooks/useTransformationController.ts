@@ -4,7 +4,6 @@ import type { ClipTransform, TimelineClip } from "../../../types/TimelineTypes";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import {
   getTimelineClips,
-  getTimelinePresentationContext,
   getTimelineTracks,
   parseMaskClipId,
   setTimelineClipMaskCompositeTransforms,
@@ -14,16 +13,15 @@ import {
   useMaskClipsForParent,
   useSelectedTimelineClipIds,
   useTimelineClip,
+  getTimelinePresentationContext,
 } from "../../timeline/api";
 import { useProjectStore } from "../../project/useProjectStore";
 import {
   introducesTimelineClipPresentationCollision,
-} from "../../timeline/utils/clipPresentation";
+} from "../../timeline/time/index";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { isDefaultTransform } from "../catalogue/TransformationRegistry";
-import {
-  presentationToClipSourceTime,
-} from "../utils/clipTimeDomains";
+import { clampedClipSourceTime } from "../../timeline/time";
 import { computeCommitMutation } from "./controller/commitComputation";
 import { computeBatchCommitMutations } from "./controller/batchCommitComputation";
 import { computeSpeedShapeUpdateForTransforms } from "./controller/speedDuration";
@@ -584,17 +582,10 @@ export function useTransformationController(
       // adjustment-layer retiming, matching the frame shown by the viewer.
       let keyframeSourceTimeTicks: number | undefined;
       if (activeClip) {
-        const presentationTick = Math.max(
-          activeClip.start,
-          Math.min(
-            playbackClock.time,
-            activeClip.start + activeClip.timelineDuration,
-          ),
-        );
-        keyframeSourceTimeTicks = presentationToClipSourceTime(
+          keyframeSourceTimeTicks = clampedClipSourceTime(
           getTimelinePresentationContext(),
           activeClip,
-          presentationTick,
+          playbackClock.time,
         );
       }
 
@@ -640,17 +631,10 @@ export function useTransformationController(
       if (!currentTarget || Object.keys(values).length === 0) return;
 
       const activeClip = currentTarget.timelineClip;
-      const presentationTick = Math.max(
-        activeClip.start,
-        Math.min(
-          playbackClock.time,
-          activeClip.start + activeClip.timelineDuration,
-        ),
-      );
-      const keyframeSourceTimeTicks = presentationToClipSourceTime(
+      const keyframeSourceTimeTicks = clampedClipSourceTime(
         getTimelinePresentationContext(),
         activeClip,
-        presentationTick,
+        playbackClock.time,
       );
 
       applyTargetTransforms(

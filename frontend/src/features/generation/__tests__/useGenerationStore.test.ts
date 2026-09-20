@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../testUtils/timelineSelection";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TEMP_WORKFLOW_ID, useGenerationStore } from "../useGenerationStore";
 import type { WorkflowInput } from "../types";
@@ -558,12 +559,12 @@ describe("useGenerationStore workflow rules", () => {
   });
 
   it("captures generated asset metadata and postprocess config at submission", async () => {
-    const timelineSelection = {
+    const timelineSelection = makeTimelineSelection({
       start: 10,
       end: 20,
       clips: [],
       fps: 24,
-    };
+    });
     const draggedAsset = {
       id: "asset-1",
       hash: "hash",
@@ -931,7 +932,7 @@ describe("useGenerationStore workflow rules", () => {
     const jobId = await useGenerationStore.getState().submitGeneration({
       video_input: {
         type: "video_selection",
-        selection: {
+        selection: makeTimelineSelection({
           start: 0,
           end: 24,
           clips: [],
@@ -939,7 +940,7 @@ describe("useGenerationStore workflow rules", () => {
           // Prepared files are only reused when the selection pins the
           // resolution they were rendered at.
           resolution: 1080,
-        },
+        }),
         preparedVideoFile,
         preparedMaskFile,
         preparedDerivedMaskSignature: buildDerivedMaskRenderSignature([
@@ -1412,7 +1413,7 @@ describe("useGenerationStore workflow rules", () => {
     });
 
     it("keeps a per-item switch across a re-render of the same selection", () => {
-      const selection = { start: 0, end: 100, clips: [] } as never;
+      const selection = makeTimelineSelection({ start: 0, end: 100, clips: [] }) as never;
       const thumbnailFile = new File(["png"], "thumb.png", {
         type: "image/png",
       });
@@ -1459,7 +1460,7 @@ describe("useGenerationStore workflow rules", () => {
         .getState()
         .setMediaInputTimelineSelection(
           "142:files",
-          { start: 0, end: 100, clips: [] } as never,
+          makeTimelineSelection({ start: 0, end: 100, clips: [] }) as never,
           thumbnailFile,
           { mediaType: "video", isExtracting: false },
         );
@@ -1471,7 +1472,7 @@ describe("useGenerationStore workflow rules", () => {
         .getState()
         .setMediaInputTimelineSelection(
           "142:files",
-          { start: 500, end: 900, clips: [] } as never,
+          makeTimelineSelection({ start: 500, end: 900, clips: [] }) as never,
           thumbnailFile,
           { mediaType: "video", isExtracting: false },
         );
@@ -1526,7 +1527,7 @@ describe("audio timeline selection values", () => {
       .getState()
       .setMediaInputTimelineSelection(
         "143:audios",
-        { start: 0, end: 96_000, clips: [], bakedSource: true } as never,
+        makeTimelineSelection({ start: 0, end: 96_000, clips: [], bakedSource: true }) as never,
         new File(["thumb"], "thumb.txt"),
         {
           mediaType: "audio",
@@ -1554,7 +1555,7 @@ describe("audio timeline selection values", () => {
       .getState()
       .setMediaInputTimelineSelection(
         "143:audios",
-        { start: 0, end: 96_000, clips: [] } as never,
+        makeTimelineSelection({ start: 0, end: 96_000, clips: [] }) as never,
         new File(["thumb"], "thumb.txt"),
         { mediaType: "audio", isExtracting: false },
       );

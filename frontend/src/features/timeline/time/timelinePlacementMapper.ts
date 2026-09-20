@@ -4,11 +4,11 @@ import type {
   TimelineTrack,
 } from "../../../types/TimelineTypes";
 import {
-  buildTimelineClipPresentationIndex,
   resolveStoredStartForPresentationStart,
   type TimelineClipPresentation,
+  type TimelineClipPresentationLookup,
 } from "./clipPresentation";
-import { getResizedClipLeft, getResizedClipRight } from "./clipMath";
+import { getResizedClipLeft, getResizedClipRight } from "../utils/clipMath";
 import { hasEnabledSpeedTransform } from "../../renderer/utils/deriveAdjustmentGroups";
 import {
   clipOffsetTick,
@@ -18,7 +18,7 @@ import {
   type ClipOffsetTick,
   type PresentationTick,
   type StoredTrackTick,
-} from "./timelineTimeDomains";
+} from "../utils/timelineTimeDomains";
 
 export interface TimelinePresentationRange {
   start: PresentationTick;
@@ -95,6 +95,7 @@ export interface TimelinePlacementMapper {
   projectRegionToLocalTimeline(
     range: TimelinePresentationRange,
     clipIds: readonly string[],
+    origin?: PresentationTick,
   ): ProjectedTimelineRegion;
 }
 
@@ -148,25 +149,20 @@ function resolveMaskParentId(clip: TimelineClip): string | null {
 export function createTimelinePlacementMapper({
   tracks,
   clips,
-  fps,
-}: CreateTimelinePlacementMapperOptions): TimelinePlacementMapper {
-  const snapshotTracks = structuredClone(tracks) as TimelineTrack[];
-  const snapshotClips = structuredClone(clips) as TimelineClip[];
+}: CreateTimelinePlacementMapperOptions, lookup: TimelineClipPresentationLookup): TimelinePlacementMapper {
+  const snapshotTracks = tracks;
+  const snapshotClips = clips;
   const clipsById = new Map(
     snapshotClips.map((clip) => [clip.id, clip] as const),
   );
-  const presentationById = buildTimelineClipPresentationIndex(
-    snapshotTracks,
-    snapshotClips,
-    fps,
-  );
+
 
   const resolvePresentation = (
     clip: TimelineClip,
   ): TimelineClipPresentation | undefined => {
-    if (clip.type !== "mask") return presentationById.get(clip.id);
+    if (clip.type !== "mask") return lookup.getPresentation(clip.id) ?? undefined;
     const parentId = resolveMaskParentId(clip);
-    return parentId ? presentationById.get(parentId) : undefined;
+    return parentId ? lookup.getPresentation(parentId) ?? undefined : undefined;
   };
 
   const getPresentationFootprint = (
@@ -348,6 +344,7 @@ export function createTimelinePlacementMapper({
   const projectRegionToLocalTimeline = (
     range: TimelinePresentationRange,
     clipIds: readonly string[],
+    origin: PresentationTick = range.start,
   ): ProjectedTimelineRegion => {
     const selectedIds = new Set(clipIds);
     const segmentsByClipId = new Map<string, ProjectedTimelineClipSegment>();
@@ -355,6 +352,7 @@ export function createTimelinePlacementMapper({
       if (!selectedIds.has(clip.id)) return [];
       const segment = intersectClipWithPresentationRange(clip.id, range);
       if (!segment) return [];
+      segment.localPresentationStart = presentationTick(segment.presentationStart - origin);
       const projected = cropClipToStoredOffsets(
         clip,
         segment.storedStartOffset,
@@ -428,31 +426,3 @@ export function createTimelinePlacementMapper({
   };
 }
 
-export interface CollectTimelineRegionClipsOptions
-  extends CreateTimelinePlacementMapperOptions {
-  start: number;
-  /** Omitted for a single-frame (point) region at `start`. */
-  end?: number;
-}
-
-/**
- * The clips a `TimelineSelection` over a presentation range must capture: its
- * render topology (see `getRegionTopologyClipIds`), in snapshot order and by
- * reference. Every selection builder goes through this, so a selection always
- * renders the same frames the timeline shows for its range.
- */
-export function collectTimelineRegionClips({
-  tracks,
-  clips,
-  fps,
-  start,
-  end,
-}: CollectTimelineRegionClipsOptions): TimelineClip[] {
-  const mapper = createTimelinePlacementMapper({ tracks, clips, fps });
-  const topologyIds = new Set(
-    mapper.getRegionTopologyClipIds(
-      timelinePresentationRange(start, end ?? start + 1),
-    ),
-  );
-  return clips.filter((clip) => topologyIds.has(clip.id));
-}

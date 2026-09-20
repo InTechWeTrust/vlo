@@ -61,7 +61,7 @@ function createTemporaryAsset(
 ): IframeTemporaryAsset {
   const durationTicks = Math.max(
     0,
-    (timelineSelection.end ?? timelineSelection.start) - timelineSelection.start,
+    ((timelineSelection.anchor + timelineSelection.durationTicks)) - timelineSelection.anchor,
   );
   return {
     role,

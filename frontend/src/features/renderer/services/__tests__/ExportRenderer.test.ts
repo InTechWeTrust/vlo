@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import {
   ExportRenderer,
   resolveOutputDefinitions,
@@ -1179,13 +1180,13 @@ describe("ExportRenderer", () => {
       syncSpy.mockClear();
       const renderer = await ExportRenderer.create(config);
       await renderer.render(projectData, config, () => {}, {
-        timelineSelection: {
+        timelineSelection: makeTimelineSelection({
           start: selectionStart,
           end: selectionStart + TICKS_PER_SECOND / 30,
           fps: 30,
           clips: [clip],
           tracks: [track],
-        },
+        }),
       });
       return syncSpy.mock.calls.map(([tick, , render]) => ({
         tick,
@@ -1199,9 +1200,9 @@ describe("ExportRenderer", () => {
 
       expect(second).toEqual(first);
       expect(first.map(({ tick }) => tick)).toEqual([
-        selectionStart - (2 * TICKS_PER_SECOND) / 30,
-        selectionStart - TICKS_PER_SECOND / 30,
-        selectionStart,
+        -(2 * TICKS_PER_SECOND) / 30,
+        -TICKS_PER_SECOND / 30,
+        0,
       ]);
       expect(first.map(({ render }) => render?.isWarmup)).toEqual([
         true,
@@ -1230,7 +1231,7 @@ describe("ExportRenderer", () => {
         render,
       }));
       expect(stillSamples.map(({ tick }) => tick)).toEqual(
-        first.map(({ tick }) => tick),
+        first.map(({ tick }) => tick + selectionStart),
       );
       expect(stillSamples.map(({ render }) => render?.mode)).toEqual([
         "still",
@@ -1400,12 +1401,12 @@ describe("ExportRenderer", () => {
       });
 
       await testRenderer.renderStill(projectData, config, 0, {
-        timelineSelection: {
+        timelineSelection: makeTimelineSelection({
           start: 0,
           clips: [savedClip],
           tracks: [savedTrack],
           fps: 24,
-        },
+        }),
       });
 
       expect(registerTrackSpy).toHaveBeenCalledWith(
@@ -1419,7 +1420,7 @@ describe("ExportRenderer", () => {
       expect(setAdjustmentSourceSpy).toHaveBeenCalledTimes(2);
       for (const [tracks, clips] of setAdjustmentSourceSpy.mock.calls) {
         expect(tracks).toEqual([savedTrack]);
-        expect(clips).toEqual([savedClip]);
+        expect(clips).toEqual([expect.objectContaining({ id: savedClip.id, assetId: "saved-asset", start: 0 })]);
       }
       expect(syncSpy.mock.calls[0]?.[1].tracks).toEqual([
         expect.objectContaining({ trackId: savedTrack.id }),
@@ -1526,14 +1527,14 @@ describe("ExportRenderer", () => {
     try {
       const renderer = await ExportRenderer.create(config);
       await renderer.render(projectData, config, () => {}, {
-        timelineSelection: {
+        timelineSelection: makeTimelineSelection({
           start: 0,
           end: 4_000,
           clips: savedClips,
           tracks: savedTracks,
           transitions: [savedTransition],
           fps: 24,
-        },
+        }),
       });
 
       expect(

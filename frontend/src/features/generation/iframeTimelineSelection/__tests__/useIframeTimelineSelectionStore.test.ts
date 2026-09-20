@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { projectTemporaryFileService } from "../../../project/services/ProjectTemporaryFileService";
@@ -10,13 +11,13 @@ import type { ProcessedIframeTimelineSelection } from "../types";
 
 function createResult(withMask: boolean): ProcessedIframeTimelineSelection {
   return {
-    timelineSelection: {
+    timelineSelection: makeTimelineSelection({
       start: 96_000,
       end: 192_000,
       clips: [],
       tracks: [],
       fps: 24,
-    },
+    }),
     video: new File(["video"], "video.mp4", { type: "video/mp4" }),
     mask: withMask
       ? new File(["mask"], "mask.mp4", { type: "video/mp4" })
@@ -60,10 +61,7 @@ describe("useIframeTimelineSelectionStore", () => {
       expect.objectContaining({
         nodeId: "source-node",
         kind: "timelineSelection",
-        timelineSelection: expect.objectContaining({
-          start: 96_000,
-          end: 192_000,
-        }),
+        timelineSelection: expect.objectContaining({anchor: 96_000,durationTicks: (192_000) - (96_000)}),
       }),
     ]);
     expect(getIframeTimelineSelectionGenerationMetadata()).toMatchObject({

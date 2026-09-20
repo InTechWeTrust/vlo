@@ -6,7 +6,7 @@ import type {
 import { isNonMaskTimelineClip } from "../../../types/TimelineTypes";
 import { snapTickToFrame } from "../../timelineSelection";
 import { hasAnyCollision } from "./collision";
-import { buildTimelineClipPresentationCollisionView } from "./clipPresentation";
+import { buildTimelineClipPresentationCollisionView } from "../time/index";
 import { getTrackTypeFromClip } from "./formatting";
 
 export interface PlannedTimelineClipMove {

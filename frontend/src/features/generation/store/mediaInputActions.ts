@@ -153,9 +153,9 @@ function isSameTimelineSelection(
   next: TimelineSelection,
 ): boolean {
   if (previous === next) return true;
-  if (previous.start !== next.start || previous.end !== next.end) return false;
-  if (previous.clips.length !== next.clips.length) return false;
-  return previous.clips.every((clip, index) => clip.id === next.clips[index]?.id);
+  if (previous.anchor !== next.anchor || (previous.anchor + previous.durationTicks) !== (next.anchor + next.durationTicks)) return false;
+  if (previous.region.clips.length !== next.region.clips.length) return false;
+  return previous.region.clips.every((clip, index) => clip.id === next.region.clips[index]?.id);
 }
 
 /**

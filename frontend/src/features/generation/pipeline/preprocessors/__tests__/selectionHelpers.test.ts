@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../../testUtils/timelineSelection";
 import { describe, expect, it } from "vitest";
 import type { TimelineSelection } from "../../../../../types/TimelineTypes";
 import {
@@ -10,12 +11,12 @@ import {
 function createSelection(
   overrides: Partial<TimelineSelection> = {},
 ): TimelineSelection {
-  return {
+  return makeTimelineSelection({
     start: 0,
     end: 1000,
     clips: [],
     ...overrides,
-  };
+  });
 }
 
 describe("selectionHelpers", () => {

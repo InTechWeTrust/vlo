@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../../testUtils/timelineSelection";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const renderTimelineSelectionToMp4 = vi.fn();
@@ -21,7 +22,7 @@ import type { FrontendPreprocessContext, SlotValue } from "../../types";
 function createSelection(
   overrides: Partial<TimelineSelection> = {},
 ): TimelineSelection {
-  return { start: 0, end: 1000, clips: [], tracks: [], ...overrides };
+  return makeTimelineSelection({ start: 0, end: 1000, clips: [], tracks: [], ...overrides });
 }
 
 function createContext(

@@ -31,12 +31,12 @@ function buildTimelineSelectionInputMetadata(
   const frameOffset = resolveSelectionFrameOffset(selection);
   const ticksPerFrame = getTicksPerFrame(effectiveFps);
   const requestedEndTick = Math.max(
-    selection.start + ticksPerFrame,
-    selection.end ?? selection.start + ticksPerFrame,
+    selection.anchor + ticksPerFrame,
+    selection.anchor + selection.durationTicks,
   );
   const rawFrameCount = Math.max(
     1,
-    Math.ceil((requestedEndTick - selection.start) / ticksPerFrame),
+    Math.ceil((requestedEndTick - selection.anchor) / ticksPerFrame),
   );
   const frameCount = snapFrameCountToStep(
     rawFrameCount,
@@ -47,24 +47,24 @@ function buildTimelineSelectionInputMetadata(
   const durationTicks = frameCount * ticksPerFrame;
   const includedTrackCount = getIncludedTracksForSelection(
     selection,
-    selection.tracks ?? [],
+    selection.region.tracks ?? [],
   ).length;
 
   return {
-    startTick: selection.start,
-    endTick: selection.start + durationTicks,
+    startTick: selection.anchor,
+    endTick: selection.anchor + durationTicks,
     durationTicks,
     durationSeconds: tickToMediaSeconds(durationTicks),
     effectiveFps,
     frameStep,
     frameOffset,
     frameCount,
-    clipCount: selection.clips.length,
-    trackCount: selection.tracks?.length ?? 0,
+    clipCount: selection.region.clips.length,
+    trackCount: selection.region.tracks?.length ?? 0,
     includedTrackCount,
     hasMaskClip: selectionHasMaskClip(selection),
     isRange:
-      typeof selection.end === "number" && selection.end > selection.start,
+      !selection.isPoint && selection.durationTicks > 0,
   };
 }
 

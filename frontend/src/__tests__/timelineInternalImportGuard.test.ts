@@ -11,15 +11,14 @@ const PUBLIC_TIMELINE_TARGETS = new Set([
   "features/timeline/api",
   "features/timeline/clipOverlayApi",
   "features/timeline/constants",
+  "features/timeline/time",
+  "features/timeline/time/index",
 ]);
 
 const APP_SHELL_TIMELINE_TARGETS = new Set(["features/timeline/ui"]);
 
 const LEGACY_INTERNAL_ALLOWLIST = [
   "features/composite/CompositeBrowser.tsx -> features/timeline/hooks/useInteractionStore",
-  "features/renderer/services/AdjustmentEffectResolver.ts -> features/timeline/utils/clipPresentation",
-  "features/renderer/services/ExportRenderer.ts -> features/timeline/utils/clipPresentation",
-  "features/renderer/utils/clipLookup.ts -> features/timeline/utils/clipPresentation",
   "features/samAudio/components/SamAudioExtractDialog.tsx -> features/timeline/utils/clipAudioExtraction",
   "features/transitions/components/TransitionDragOverlay.tsx -> features/timeline/hooks/useInteractionStore",
   "features/transitions/components/TransitionOverlay.tsx -> features/timeline/model/transitionModel",
@@ -28,7 +27,6 @@ const LEGACY_INTERNAL_ALLOWLIST = [
   "features/transitions/hooks/useTransitionDrag.ts -> features/timeline/hooks/useInteractionStore",
   "features/transitions/hooks/useTransitionDrag.ts -> features/timeline/hooks/useTimelineViewStore",
   "features/transitions/hooks/useTransitionDrag.ts -> features/timeline/model/transitionModel",
-  "features/transitions/hooks/useTransitionDrag.ts -> features/timeline/utils/clipPresentation",
   "features/transitions/rendering/TransitionResolver.ts -> features/timeline/model/transitionModel",
   "features/transformations/components/TransformationDragOverlay.tsx -> features/timeline/hooks/useInteractionStore",
   "features/transformations/hooks/useTimelineKeyframeClipOverlay.tsx -> features/timeline/hooks/useTimelineViewStore",
@@ -37,9 +35,6 @@ const LEGACY_INTERNAL_ALLOWLIST = [
   "features/transformations/hooks/useTransformDrag.ts -> features/timeline/hooks/dnd/usePointerTracker",
   "features/transformations/hooks/useTransformDrag.ts -> features/timeline/hooks/useInteractionStore",
   "features/transformations/hooks/useTransformDrag.ts -> features/timeline/hooks/useTimelineViewStore",
-  "features/transformations/hooks/useTransformationController.ts -> features/timeline/utils/clipPresentation",
-  "features/transformations/utils/clipTimeDomains.ts -> features/timeline/utils/clipPresentation",
-  "features/transformations/utils/findClipAtPoint.ts -> features/timeline/utils/clipPresentation",
   "features/userAssets/AssetBrowser.tsx -> features/timeline/hooks/useInteractionStore",
 ];
 

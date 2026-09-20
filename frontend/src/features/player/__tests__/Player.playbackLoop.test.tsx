@@ -722,7 +722,7 @@ describe("Player playback loop", () => {
     expect(useExtractStore.getState().progress).toBe(55);
   });
 
-  it("cancels processing and closes the dialog", () => {
+  it("requests cancellation and leaves dialog cleanup to the export controller", () => {
     act(() => {
       useExtractStore.setState({ dialogOpen: true });
     });
@@ -733,7 +733,7 @@ describe("Player playback loop", () => {
       )();
     });
     expect(cancelExportMock).toHaveBeenCalled();
-    expect(useExtractStore.getState().dialogOpen).toBe(false);
+    expect(useExtractStore.getState().dialogOpen).toBe(true);
   });
 
   it("exports a project using the titled save picker and reports progress", async () => {

@@ -8,7 +8,7 @@ import {
   buildTimelineClipPresentationIndex,
   resolvePresentationTickForClipOffset,
   resolvePresentationOffsetForClipOffset,
-} from "../utils/clipPresentation";
+} from "../time/index";
 
 export type InteractionOperation = "move" | "resize_left" | "resize_right";
 

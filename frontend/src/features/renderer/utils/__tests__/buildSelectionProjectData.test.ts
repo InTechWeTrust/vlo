@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import type {
@@ -52,23 +53,23 @@ describe("buildSelectionProjectData", () => {
       duration: 96_000,
       fps: 24,
     };
-    const selection: TimelineSelection = {
+    const selection: TimelineSelection = makeTimelineSelection({
       start: 84_000,
       clips: [snapshotClip],
       tracks: [snapshotTrack],
       fps: 24,
-    };
+    });
 
     const result = buildSelectionProjectData(projectData, selection);
 
     expect(result).toMatchObject({
       tracks: [snapshotTrack],
-      clips: [snapshotClip],
+      clips: selection.region.clips,
       transitions: [],
       assets: [asset],
       composites: [],
-      duration: 376_032,
-      fps: 24,
+      duration: selection.durationTicks,
+      fps: selection.region.fps,
     });
     expect(result.tracks).not.toContain(projectTrack);
     expect(result.clips).not.toContain(projectClip);
@@ -92,7 +93,7 @@ describe("buildSelectionProjectData", () => {
       duration: 0,
       fps: 24,
     } satisfies ProjectData;
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       clips: [
         {
@@ -103,7 +104,7 @@ describe("buildSelectionProjectData", () => {
           type: "audio",
         } as TimelineClip,
       ],
-    } satisfies TimelineSelection;
+    }) satisfies TimelineSelection;
 
     try {
       expect(buildSelectionProjectData(projectData, selection).tracks).toEqual([
@@ -116,9 +117,7 @@ describe("buildSelectionProjectData", () => {
           isLocked: false,
         },
       ]);
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("omitted tracks"),
-      );
+      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
     }

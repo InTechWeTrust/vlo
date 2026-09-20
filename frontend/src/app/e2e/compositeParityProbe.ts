@@ -19,7 +19,7 @@ import {
   type CompositePixelComparison,
   type CompositePixelFrame,
 } from "../../features/composite/utils/compositeParityHarness";
-import { compositeContentToSelection } from "../../features/timelineSelection";
+import { projectTimelineSelection } from "../../features/timeline/time";
 import { getTicksPerFrame } from "../../features/timelineSelection";
 
 interface LiveCompositeFrame extends CompositePixelFrame {
@@ -251,20 +251,22 @@ export async function runCompositeParityProbe(
         ? Math.max(1, composite.content.fps)
         : 1;
     const ticksPerFrame = getTicksPerFrame(fps);
-    const fullSelection = compositeContentToSelection(composite.content);
-    const selection = {
-      ...fullSelection,
-      start: live.localPresentationTick,
-      end: Math.min(
-        composite.content.durationTicks,
-        live.localPresentationTick + ticksPerFrame,
-      ),
-    };
-    if (selection.end <= selection.start) {
+    const start = live.localPresentationTick;
+    const end = Math.min(composite.content.durationTicks, start + ticksPerFrame);
+    if (end <= start) {
       throw new Error(
         "composite parity probe: requested local frame is outside the composite",
       );
     }
+    const selection = projectTimelineSelection({
+      ...composite.content,
+      start,
+      end,
+    }, {
+      clips: composite.content.clips,
+      tracks: composite.content.tracks ?? [],
+      fps,
+    });
 
     const preEncodeFrames: CompositePixelFrame[] = [];
     const rendered = await renderCompositeToVideoFile(composite.content, {

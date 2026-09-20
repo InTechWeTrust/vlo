@@ -160,7 +160,7 @@ export class TemporalRenderCoordinator {
       mediaSecondsToTickExact(request.requirements.maxHistorySeconds),
       Math.max(
         0,
-        presentationTick - Math.max(0, Math.round(request.earliestTick ?? 0)),
+        presentationTick - Math.round(request.earliestTick ?? 0),
       ),
     );
     const replayStep = Math.max(
@@ -223,7 +223,7 @@ export class TemporalRenderCoordinator {
     this.invalidated = false;
     const earliestTick = Math.min(
       presentationTick,
-      Math.max(0, Math.round(request.earliestTick ?? 0)),
+      Math.round(request.earliestTick ?? 0),
     );
     const historyStart = Math.max(
       earliestTick,

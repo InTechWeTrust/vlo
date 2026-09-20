@@ -27,21 +27,21 @@ const config = [
   },
 ];
 
-function lint(expression: string) {
+function lint(expression: string, lenient = false) {
   return linter.verify(
     `
       type PresentationTick = number & {
-        readonly __timelineTimeDomain: "presentation";
+        readonly __timelineTimeDomain?: "presentation";
       };
       type StoredTrackTick = number & {
-        readonly __timelineTimeDomain: "stored-track";
+        readonly __timelineTimeDomain?: "stored-track";
       };
       declare const presentation: PresentationTick;
       declare const stored: StoredTrackTick;
       declare const otherPresentation: PresentationTick;
       ${expression};
     `,
-    config,
+    [{ ...config[0], rules: { "time-domains/incompatible": ["error", { lenient }] } }],
     { filename: "timeline-time-domain-lint-fixture.ts" },
   );
 }
@@ -74,5 +74,20 @@ describe("no-incompatible-timeline-time-arithmetic", () => {
         message: expect.stringContaining("presentation and untyped-number"),
       }),
     ]);
+  });
+});
+
+
+describe("lenient domain enforcement", () => {
+  it("keeps domains through aliases and stored extent arithmetic", () => {
+    for (const expression of [
+      "const clipStart = stored; Math.max(clipStart, presentation)",
+      "const clipEnd = stored + 100; Math.min(presentation, clipEnd)",
+      "declare function clamp(value: number, min: number, max: number): number; clamp(presentation, stored, stored + 100)",
+    ]) expect(lint(expression, true)).toHaveLength(1);
+  });
+  it("permits duration literals without permitting another clock", () => {
+    expect(lint("stored + 100", true)).toEqual([]);
+    expect(lint("presentation - stored", true)).toHaveLength(1);
   });
 });

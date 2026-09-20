@@ -1,3 +1,4 @@
+import { presentationTick, projectTimelineSelection } from "../time";
 import type { Asset, ExtractedAudioClipMetadata } from "../../../types/Asset";
 import type {
   ClipTransform,
@@ -48,14 +49,14 @@ export function createTimelineSelectionForClipAudioExtraction(
   track: TimelineTrack,
   fps: number,
 ): TimelineSelection {
-  return {
-    start: clip.start,
+  return projectTimelineSelection({
+    start: presentationTick(clip.start),
     end: clip.start + clip.timelineDuration,
     clips: [structuredClone(clip)],
     tracks: [structuredClone(track)],
     includedTrackIds: [track.id],
     fps: Math.max(1, Math.round(fps)),
-  };
+  }, { clips: [clip], tracks: [track], fps: Math.max(1, Math.round(fps)) });
 }
 
 function cloneSourceAudioAssetFile(file: File): File {

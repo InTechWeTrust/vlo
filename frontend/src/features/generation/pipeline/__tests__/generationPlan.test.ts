@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const frontendPreprocessMock = vi.hoisted(() => vi.fn());
@@ -470,11 +471,11 @@ describe("generationPlan cache media extraction", () => {
       },
       selection: {
         type: "video_selection",
-        selection: {
+        selection: makeTimelineSelection({
           start: 0,
           end: 10,
-          clips: ["clip-1"],
-        },
+          clips: [],
+        }),
         preparedVideoFile: new File(["prepared"], "prepared.mp4", {
           type: "video/mp4",
         }),
@@ -489,8 +490,8 @@ describe("generationPlan cache media extraction", () => {
         maskType: "video",
         purpose: "generation",
         renderFps: 24,
-        sourceSelection: { start: 0, end: 10, clips: [] },
-        maskSelection: { start: 0, end: 10, clips: [] },
+        sourceSelection: makeTimelineSelection({ start: 0, end: 10, clips: [] }),
+        maskSelection: makeTimelineSelection({ start: 0, end: 10, clips: [] }),
         sourceVideoTreatment: "crop",
       },
     ] as never;
@@ -666,7 +667,7 @@ describe("generationPlan cache media extraction", () => {
       text: { type: "text", value: "hello" },
       video: {
         type: "video_selection",
-        selection: { start: 0, end: 1, clips: selectionClips },
+        selection: makeTimelineSelection({ start: 0, end: 1, clips: selectionClips }),
       },
     };
     const plan = createGenerationPlan({
@@ -704,9 +705,9 @@ describe("generationPlan cache media extraction", () => {
     expect(plan.workflow.workflow).toEqual({ keep: "value" });
     expect(
       (plan.preprocess.slotValues.video as {
-        selection: { clips: TimelineClip[] };
+        selection: { region: { clips: TimelineClip[] } };
       })
-        .selection.clips,
+        .selection.region.clips,
     ).toEqual([]);
     expect(plan.postprocess.config).toMatchObject({
       stitch_fps: 24,

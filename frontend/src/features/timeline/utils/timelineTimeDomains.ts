@@ -2,10 +2,11 @@ type TimelineTimeDomain =
   | "presentation"
   | "stored-track"
   | "clip-offset"
-  | "duration";
+  | "duration"
+  | "source";
 
 type TimelineTimeValue<Domain extends TimelineTimeDomain> = number & {
-  readonly __timelineTimeDomain: Domain;
+  readonly __timelineTimeDomain?: Domain;
 };
 
 export type PresentationTick = TimelineTimeValue<"presentation">;
@@ -34,4 +35,10 @@ export function timelineTimeValue(
   value: TimelineTimeValue<TimelineTimeDomain>,
 ): number {
   return value;
+}
+
+export type SourceTick = TimelineTimeValue<"source">;
+
+export function sourceTick(value: number): SourceTick {
+  return value as SourceTick;
 }

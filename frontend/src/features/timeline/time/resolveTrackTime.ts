@@ -9,7 +9,7 @@ import {
   computeAdjustmentPresentationApplications,
   computeAdjustmentTimeApplications,
   type AdjustmentTimeApplication,
-} from "./deriveAdjustmentGroups";
+} from "../../renderer/utils/deriveAdjustmentGroups";
 
 /**
  * @internal — engine for clipPresentation; not for direct consumption.

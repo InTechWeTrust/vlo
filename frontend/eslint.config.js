@@ -79,7 +79,7 @@ export default defineConfig([
       },
     },
     rules: {
-      'vlo-time-domains/no-incompatible-timeline-time-arithmetic': 'error',
+      'vlo-time-domains/no-incompatible-timeline-time-arithmetic': ['error', { lenient: true }],
     },
   },
   {

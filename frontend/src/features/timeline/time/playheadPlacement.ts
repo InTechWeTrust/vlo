@@ -2,11 +2,9 @@ import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 // Deep import (not the feature index) so the timeline API layer does not pull
 // the whole transformations barrel into an import cycle — the same shape
 // `clipMath` and `snapDragOverlay` already use.
-import { presentationToClipSourceTime } from "../../transformations/utils/clipTimeDomains";
-import {
-  createTimelinePlacementMapper,
-  type TimelinePlacementMapper,
-} from "../utils/timelinePlacementMapper";
+import { presentationToClipSourceTime } from "./authoring";
+import { getTimelineTime as createTimelinePlacementMapper } from "./timelineTime";
+import type { TimelinePlacementMapper } from "./timelinePlacementMapper";
 import { presentationTick } from "../utils/timelineTimeDomains";
 
 /**

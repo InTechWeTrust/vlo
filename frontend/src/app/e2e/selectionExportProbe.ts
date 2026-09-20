@@ -1,3 +1,4 @@
+import { convertLegacyTimelineSelection, projectTimelineSelection } from "../../features/timeline/time";
 import { ALL_FORMATS, BlobSource, Input } from "mediabunny";
 import type { InputAudioTrack, InputVideoTrack } from "mediabunny";
 import {
@@ -41,6 +42,7 @@ let probeInFlight = false;
 export interface SelectionExportProbeRequest {
     startTick: number;
     endTick: number;
+    legacyReplay?: boolean;
 }
 
 export interface DecodedTrackSummary extends MediaTimestampRange {
@@ -144,7 +146,7 @@ export async function runSelectionExportProbe(
             brushMasksPrepared: true as const,
         };
         const { projectData } = renderInputs;
-        const selection = {
+        const captured = {
             start: request.startTick,
             end: request.endTick,
             clips: collectTimelineRegionClips({
@@ -158,6 +160,9 @@ export async function runSelectionExportProbe(
             transitions: projectData.transitions,
             fps: projectData.fps,
         };
+        const selection = request.legacyReplay
+            ? convertLegacyTimelineSelection(JSON.parse(JSON.stringify(captured)), projectData.fps)
+            : projectTimelineSelection(captured, projectData);
 
         // WebM matches the composite bake path (VP9 + Opus), which is the
         // configuration the capability gate proves and the canary decodes.

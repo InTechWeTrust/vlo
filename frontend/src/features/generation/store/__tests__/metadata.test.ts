@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { describe, expect, it } from "vitest";
 import {
   buildGeneratedCreationMetadata,
@@ -434,11 +435,11 @@ describe("generation metadata replay helpers", () => {
   });
 
   it("persists frame captures through timeline-selection metadata", () => {
-    const timelineSelection = {
+    const timelineSelection = makeTimelineSelection({
       start: 120,
       clips: [],
       fps: 24,
-    };
+    });
     const workflowInputs: WorkflowInput[] = [
       {
         id: "145:image",
@@ -501,17 +502,17 @@ describe("generation metadata replay helpers", () => {
       trackId: "track-1",
       start: 0,
     };
-    const frameSelection = {
+    const frameSelection = makeTimelineSelection({
       start: 10,
       clips: [sharedClip],
       fps: 24,
-    };
-    const audioSelection = {
+    });
+    const audioSelection = makeTimelineSelection({
       start: 0,
       end: 100,
       clips: [sharedClip],
       fps: 24,
-    };
+    });
     const workflowInputs: WorkflowInput[] = [
       {
         id: "45:image",
@@ -593,7 +594,7 @@ describe("generation metadata replay helpers", () => {
 
     expect(metadata.inputs[0].timelineSelection).not.toBe(frameSelection);
     expect(metadata.inputs[1].timelineSelection).not.toBe(audioSelection);
-    expect(metadata.inputs[0].timelineSelection?.clips[0]).not.toBe(sharedClip);
-    expect(metadata.inputs[1].timelineSelection?.clips[0]).not.toBe(sharedClip);
+    expect(metadata.inputs[0].timelineSelection?.region.clips[0]).not.toBe(sharedClip);
+    expect(metadata.inputs[1].timelineSelection?.region.clips[0]).not.toBe(sharedClip);
   });
 });

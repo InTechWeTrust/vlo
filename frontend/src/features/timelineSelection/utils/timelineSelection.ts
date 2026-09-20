@@ -1,3 +1,5 @@
+import { convertLegacyTimelineSelection } from "../../timeline/time";
+import type { LegacyTimelineSelection } from "../../../types/TimelineTypes";
 import type {
   TimelineClip,
   TimelineSelection,
@@ -256,8 +258,8 @@ function clipReferencesMask(clip: TimelineClip): boolean {
  * mask bypasses should prefer a rendered-output check instead.
  */
 export function selectionHasMaskClip(selection: TimelineSelection): boolean {
-  return Array.isArray(selection.clips)
-    ? selection.clips.some(
+  return Array.isArray(selection.region.clips)
+    ? selection.region.clips.some(
         (clip) => clip.type === "mask" || clipReferencesMask(clip),
       )
     : false;
@@ -272,11 +274,12 @@ export function selectionHasMaskClip(selection: TimelineSelection): boolean {
  */
 function getClipsInStoredRange(
   clips: TimelineClip[],
-  selection: TimelineSelection,
+  selection: LegacyTimelineSelection,
 ): TimelineClip[] {
   return clips.filter((clip) => {
-    const clipStart = clip.start;
-    const clipEnd = clip.start + clip.timelineDuration;
+    // Legacy repair intentionally compares persisted numbers, without live retiming.
+    const clipStart: number = clip.start;
+    const clipEnd: number = clip.start + clip.timelineDuration;
 
     if (selection.end === undefined) {
       return clipStart <= selection.start && selection.start < clipEnd;
@@ -334,7 +337,7 @@ export function getIncludedClipsForSelection(
 ): TimelineClip[] {
   const includedTrackIds = normalizeIncludedTrackIds(
     selection.includedTrackIds,
-    selection.tracks ?? [],
+    selection.region.tracks ?? [],
   );
   if (includedTrackIds.length === 0) {
     return availableClips;
@@ -445,13 +448,21 @@ function repairClipTransformations(clips: TimelineClip[]): TimelineClip[] {
 }
 
 export function normalizeTimelineSelection(
-  selection: TimelineSelection,
+  selection: TimelineSelection | LegacyTimelineSelection,
   availableClips: TimelineClip[] = [],
+  fallbackFps = 30,
 ): TimelineSelection {
-  const rawClips = Array.isArray(selection.clips) ? selection.clips : [];
+  if ("version" in selection && selection.version === 2) {
+    return {
+      ...selection,
+      region: { ...selection.region, clips: repairClipTransformations(selection.region.clips.filter(isTimelineClip)) },
+    };
+  }
+  const legacy = selection as LegacyTimelineSelection;
+  const rawClips = Array.isArray(legacy.clips) ? legacy.clips : [];
   const validClips = repairClipTransformations(rawClips.filter(isTimelineClip));
-  const availableTracks = Array.isArray(selection.tracks)
-    ? selection.tracks
+  const availableTracks = Array.isArray(legacy.tracks)
+    ? legacy.tracks
     : [];
   const normalizedIncludedTrackIds = normalizeIncludedTrackIds(
     selection.includedTrackIds,
@@ -467,13 +478,13 @@ export function normalizeTimelineSelection(
       ? recoverReferencedSubordinateClips(validClips, availableClips)
       : availableClips.length > 0
         ? getClipsInStoredRange(availableClips, {
-            ...selection,
+            ...legacy,
             clips: [],
           })
         : validClips;
 
-  const normalizedSelection: TimelineSelection = {
-    ...selection,
+  const normalizedSelection: LegacyTimelineSelection = {
+    ...legacy,
     clips: recoveredClips,
   };
 
@@ -489,7 +500,7 @@ export function normalizeTimelineSelection(
     delete normalizedSelection.includedTrackIds;
   }
 
-  return normalizedSelection;
+  return convertLegacyTimelineSelection(normalizedSelection, fallbackFps);
 }
 
 /**
@@ -498,7 +509,23 @@ export function normalizeTimelineSelection(
  * newer live clip state for the saved snapshot.
  */
 export function normalizeDetachedTimelineSelection(
-  selection: TimelineSelection,
+  selection: TimelineSelection | LegacyTimelineSelection,
+  fallbackFps = 30,
 ): TimelineSelection {
-  return normalizeTimelineSelection(selection);
+  return normalizeTimelineSelection(selection, [], fallbackFps);
+}
+
+/** Validate the persisted envelope before replaying either selection version. */
+export function parseTimelineSelection(value: unknown): TimelineSelection | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (record.version === 2) {
+    if (typeof record.anchor !== "number" || !Number.isFinite(record.anchor) ||
+        typeof record.durationTicks !== "number" || !Number.isFinite(record.durationTicks) || record.durationTicks < 0 ||
+        typeof record.region !== "object" || record.region === null ||
+        !Array.isArray((record.region as Record<string, unknown>).clips)) return undefined;
+  } else if (record.version !== undefined || typeof record.start !== "number" || !Number.isFinite(record.start) ||
+      (record.end !== undefined && (typeof record.end !== "number" || !Number.isFinite(record.end))) ||
+      !Array.isArray(record.clips)) return undefined;
+  return normalizeDetachedTimelineSelection(value as TimelineSelection | LegacyTimelineSelection);
 }

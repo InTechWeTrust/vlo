@@ -144,7 +144,7 @@ describe("useExportJobController runSelectionExport", () => {
       vi.mocked(renderSelectionToVideoFile).mock.invocationCallOrder[0],
     );
     const [selection, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
-    expect(selection).toMatchObject({ start: 0, end: 1000, message: "hi", fps: 30 });
+    expect(selection).toMatchObject({anchor: 0,durationTicks: (1000) - (0),message: "hi",fps: 30});
     expect(opts!.renderInputs!.exportConfig).toMatchObject({
       logicalWidth: 1920,
       logicalHeight: 1080,
@@ -715,14 +715,7 @@ describe("useExportJobController runProjectExport", () => {
     expect(resolveRenderOutputDimensions).toHaveBeenCalledWith("16:9", 720);
     expect(prepareBrushMasksForTimelineRender).toHaveBeenCalledOnce();
     const [selection, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
-    expect(selection).toMatchObject({
-      start: 0,
-      end: 5000,
-      clips: [],
-      tracks: [{ id: "t1" }],
-      transitions: [],
-      fps: 24,
-    });
+    expect(selection).toMatchObject({anchor: 0,durationTicks: (5000) - (0),fps: 24,region: expect.objectContaining({clips: [],tracks: [{ id: "t1" }],})});
     expect(opts!.filenamePrefix).toBe("export");
     expect(opts!.format).toBe("webm");
     expect(opts!.keyFrameInterval).toBe(2);

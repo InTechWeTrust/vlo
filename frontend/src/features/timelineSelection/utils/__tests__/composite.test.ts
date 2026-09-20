@@ -1,3 +1,5 @@
+import { projectTimelineSelection } from "../../../timeline/time";
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { describe, expect, it } from "vitest";
 import {
   compositeContentToSelection,
@@ -25,9 +27,9 @@ import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../../types/TimelineTypes";
  */
 function captureAgainstOwnClips(
   selection: TimelineSelection,
-  fps: number,
+  _fps: number,
 ): CompositeContent {
-  return selectionToCompositeContent(selection, fps, selection.clips);
+  return selectionToCompositeContent(selection);
 }
 
 function videoClip(
@@ -54,14 +56,14 @@ function videoClip(
 
 describe("composite adapters", () => {
   it("shifts clips to local zero and derives duration from the window", () => {
-    const selection: TimelineSelection = {
+    const selection: TimelineSelection = makeTimelineSelection({
       start: 500,
       end: 1500,
       clips: [videoClip("a", 500, 1000), videoClip("b", 800, 400)],
       fps: 24,
       frameStep: 4,
       frameOffset: 5,
-    };
+    });
 
     const content = captureAgainstOwnClips(selection, GRID_FPS);
 
@@ -73,7 +75,7 @@ describe("composite adapters", () => {
   });
 
   it("deep-clones captured clips and tracks so content edits are isolated", () => {
-    const selection: TimelineSelection = {
+    const selection: TimelineSelection = makeTimelineSelection({
       start: 500,
       end: 1500,
       clips: [videoClip("a", 500, 1000)],
@@ -87,12 +89,12 @@ describe("composite adapters", () => {
           isLocked: false,
         },
       ],
-    };
+    });
 
     const content = captureAgainstOwnClips(selection, GRID_FPS);
 
-    expect(content.clips[0]).not.toBe(selection.clips[0]);
-    expect(content.tracks?.[0]).not.toBe(selection.tracks?.[0]);
+    expect(content.clips[0]).not.toBe(selection.region.clips[0]);
+    expect(content.tracks?.[0]).not.toBe(selection.region.tracks?.[0]);
     content.clips[0].transformations.push({
       id: "transform-1",
       type: "blur",
@@ -100,15 +102,15 @@ describe("composite adapters", () => {
       parameters: {},
     });
 
-    expect(selection.clips[0].transformations).toHaveLength(0);
+    expect(selection.region.clips[0].transformations).toHaveLength(0);
   });
 
   it("crops a clip that extends across both selection boundaries", () => {
-    const selection: TimelineSelection = {
+    const selection: TimelineSelection = makeTimelineSelection({
       start: 1000,
       end: 2000,
       clips: [videoClip("a", 600, 2000)],
-    };
+    });
 
     const content = captureAgainstOwnClips(selection, GRID_FPS);
     expect(content.clips[0]).toEqual(
@@ -167,14 +169,8 @@ describe("composite adapters", () => {
     };
     const source = videoClip("source", 200, 100);
     const content = selectionToCompositeContent(
-      {
-        start: 150,
-        end: 200,
-        clips: [source],
-        tracks,
-      },
-      GRID_FPS,
-      [adjustment, source],
+      projectTimelineSelection({ start: 150, end: 200, clips: [source], tracks },
+        { tracks, clips: [adjustment, source], fps: GRID_FPS }),
     );
 
     expect(content.clips).toEqual([
@@ -189,17 +185,17 @@ describe("composite adapters", () => {
     ]);
   });
 
-  it("infers duration from clip extent when end is absent", () => {
-    const selection: TimelineSelection = {
+  it("retains a point selection as one frame", () => {
+    const selection: TimelineSelection = makeTimelineSelection({
       start: 100,
       clips: [videoClip("a", 100, 700)],
-    };
+    });
     expect(captureAgainstOwnClips(selection, GRID_FPS).durationTicks).toBe(
-      700,
+      1,
     );
   });
 
-  it("infers presentation-aware duration when a slow adjustment is in the window", () => {
+  it("retains point duration under a slow adjustment", () => {
     // 0.5x adjustment over source window [0, 100) stretches a 150-tick clip's
     // tail out to presentation 250; raw stored ends would report only 200.
     const adjustment: AdjustmentTimelineClip = {
@@ -224,7 +220,7 @@ describe("composite adapters", () => {
       ],
       depth: 1,
     };
-    const selection: TimelineSelection = {
+    const selection: TimelineSelection = makeTimelineSelection({
       start: 0,
       clips: [adjustment, videoClip("a", 0, 150)],
       tracks: [
@@ -245,30 +241,30 @@ describe("composite adapters", () => {
           isLocked: false,
         },
       ],
-    };
+    });
 
     expect(captureAgainstOwnClips(selection, GRID_FPS).durationTicks).toBe(
-      250,
+      1,
     );
   });
 
   it("round-trips content back to a zero-anchored selection", () => {
-    const selection: TimelineSelection = {
+    const selection: TimelineSelection = makeTimelineSelection({
       start: 500,
       end: 1500,
       clips: [videoClip("a", 500, 1000)],
       fps: 30,
       frameStep: 17,
       frameOffset: 5,
-    };
+    });
 
     const replayed = compositeContentToSelection(
       captureAgainstOwnClips(selection, GRID_FPS),
     );
 
-    expect(replayed.start).toBe(0);
-    expect(replayed.end).toBe(1000);
-    expect(replayed.clips[0].start).toBe(0);
+    expect(replayed.anchor).toBe(0);
+    expect((replayed.anchor + replayed.durationTicks)).toBe(1000);
+    expect(replayed.region.clips[0].start).toBe(0);
     expect(replayed.fps).toBe(30);
     expect(replayed.frameStep).toBe(17);
     expect(replayed.frameOffset).toBe(5);
@@ -276,24 +272,24 @@ describe("composite adapters", () => {
 
   it("hashes the frame-count grid, so an offset change forces a re-bake", () => {
     const base = captureAgainstOwnClips(
-      {
+      makeTimelineSelection({
         start: 0,
         end: 1000,
         clips: [videoClip("a", 0, 1000)],
         fps: 24,
         frameStep: 17,
-      },
+      }),
       GRID_FPS,
     );
     const offset = captureAgainstOwnClips(
-      {
+      makeTimelineSelection({
         start: 0,
         end: 1000,
         clips: [videoClip("a", 0, 1000)],
         fps: 24,
         frameStep: 17,
         frameOffset: 5,
-      },
+      }),
       GRID_FPS,
     );
 
@@ -302,29 +298,29 @@ describe("composite adapters", () => {
 
   it("hashes stably and changes when bake-affecting content changes", () => {
     const content = captureAgainstOwnClips(
-      {
+      makeTimelineSelection({
         start: 0,
         end: 1000,
         clips: [videoClip("a", 0, 1000)],
-      },
+      }),
       GRID_FPS,
     );
     const same = captureAgainstOwnClips(
-      {
+      makeTimelineSelection({
         start: 0,
         end: 1000,
         clips: [videoClip("a", 0, 1000)],
-      },
+      }),
       GRID_FPS,
     );
     expect(hashCompositeContent(content)).toBe(hashCompositeContent(same));
 
     const edited = captureAgainstOwnClips(
-      {
+      makeTimelineSelection({
         start: 0,
         end: 1000,
         clips: [videoClip("a", 0, 800)],
-      },
+      }),
       GRID_FPS,
     );
     expect(hashCompositeContent(edited)).not.toBe(
@@ -399,7 +395,7 @@ describe("composite adapters", () => {
   it("re-namespaces content track ids so they never collide with the parent timeline", () => {
     const parentTrackId = "track_parent";
     const content = captureAgainstOwnClips(
-      {
+      makeTimelineSelection({
         start: 0,
         end: 1000,
         clips: [
@@ -448,7 +444,7 @@ describe("composite adapters", () => {
           },
         ],
         includedTrackIds: ["track-1", parentTrackId],
-      },
+      }),
       GRID_FPS,
     );
 
@@ -482,9 +478,10 @@ describe("composite adapters", () => {
 
   it("returns content unchanged when it carries no tracks", () => {
     const content = captureAgainstOwnClips(
-      { start: 0, end: 1000, clips: [videoClip("a", 0, 1000)] },
+      makeTimelineSelection({ start: 0, end: 1000, clips: [videoClip("a", 0, 1000)] }),
       GRID_FPS,
     );
+    delete content.tracks;
     expect(renamespaceCompositeContentTracks(content)).toBe(content);
   });
 

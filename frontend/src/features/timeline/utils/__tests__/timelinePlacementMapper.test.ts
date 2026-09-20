@@ -15,7 +15,7 @@ import {
   createTimelinePlacementMapper,
   timelinePresentationRange,
   type TimelinePresentationRange,
-} from "../timelinePlacementMapper";
+} from "../../time";
 import {
   presentationTick,
   storedTrackTick,

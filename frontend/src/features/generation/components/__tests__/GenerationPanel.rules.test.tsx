@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import {
   act,
   fireEvent,
@@ -1198,11 +1199,11 @@ describe("GenerationPanel workflow rule hints", () => {
             createdAt: Date.now(),
             creationMetadata: {
               source: "extracted",
-              timelineSelection: {
+              timelineSelection: makeTimelineSelection({
                 start: 0,
                 end: 120,
                 clips: [],
-              },
+              }),
             },
           },
         ],

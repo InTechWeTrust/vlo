@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
@@ -49,11 +50,11 @@ const mockAsset: Asset = {
   duration: 12,
 };
 
-const mockTimelineSelection = {
+const mockTimelineSelection = makeTimelineSelection({
   start: 240,
   end: 480,
   clips: [],
-};
+});
 
 const extractedAsset: Asset = {
   ...mockAsset,
@@ -232,7 +233,7 @@ describe("AssetCard actions", () => {
 
     expect(mocks.mockInsertAssetAtTime).toHaveBeenCalledWith(
       extractedAsset,
-      mockTimelineSelection.start,
+      mockTimelineSelection.anchor,
     );
   });
 

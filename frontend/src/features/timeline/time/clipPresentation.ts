@@ -7,7 +7,7 @@ import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../types/TimelineTypes";
 import {
   buildTrackTimeResolver,
   type TrackTimeResolver,
-} from "../../renderer/utils/resolveTrackTime";
+} from "./resolveTrackTime";
 import { snapTickToFrameGrid, ticksPerFrame } from "../../../core/time/frameGrid";
 
 export interface TimelineClipPresentation {

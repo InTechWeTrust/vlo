@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TICKS_PER_SECOND } from "../../../../core/time/constants";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
-import type { ClipPresentationContext } from "../../../transformations";
+import type { ClipPresentationContext } from "../../../timeline/time";
 import {
   createSamAudioPromptPayload,
   createSpanAnchorsForClip,

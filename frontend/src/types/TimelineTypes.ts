@@ -1,3 +1,4 @@
+import type { StoredTrackTick, TimelineTickDuration, PresentationTick } from "../features/timeline/time";
 import type { ClipComponentBase } from "./ClipComponents";
 import type { Component } from "./Components";
 import type { ExtensionPayload } from "@vlo/extension-sdk";
@@ -86,9 +87,9 @@ export interface TimelineRegionData {
  *   `getTimelineSelectionClips`; a bare range query drops that context and
  *   re-places retimed clips at their stored ticks.
  */
-export interface TimelineSelection extends TimelineRegionData {
-  start: number;
-  end?: number;
+export interface LegacyTimelineSelection extends TimelineRegionData {
+  start: PresentationTick;
+  end?: PresentationTick;
   /**
    * Short edge in pixels for renders/extractions from this selection, resolved
    * when it was created (the selection's own setting, else the workflow's
@@ -120,6 +121,16 @@ export interface TimelineSelection extends TimelineRegionData {
    * Optional workflow-provided guidance shown while the selection is being made.
    */
   message?: string;
+}
+
+/** A projected, self-contained region with its original placement anchor. */
+export interface TimelineSelection extends Omit<LegacyTimelineSelection, "start" | "end" | "clips" | "tracks" | "transitions"> {
+  version: 2;
+  anchor: PresentationTick;
+  durationTicks: number;
+  region: TimelineRegionData;
+  /** Point selections retain their single-frame intent when replayed. */
+  isPoint?: true;
 }
 
 /**
@@ -342,7 +353,7 @@ export interface ClipBaseCommon {
   transformedOffset: number; // The amount of "transformed time" trimmed from the start
 
   // --- TIMING (In Ticks) ---
-  timelineDuration: number; // Visible duration on timeline
+  timelineDuration: TimelineTickDuration; // Visible duration on timeline
   croppedSourceDuration: number; // Source-media span in project ticks, excluding speed effects
   offset: number; // "Trim start": how many ticks into the asset we start playing (Source Time)
 
@@ -356,7 +367,7 @@ export interface InsertableClipBaseCommon extends ClipBaseCommon {
 
 export interface TimelineClipBaseCommon extends ClipBaseCommon {
   trackId: string;
-  start: number; // Global timeline start position
+  start: StoredTrackTick; // Stored track start position
 }
 
 export interface NonMaskTimelineClipCommon extends TimelineClipBaseCommon {

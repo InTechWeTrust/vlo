@@ -1,11 +1,6 @@
 import { describe, it, expect } from "vitest";
-import {
-  buildClipGraphTimeAxis,
-  clipSourceTimeToVisual,
-  clipSourceTimeWindow,
-  clipVisualToSourceTime,
-  presentationToClipSourceTime,
-} from "../clipTimeDomains";
+import { buildClipGraphTimeAxis, clipSourceTimeToVisual, clipSourceTimeWindow, clipVisualToSourceTime } from "../clipTimeDomains";
+import { presentationToClipSourceTime } from "../../../timeline/time";
 import type {
   AdjustmentTimelineClip,
   ClipTransform,

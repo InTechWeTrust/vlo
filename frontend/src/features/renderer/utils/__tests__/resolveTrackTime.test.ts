@@ -5,7 +5,7 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../../types/TimelineTypes";
-import { buildTrackTimeResolver } from "../resolveTrackTime";
+import { buildTrackTimeResolver } from "../../../timeline/time/resolveTrackTime";
 
 function adjustmentTrack(id: string): TimelineTrack {
   return {

@@ -1,3 +1,4 @@
+import { projectTimelineSelection } from "../../timeline/time";
 import { useCallback, useEffect, useRef } from "react";
 import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { extractAudioTrackToWav } from "../../../core/media";
@@ -298,7 +299,7 @@ export function useExportJobController({
           { fps: selectionFpsOverride },
           projectData.fps,
         );
-        const selectionTimelineSelection = {
+        const selectionTimelineSelection = projectTimelineSelection({
           start: selectionStartTick,
           end: selectionEndTick,
           clips: collectTimelineRegionClips({
@@ -325,7 +326,7 @@ export function useExportJobController({
             ? { frameOffset: selectionFrameOffset }
             : {}),
           ...(audioOnly ? { audioOnly: true as const } : {}),
-        };
+        }, projectData);
 
         const file = await renderSelectionToVideoFile(
           selectionTimelineSelection,
@@ -446,14 +447,14 @@ export function useExportJobController({
 
         await prepareBrushMasksForTimelineRender();
         const projectData = buildProjectData();
-        const fullTimelineSelection = {
+        const fullTimelineSelection = projectTimelineSelection({
           start: 0,
           end: projectData.duration,
           clips: projectData.clips,
           tracks: projectData.tracks,
           transitions: projectData.transitions,
           fps: projectData.fps,
-        };
+        }, projectData);
 
         // Disk outputs finish without constructing or reading back a video Blob.
         await renderSelectionToOutput(fullTimelineSelection, {

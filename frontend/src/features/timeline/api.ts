@@ -63,19 +63,19 @@ import type {
   TimelineClipShape,
   TimelineMaskUpdate,
 } from "./model/timelineCommands";
-import { computeFurthestPresentationEnd } from "./utils/clipPresentation";
+import { computeFurthestPresentationEnd } from "./time/index";
 import {
   collectTimelineRegionClips,
   createTimelinePlacementMapper,
   timelinePresentationRange,
-} from "./utils/timelinePlacementMapper";
+} from "./time/index";
 import {
   resolveClipsAtPlayhead,
   resolveMarkerPlacementsAtPlayhead,
   resolveSplitPointsAtPlayhead,
   type MarkerPlacement,
   type SplitPoint,
-} from "./model/playheadPlacement";
+} from "./time/index";
 import { createClipFromAsset } from "./utils/clipFactory";
 import {
   insertAssetAtTime,

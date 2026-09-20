@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useProjectStore } from "../../../project";
@@ -7,13 +8,13 @@ import {
   type ProcessIframeTimelineSelectionDeps,
 } from "../processIframeTimelineSelection";
 
-const selection = {
+const selection = makeTimelineSelection({
   start: 96_000,
   end: 192_000,
   clips: [],
   tracks: [],
   fps: 24,
-};
+});
 
 function createDeps(options: { transparent: boolean }) {
   const source = new File(["source"], "source.mp4", { type: "video/mp4" });

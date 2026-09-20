@@ -1,11 +1,8 @@
 import type { TimelineClip } from "../../../types/TimelineTypes";
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import { useTimelineSelectionStore } from "../../timelineSelection/useTimelineSelectionStore";
-import {
-  clipPresentationFootprint,
-  presentationToClipSourceTime,
-} from "../../transformations";
-import type { ClipPresentationContext } from "../../transformations";
+import { clipPresentationFootprint, presentationToClipSourceTime } from "../../timeline/time";
+import type { ClipPresentationContext } from "../../timeline/time";
 import type { SamAudioPromptPayload } from "../services/samAudioApi";
 
 export interface SamAudioSpanSelection {

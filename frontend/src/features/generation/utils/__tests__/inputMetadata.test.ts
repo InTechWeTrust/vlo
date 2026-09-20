@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { describe, expect, it } from "vitest";
 
 import type { TimelineSelection } from "../../../../types/TimelineTypes";
@@ -7,7 +8,7 @@ import { buildWorkflowInputMetadataMap } from "../inputMetadata";
 function createSelection(
   overrides: Partial<TimelineSelection> = {},
 ): TimelineSelection {
-  return {
+  return { ...makeTimelineSelection({
     start: 0,
     end: 4 * TICKS_PER_SECOND,
     clips: [],
@@ -22,8 +23,7 @@ function createSelection(
     ],
     fps: 24,
     frameStep: 1,
-    ...overrides,
-  };
+  }), ...overrides };
 }
 
 describe("buildWorkflowInputMetadataMap", () => {
@@ -138,7 +138,7 @@ describe("buildWorkflowInputMetadataMap", () => {
           kind: "frame",
           file: new File(["frame"], "frame.png", { type: "image/png" }),
           previewUrl: "blob://frame",
-          timelineSelection: createSelection({ end: TICKS_PER_SECOND }),
+          timelineSelection: createSelection({ durationTicks: TICKS_PER_SECOND }),
         },
       },
       {

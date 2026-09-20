@@ -4,11 +4,11 @@ import type { Application, Container, FederatedPointerEvent, Sprite } from "pixi
 import {
   addTimelineClipTransform,
   getTimelineClipById,
-  getTimelinePresentationContext,
   selectTimelineClip,
   setTimelineClipTransforms,
   updateTimelineClipTransform,
   useSelectedTimelineClipId,
+  getTimelinePresentationContext,
 } from "../../../timeline/api";
 import { usePlayerStore } from "../../usePlayerStore";
 import { useCanvasSelectionStore } from "../../useCanvasSelectionStore";
@@ -19,13 +19,8 @@ import type {
   RotationTransform,
   ScaleTransform,
 } from "../../../transformations";
-import {
-  computeCommitMutation,
-  createAddTransform,
-  insertTransformRespectingDefaultOrder,
-  presentationToClipSourceTime,
-  resolveScalar,
-} from "../../../transformations";
+import { computeCommitMutation, createAddTransform, insertTransformRespectingDefaultOrder, resolveScalar } from "../../../transformations";
+import { clampedClipSourceTime, clampedClipVisualTime } from "../../../timeline/time";
 import { liveParamStore } from "../../../../core/liveParams/liveParamStore";
 import { playbackClock } from "../../../../core/playback/PlaybackClock";
 import { markPixiPreviewOnly } from "../../../../core/pixi/previewOnly";
@@ -193,33 +188,8 @@ export function useTransformInteractionController(
       current.historyCoalesceKey = null;
     };
 
-    const resolveLocalVisualTime = (clip: TimelineClip): number => {
-      const clampedGlobal = Math.max(
-        clip.start,
-        Math.min(playbackClock.time, clip.start + clip.timelineDuration),
-      );
-      return clampedGlobal - clip.start;
-    };
-
-    /**
-     * Source-media time (project ticks) of the keyframe at the current
-     * playhead, resolved through any adjustment-layer retiming so canvas drags
-     * read and write keyframes at the same source frame the renderer samples.
-     * Mirrors `useTransformationController.handleCommit`. Falls back to the
-     * clip's own speed stack when timeline/fps context is unavailable, which is
-     * correct whenever no adjustment retimes the clip.
-     */
-    const resolveSourceKeyframeTime = (clip: TimelineClip): number => {
-      const presentationTick = Math.max(
-        clip.start,
-        Math.min(playbackClock.time, clip.start + clip.timelineDuration),
-      );
-      return presentationToClipSourceTime(
-        getTimelinePresentationContext(),
-        clip,
-        presentationTick,
-      );
-    };
+    const resolveSourceKeyframeTime = (clip: TimelineClip): number =>
+      clampedClipSourceTime(getTimelinePresentationContext(), clip, playbackClock.time);
 
     const resolvePositionAtVisualTime = (
       clip: TimelineClip,
@@ -773,7 +743,7 @@ export function useTransformInteractionController(
       selectCanvasClip(activeClip.id);
 
       const transform = getPositionTransform(activeClip) ?? undefined;
-      const localVisualTime = resolveLocalVisualTime(activeClip);
+      const localVisualTime = clampedClipVisualTime(getTimelinePresentationContext(), activeClip, playbackClock.time);
       const {
         x: startX,
         y: startY,
@@ -898,11 +868,7 @@ export function useTransformInteractionController(
         };
       }
 
-      const clampedGlobal = Math.max(
-        activeClip.start,
-        Math.min(playbackClock.time, activeClip.start + activeClip.timelineDuration),
-      );
-      const localVisualTime = clampedGlobal - activeClip.start;
+      const localVisualTime = clampedClipVisualTime(getTimelinePresentationContext(), activeClip, playbackClock.time);
       const scaleInputTime = scaleTransform
         ? resolveSourceKeyframeTime(activeClip)
         : localVisualTime;
@@ -1029,17 +995,11 @@ export function useTransformInteractionController(
       const extensionPath =
         getPositionTransform(activeClip)?.parameters.extensionPath;
       if (extensionPath) {
-        const clampedGlobal = Math.max(
-          activeClip.start,
-          Math.min(
-            playbackClock.time,
-            activeClip.start + activeClip.timelineDuration,
-          ),
-        );
+        const localVisualTime = clampedClipVisualTime(getTimelinePresentationContext(), activeClip, playbackClock.time);
         overlay.visible = false;
         extensionPathOverlayRef.current?.update(
           extensionPath,
-          clampedGlobal - activeClip.start,
+          localVisualTime,
           activeClip.timelineDuration,
           viewport,
           {
@@ -1108,15 +1068,8 @@ export function useTransformInteractionController(
               }
             : persistedPath;
 
-        const clampedGlobal = Math.max(
-          activeClip.start,
-          Math.min(
-            playbackClock.time,
-            activeClip.start + activeClip.timelineDuration,
-          ),
-        );
-        const localVisualTime = clampedGlobal - activeClip.start;
-        controlPoints = pathToRender.controlPoints;
+        const localVisualTime = clampedClipVisualTime(getTimelinePresentationContext(), activeClip, playbackClock.time);
+          controlPoints = pathToRender.controlPoints;
         currentPoint =
           interactionMatchesClip &&
           currentInteraction.mode === "editPath" &&

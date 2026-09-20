@@ -63,7 +63,8 @@ interface ProbeResult {
 }
 
 test.describe('offline nested-retiming A/V alignment', () => {
-    test('exports the nested window with aligned video and audio', async ({
+    for (const legacyReplay of [false, true]) {
+    test(`exports the nested window with aligned video and audio (legacy replay: ${legacyReplay})`, async ({
         editorCurrent,
     }, testInfo) => {
         // A bake round trip decodes, renders, encodes and muxes real media.
@@ -79,19 +80,20 @@ test.describe('offline nested-retiming A/V alignment', () => {
         ).toBe('function');
 
         const outcome = await page.evaluate(
-            async ([startTick, endTick]) => {
+            async ({ startTick, endTick, legacyReplay }) => {
                 try {
                     const result =
                         await window.__vloE2E?.runSelectionExportProbe?.({
                             startTick,
                             endTick,
+                            legacyReplay,
                         });
                     return { ok: true as const, result };
                 } catch (error) {
                     return { ok: false as const, error: String(error) };
                 }
             },
-            [NESTED_WINDOW_START_TICK, NESTED_WINDOW_END_TICK],
+            { startTick: NESTED_WINDOW_START_TICK, endTick: NESTED_WINDOW_END_TICK, legacyReplay },
         );
 
         if (!outcome.ok) {
@@ -208,4 +210,5 @@ test.describe('offline nested-retiming A/V alignment', () => {
             'exported duration does not match the requested nested window',
         ).toBeLessThanOrEqual(ALIGNMENT_TOLERANCE_SECONDS);
     });
+    }
 });

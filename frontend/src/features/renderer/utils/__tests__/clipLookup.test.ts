@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
-import type { TimelineClipPresentationLookup } from "../../../timeline/utils/clipPresentation";
+import type { TimelineClipPresentationLookup } from "../../../timeline/time/clipPresentation";
 import { resolveLiveActiveClip } from "../clipLookup";
 
 const clip = (id: string, extra: Partial<TimelineClip> = {}): TimelineClip =>

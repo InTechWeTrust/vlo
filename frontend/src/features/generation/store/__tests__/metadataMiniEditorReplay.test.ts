@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { act, renderHook } from "@testing-library/react";
 import { useGenerationPanel } from "../../hooks/useGenerationPanel";
 import { useMiniEditorStore } from "../../../miniEditor";
@@ -52,7 +53,7 @@ const edit: GeneratedMiniEditorEdit = {
   },
   render: { width: 1280, height: 720, fps: 24 },
 };
-const baked: TimelineSelection = { start: 0, end: 384_000, clips: [], bakedSource: true };
+const baked: TimelineSelection = makeTimelineSelection({ start: 0, end: 384_000, clips: [], bakedSource: true });
 const mappings: DerivedMaskMapping[] = [
   { sourceNodeId: "53", sourceInputId: "53:file", maskNodeId: "1", maskParam: "file", maskType: "binary" },
   { sourceNodeId: "53", sourceInputId: "53:file", maskNodeId: "2", maskParam: "file", maskType: "soft" },
@@ -156,25 +157,23 @@ describe("mini editor metadata round trip", () => {
       start: 0, offset: 0, timelineDuration: 960_000, sourceDuration: 960_000,
       transformedDuration: 960_000, transformedOffset: 0, croppedSourceDuration: 960_000, transformations: [],
     };
-    const original: TimelineSelection = {
+    const original: TimelineSelection = makeTimelineSelection({
       start: 0, end: 960_000, clips: [clip], fps: 24, resolution: 720,
       tracks: [{ id: "inner-track", type: "visual", label: "Subtimeline", isVisible: true, isMuted: false, isLocked: false }],
-    };
+    });
     const recipe = { assetId: null, timelineSelection: original, spec: edit.spec };
     const edited = buildEditedTimelineSelection(original, edit.spec);
     await restore(serializeEdit(edited, recipe));
     await vi.waitFor(() => expect(current().isExtracting).toBe(false));
     expect(mocks.render).toHaveBeenCalledWith(current().timelineSelection);
     expect(current()).toMatchObject({
-      timelineSelection: { start: 96_000, end: 480_000, fps: 24, tracks: original.tracks,
-        clips: [expect.objectContaining({ assetId: source.id, components: [expect.objectContaining({
+      timelineSelection: {anchor: 96_000,durationTicks: (480_000) - (96_000),fps: 24,region: expect.objectContaining({tracks: original.region.tracks,clips: [expect.objectContaining({ assetId: source.id, components: [expect.objectContaining({
           type: "range_mask", parameters: { startSourceTicks: 192_000, endSourceTicks: 288_000, isActive: true, name: "Face" },
-        })] })],
-      }, bakedEdit: recipe, preparedVideoFile: video,
+        })] })]})}, bakedEdit: recipe, preparedVideoFile: video,
     });
-    expect(current().bakedEdit?.timelineSelection?.end).toBe(960_000);
-    expect(current().timelineSelection.end).toBe(480_000);
-    expect(original.clips[0]).not.toHaveProperty("components");
+    expect((current().bakedEdit!.timelineSelection!.anchor + current().bakedEdit!.timelineSelection!.durationTicks)).toBe(960_000);
+    expect((current().timelineSelection.anchor + current().timelineSelection.durationTicks)).toBe(480_000);
+    expect(original.region.clips[0]).not.toHaveProperty("components");
     let opened: MiniEditorOpenArgs | undefined;
     vi.spyOn(useMiniEditorStore.getState(), "open").mockImplementation(async (args) => { opened = args; });
     const hook = renderHook(() => useGenerationPanel());
@@ -185,7 +184,7 @@ describe("mini editor metadata round trip", () => {
     await act(async () => {
       await opened!.onSave!({ ...edit.spec, cropEndTicks: 576_000 }, resolved);
     });
-    expect(current().timelineSelection).toMatchObject({ start: 96_000, end: 576_000 });
+    expect(current().timelineSelection).toMatchObject({anchor: 96_000,durationTicks: (576_000) - (96_000)});
     expect(current().bakedEdit?.timelineSelection).toEqual(original);
     URL.revokeObjectURL(resolved.sourceUrl);
     hook.unmount();

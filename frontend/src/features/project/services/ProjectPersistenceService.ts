@@ -1,3 +1,4 @@
+import type { LegacyTimelineSelection, TimelineSelection } from "../../../types/TimelineTypes";
 import {
   applyPatches,
   enablePatches,
@@ -463,7 +464,7 @@ function toLightweightCreationInput(
   }
 
   const { timelineSelection, miniEditorEdit: _miniEditorEdit, ...rest } = input;
-  return { ...rest, timelineSelectionStart: timelineSelection.start };
+  return { ...rest, timelineSelectionStart: selectionAnchor(timelineSelection) };
 }
 
 function toLightweightCreationMetadata(
@@ -479,7 +480,7 @@ function toLightweightCreationMetadata(
         ? { compositeClipId: metadata.compositeClipId }
         : {}),
       ...(metadata.timelineSelection
-        ? { timelineSelectionStart: metadata.timelineSelection.start }
+        ? { timelineSelectionStart: selectionAnchor(metadata.timelineSelection) }
         : {}),
       ...(metadata.contentHash ? { contentHash: metadata.contentHash } : {}),
     };
@@ -490,7 +491,7 @@ function toLightweightCreationMetadata(
     return {
       ...rest,
       ...(timelineSelection
-        ? { timelineSelectionStart: timelineSelection.start }
+        ? { timelineSelectionStart: selectionAnchor(timelineSelection) }
         : {}),
     };
   }
@@ -1329,3 +1330,7 @@ export type {
   TimelineDocument,
 };
 export type { Patch };
+
+function selectionAnchor(selection: TimelineSelection | LegacyTimelineSelection): number {
+  return "anchor" in selection ? selection.anchor : selection.start;
+}

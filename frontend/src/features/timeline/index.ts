@@ -45,7 +45,7 @@ export {
   collectTimelineRegionClips,
   createTimelinePlacementMapper,
   timelinePresentationRange,
-} from "./utils/timelinePlacementMapper";
+} from "./time/index";
 export type {
   CollectTimelineRegionClipsOptions,
   CreateTimelinePlacementMapperOptions,
@@ -53,7 +53,7 @@ export type {
   ProjectedTimelineRegion,
   TimelinePlacementMapper,
   TimelinePresentationRange,
-} from "./utils/timelinePlacementMapper";
+} from "./time/index";
 export {
   clipOffsetTick,
   presentationTick,

@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   prepareAssetForPersistence,
@@ -375,11 +376,11 @@ describe("ProjectPersistenceService", () => {
         source: "composite",
         compositeClipId: "clip-composite-1",
         contentHash: "content-hash-1",
-        timelineSelection: {
+        timelineSelection: makeTimelineSelection({
           start: 0,
           end: 100,
           clips: [],
-        },
+        }),
       },
     });
 
@@ -398,18 +399,18 @@ describe("ProjectPersistenceService", () => {
     const sidecar = JSON.parse(
       files.get(".vloproject/asset-metadata/proxy-1.json") ?? "{}",
     );
-    expect(sidecar.creationMetadata.timelineSelection).toEqual({
+    expect(sidecar.creationMetadata.timelineSelection).toEqual(makeTimelineSelection({
       start: 0,
       end: 100,
       clips: [],
-    });
+    }));
   });
 
   it("compacts a legacy index entry on the next unrelated asset edit", async () => {
     // The shape a pre-strip project left on disk: the full selection inline in
     // the index AND in the sidecar. Renaming the asset is enough to shed the
     // index copy, which is how existing projects shrink without a migration.
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 42,
       end: 142,
       clips: [
@@ -429,7 +430,7 @@ describe("ProjectPersistenceService", () => {
           transformations: [],
         },
       ],
-    };
+    });
     const fullMetadata: CreationMetadata = {
       source: "generated",
       workflowName: "Workflow",
@@ -1073,7 +1074,7 @@ describe("ProjectPersistenceService", () => {
   });
 
   it("strips selection bodies out of the asset index", () => {
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 42,
       end: 142,
       clips: Array.from({ length: 8 }, (_, index) => ({
@@ -1091,7 +1092,7 @@ describe("ProjectPersistenceService", () => {
         start: index * 100,
         transformations: [],
       })),
-    };
+    });
 
     const generated = prepareAssetForPersistence({
       id: "generated-selection",
@@ -1184,7 +1185,7 @@ describe("ProjectPersistenceService", () => {
           {
             nodeId: "3",
             kind: "timelineSelection",
-            timelineSelection: {
+            timelineSelection: makeTimelineSelection({
               start: 42,
               end: 142,
               clips: [
@@ -1204,7 +1205,7 @@ describe("ProjectPersistenceService", () => {
                   transformations: [],
                 },
               ],
-            },
+            }),
           },
         ],
         replayPayloadInSidecar: true,

@@ -93,7 +93,7 @@ export async function renderSelectionToOutput(
 
   // Strict rendering starts pulling frames immediately; referenced grade LUTs
   // must be cached up front or early frames would render without them.
-  await preloadColorGradeLuts(selection.clips);
+  await preloadColorGradeLuts(selection.region.clips);
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {

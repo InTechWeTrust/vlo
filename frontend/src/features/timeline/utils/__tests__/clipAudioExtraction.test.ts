@@ -137,8 +137,8 @@ describe("clipAudioExtraction", () => {
     const clip = {
       id: "clip-1",
       trackId: "track-1",
-      start: 120,
-      timelineDuration: 240,
+      start: 3200,
+      timelineDuration: 6400,
       type: "video" as const,
       name: "Source Clip.mp4",
       assetId: "asset-1",
@@ -172,16 +172,9 @@ describe("clipAudioExtraction", () => {
       29.6,
     );
 
-    expect(selection).toEqual({
-      start: 120,
-      end: 360,
-      clips: [clip],
-      tracks: [track],
-      includedTrackIds: ["track-1"],
-      fps: 30,
-    });
-    expect(selection.clips[0]).not.toBe(clip);
-    expect(selection.tracks?.[0]).not.toBe(track);
+    expect(selection).toMatchObject({version: 2, anchor: 3200, durationTicks: 6400, includedTrackIds: ["track-1"], fps: 30, region: {clips: [{...clip, start: 0}], tracks: [track], fps: 30}});
+    expect(selection.region.clips[0]).not.toBe(clip);
+    expect(selection.region.tracks?.[0]).not.toBe(track);
   });
 
   it("duplicates audio source assets directly when extracting an audio clip", async () => {

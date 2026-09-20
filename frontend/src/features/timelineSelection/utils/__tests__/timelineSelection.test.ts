@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { describe, expect, it } from "vitest";
 import {
   getIncludedClipsForSelection,
@@ -189,9 +190,9 @@ describe("timelineSelection helpers", () => {
             },
           ],
         },
-        [timelineClip],
+        [timelineClip], 96000
       ),
-    ).toEqual({
+    ).toEqual(makeTimelineSelection({
       start: 0,
       end: 100,
       clips: [timelineClip],
@@ -207,7 +208,7 @@ describe("timelineSelection helpers", () => {
           isLocked: false,
         },
       ],
-    });
+    }));
   });
 
   it("does not recover live clips into a detached saved selection", () => {
@@ -236,12 +237,12 @@ describe("timelineSelection helpers", () => {
 
     expect(
       normalizeDetachedTimelineSelection({
-        start: 0,
+        start: 0, end: 100,
         clips: [savedClip],
-      }).clips,
+      }, 96000).region.clips,
     ).toEqual([savedClip]);
     expect(
-      normalizeDetachedTimelineSelection({ start: 0, clips: [] }).clips,
+      normalizeDetachedTimelineSelection({ start: 0, clips: [] }, 96000).region.clips,
     ).toEqual([]);
   });
 
@@ -288,9 +289,9 @@ describe("timelineSelection helpers", () => {
     const clips = normalizeDetachedTimelineSelection({
       start: 0,
       clips: [parent, mask] as never,
-    }).clips;
+    }, 96000).region.clips;
 
-    expect(clips[0]).toBe(parent);
+    expect(clips[0].transformations).toEqual(parent.transformations);
     expect(clips[1].transformations).toEqual([position, speed]);
   });
 
@@ -343,9 +344,9 @@ describe("timelineSelection helpers", () => {
             },
           ],
         },
-        [liveTimelineClip],
+        [liveTimelineClip], 96000
       ),
-    ).toEqual({
+    ).toEqual(makeTimelineSelection({
       start: 240,
       end: 360,
       clips: [savedClip],
@@ -359,7 +360,7 @@ describe("timelineSelection helpers", () => {
           isLocked: false,
         },
       ],
-    });
+    }));
   });
 
   it("filters tracks and clips using included-track ids while preserving linked masks", () => {
@@ -448,25 +449,25 @@ describe("timelineSelection helpers", () => {
       start: 0,
     };
 
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 100,
       clips: [visualClip, maskClip, audioClip],
       tracks: [visualTrack, audioTrack, maskTrack],
       includedTrackIds: ["track-visual"],
-    };
+    });
 
-    expect(getIncludedTracksForSelection(selection, selection.tracks)).toEqual([
+    expect(getIncludedTracksForSelection(selection, selection.region.tracks ?? [])).toEqual([
       visualTrack,
     ]);
-    expect(getIncludedClipsForSelection(selection, selection.clips)).toEqual([
+    expect(getIncludedClipsForSelection(selection, selection.region.clips)).toEqual([
       visualClip,
       maskClip,
     ]);
   });
 
   it("treats mask_ref-backed selections as masked even when the mask clip is absent", () => {
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 100,
       clips: [
@@ -495,7 +496,7 @@ describe("timelineSelection helpers", () => {
           ],
         },
       ],
-    };
+    });
 
     expect(selectionHasMaskClip(selection)).toBe(true);
   });
@@ -554,13 +555,13 @@ describe("timelineSelection helpers", () => {
           end: 100,
           clips: [visualClip],
         },
-        [visualClip, maskClip],
+        [visualClip, maskClip], 96000
       ),
-    ).toEqual({
+    ).toEqual(makeTimelineSelection({
       start: 0,
       end: 100,
       clips: [visualClip, maskClip],
-    });
+    }));
   });
 
   it("creates a selection from clip ids and carries linked mask clips", () => {
@@ -634,18 +635,18 @@ describe("timelineSelection helpers", () => {
       frameStep: 4,
     });
 
-    expect(selection).toEqual({
+    expect(selection).toEqual(makeTimelineSelection({
       start: TICKS_PER_SECOND,
       end: 2 * TICKS_PER_SECOND,
       clips: [visualClip, maskClip],
       tracks: [visualTrack, maskTrack],
       fps: 24,
       frameStep: 4,
-    });
-    expect(selection?.clips[0]).not.toBe(visualClip);
+    }, 30));
+    expect(selection?.region.clips[0]).not.toBe(visualClip);
   });
 
-  it("bounds a clip-id selection by presentation and carries its ripple context", () => {
+  it("bounds a clip-id selection by presentation and bakes in its ripple context", () => {
     const track = (id: string, type: "visual" | "adjustment") => ({
       id, type, label: id, isVisible: true, isMuted: false, isLocked: false,
     });
@@ -690,10 +691,7 @@ describe("timelineSelection helpers", () => {
     });
 
     // Where the clip is shown, not where it is stored.
-    expect(selection).toMatchObject({
-      start: TICKS_PER_SECOND,
-      end: 2 * TICKS_PER_SECOND,
-    });
-    expect(selection?.clips.map((clip) => clip.id)).toEqual([ripple.id, shifted.id]);
+    expect(selection).toMatchObject({ anchor: TICKS_PER_SECOND, durationTicks: TICKS_PER_SECOND });
+    expect(selection?.region.clips.map((clip) => clip.id)).toEqual([shifted.id]);
   });
 });

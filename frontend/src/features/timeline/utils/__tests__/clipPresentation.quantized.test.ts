@@ -6,7 +6,7 @@ import type {
 import {
   buildTimelineClipPresentationLookup,
   computeQuantizedPresentation,
-} from "../clipPresentation";
+} from "../../time/clipPresentation";
 import { ticksPerFrame } from "../../../../core/time/frameGrid";
 
 const FPS = 30;

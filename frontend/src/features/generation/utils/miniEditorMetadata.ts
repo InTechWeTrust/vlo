@@ -1,5 +1,5 @@
 import type { GeneratedMiniEditorEdit } from "../../../types/Asset";
-import type { TimelineSelection } from "../../../types/TimelineTypes";
+import { parseTimelineSelection } from "../../timelineSelection";
 import type { EditorRangeMask } from "../../miniEditor";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -40,11 +40,7 @@ export function parseMiniEditorEdit(
 
   const assetId = typeof value.assetId === "string" ? value.assetId : null;
   const selection = value.timelineSelection;
-  const timelineSelection =
-    isRecord(selection) && isFiniteNumber(selection.start) &&
-    isFiniteNumber(selection.end) && Array.isArray(selection.clips)
-      ? selection as unknown as TimelineSelection
-      : undefined;
+  const timelineSelection = parseTimelineSelection(selection);
   if (!assetId && !timelineSelection) return undefined;
 
   let render: GeneratedMiniEditorEdit["render"];

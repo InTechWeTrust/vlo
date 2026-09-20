@@ -601,7 +601,7 @@ function cloneSlotValues(
           ...value,
           selection: {
             ...value.selection,
-            clips: value.selection.clips.slice(),
+            region: { ...value.selection.region, clips: value.selection.region.clips.slice() },
           },
         };
         break;

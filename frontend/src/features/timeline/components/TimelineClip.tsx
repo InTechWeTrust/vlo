@@ -41,7 +41,7 @@ import { useSamAudioExtractDialogStore } from "../../samAudio";
 import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
-import type { TimelineClipPresentation } from "../utils/clipPresentation";
+import type { TimelineClipPresentation } from "../time/index";
 import { extensionEntityProviderRegistry } from "../../extensions/entities/publicApi";
 import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
 import { useCompositeLibraryStore } from "../../composite/useCompositeLibraryStore";

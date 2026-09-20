@@ -26,11 +26,8 @@ import {
   useSelectedTimelineClipId,
 } from "../../../timeline/api";
 import { usePlayerStore } from "../../usePlayerStore";
-import {
-  calculateClipTime,
-  commitLayoutControlToTransforms,
-  presentationToClipSourceTime,
-} from "../../../transformations";
+import { commitLayoutControlToTransforms } from "../../../transformations";
+import { clampedClipVisualTime, presentationToClipSourceTime } from "../../../timeline/time";
 import { liveParamStore } from "../../../../core/liveParams/liveParamStore";
 import { livePreviewParamStore } from "../../../../core/liveParams/livePreviewParamStore";
 import { requestLiveSceneTransformSync } from "../../services/liveSceneTransformSync";
@@ -480,7 +477,7 @@ export function useMaskInteractionController(
 
   const resolveMaskLayoutAtPlayhead = useCallback(
     (maskClip: MaskTimelineClip): MaskLayoutState => {
-      const rawTimeTicks = playbackClock.time - maskClip.start;
+      const rawTimeTicks = clampedClipVisualTime(getTimelinePresentationContext(), maskClip, playbackClock.time);
       return resolveMaskLayoutStateAtTime(maskClip, rawTimeTicks);
     },
     [],
@@ -1525,7 +1522,7 @@ export function useMaskInteractionController(
                   Math.max(
                     0,
                     Math.min(
-                      playbackClock.time - target.maskClip.start,
+                      clampedClipVisualTime(getTimelinePresentationContext(), target.maskClip, playbackClock.time),
                       target.maskClip.timelineDuration,
                     ),
                   ),
@@ -2089,7 +2086,7 @@ export function useMaskInteractionController(
         const localVisualTime = Math.max(
           0,
           Math.min(
-            playbackClock.time - maskClip.start,
+            clampedClipVisualTime(getTimelinePresentationContext(), maskClip, playbackClock.time),
             maskClip.timelineDuration,
           ),
         );
@@ -2209,10 +2206,8 @@ export function useMaskInteractionController(
       // frame, so its editing affordances (shape preview + gizmo) must vanish
       // too. Mirror the renderer's gate exactly: the active range is stored in
       // the parent clip's source time.
-      const parentSourceTimeTicks = calculateClipTime(
-        activeClip,
-        playbackClock.time - activeClip.start,
-        true,
+      const parentSourceTimeTicks = presentationToClipSourceTime(
+        getTimelinePresentationContext(), activeClip, playbackClock.time,
       );
       if (
         !isMaskActiveAtSourceTime(

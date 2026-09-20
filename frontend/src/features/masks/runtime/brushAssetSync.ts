@@ -262,8 +262,15 @@ export async function prepareBrushMasksForTimelineRender(
   );
   return {
     ...selection,
-    clips: selection.clips.map(
-      (clip) => currentClipsById.get(clip.id) ?? clip,
-    ),
+    region: {
+      ...selection.region,
+      clips: selection.region.clips.map((clip) => {
+        const current = currentClipsById.get(clip.id);
+        // Synchronize generated brush assets only; live timing belongs to a different snapshot.
+        return clip.type === "mask" && current?.type === "mask"
+          ? { ...clip, brushMaskAssetId: current.brushMaskAssetId, brushPaintedBounds: current.brushPaintedBounds }
+          : clip;
+      }),
+    },
   };
 }

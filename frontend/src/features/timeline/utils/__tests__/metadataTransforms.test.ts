@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import { useProjectStore } from "../../../project/useProjectStore";
@@ -266,11 +267,11 @@ describe("metadataTransforms", () => {
         duration: 60,
         creationMetadata: {
           source: "extracted",
-          timelineSelection: {
+          timelineSelection: makeTimelineSelection({
             start: 240,
             end: 360,
             clips: [],
-          },
+          }),
           extractedAudioClip: {
             sourceAssetId: "source-video",
             sourceClipType: "video",

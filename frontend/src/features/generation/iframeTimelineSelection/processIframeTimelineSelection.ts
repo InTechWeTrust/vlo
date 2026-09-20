@@ -150,7 +150,7 @@ export async function processIframeTimelineSelection(
   }
 
   const thumbnail = await deps.captureThumbnail(
-    timelineSelection.start,
+    timelineSelection.anchor,
     "iframe-timeline-selection",
     timelineSelection,
   );

@@ -6,7 +6,7 @@ import type {
 import {
   buildTimelineClipPresentationIndex,
   type TimelineClipPresentation,
-} from "../utils/clipPresentation";
+} from "../time/index";
 
 export interface TransitionWindow {
   start: number;

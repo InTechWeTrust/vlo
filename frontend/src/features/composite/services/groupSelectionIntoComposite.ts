@@ -1,3 +1,4 @@
+import { projectTimelineSelection } from "../../timeline/time";
 import type {
   TimelineSelection,
   VideoTimelineClip,
@@ -30,9 +31,9 @@ export interface GroupSelectionOptions {
  * back to the first selected clip's track, then the first project track.
  */
 function pickTargetTrackId(selection: TimelineSelection): string | null {
-  const tracks = selection.tracks ?? getTimelineTracks();
+  const tracks = selection.region.tracks ?? getTimelineTracks();
   const occupiedTrackIds = new Set(
-    selection.clips
+    selection.region.clips
       .filter((clip) => clip.type !== "mask")
       .map((clip) => clip.trackId),
   );
@@ -41,7 +42,7 @@ function pickTargetTrackId(selection: TimelineSelection): string | null {
     return ordered.id;
   }
   return (
-    selection.clips.find((clip) => clip.type !== "mask")?.trackId ??
+    selection.region.clips.find((clip) => clip.type !== "mask")?.trackId ??
     tracks[0]?.id ??
     null
   );
@@ -62,8 +63,8 @@ export async function groupSelectionIntoComposite(
   await prepareBrushMasksForTimelineRender();
   const presentationContextClips = getTimelineClips();
   const selectedClips = getTimelineClipsInPresentationRange(
-    selection.start,
-    selection.end,
+    selection.anchor,
+    (selection.anchor + selection.durationTicks),
   );
   const selectedClipIds = new Set(selectedClips.map((clip) => clip.id));
   const transitions = getTimelineTransitions().filter(
@@ -71,14 +72,13 @@ export async function groupSelectionIntoComposite(
       selectedClipIds.has(transition.outgoingClipId) &&
       selectedClipIds.has(transition.incomingClipId),
   );
-  const capturedSelection: TimelineSelection = {
+  const capturedSelection = projectTimelineSelection({
     ...selection,
+    start: selection.anchor,
+    end: selection.anchor + selection.durationTicks,
     clips: selectedClips,
-    ...(transitions.length > 0 ? { transitions } : {}),
-  };
-  if (transitions.length === 0) {
-    delete capturedSelection.transitions;
-  }
+    transitions,
+  }, { tracks: getTimelineTracks(), clips: presentationContextClips, fps: useProjectStore.getState().config.fps });
   const trackId = pickTargetTrackId(capturedSelection);
   if (!trackId) {
     return null;
@@ -90,11 +90,7 @@ export async function groupSelectionIntoComposite(
   // colliding with the live timeline and cause cross-talk in any trackId-keyed
   // lookup.
   const content = renamespaceCompositeContentTracks(
-    selectionToCompositeContent(
-      capturedSelection,
-      useProjectStore.getState().config.fps,
-      presentationContextClips,
-    ),
+    selectionToCompositeContent(capturedSelection),
   );
   const compositeAsset = await useCompositeLibraryStore
     .getState()
@@ -107,16 +103,14 @@ export async function groupSelectionIntoComposite(
 
   const compositeClip = createCompositeTimelineClipFromAsset(compositeAsset, {
     trackId,
-    start: selection.start,
+    start: selection.anchor,
   });
 
-  const sourceClipIds = capturedSelection.clips.map((clip) => clip.id);
+  const sourceClipIds = capturedSelection.region.clips.map((clip) => clip.id);
   const didCommit = groupTimelineClipsIntoComposite(
     sourceClipIds,
     compositeClip,
-    selection.end === undefined
-      ? undefined
-      : { start: selection.start, end: selection.end },
+    { start: selection.anchor, end: selection.anchor + selection.durationTicks },
   );
 
   if (!didCommit) {

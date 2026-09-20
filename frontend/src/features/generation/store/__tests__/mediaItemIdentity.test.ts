@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useGenerationStore } from "../../useGenerationStore";
 import { resetZustandStore } from "../../../../testUtils/zustand";
@@ -79,7 +80,7 @@ function idAt(inputId: string): string | undefined {
 }
 
 function selection(start: number, end: number): TimelineSelection {
-  return { start, end, clips: [] } as unknown as TimelineSelection;
+  return makeTimelineSelection({ start, end, clips: [] }) as unknown as TimelineSelection;
 }
 
 function thumbnail(): File {

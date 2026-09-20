@@ -1,5 +1,5 @@
 import type { JsonValue } from "@vlo/extension-sdk";
-import type { TimelineSelection } from "../../../types/TimelineTypes";
+import { parseTimelineSelection } from "../../timelineSelection";
 import type {
   GeneratedCreationInput,
   GeneratedCreationReplayState,
@@ -159,12 +159,14 @@ function parseInput(value: unknown): GeneratedCreationInput | null {
 
   if (value.kind === "timelineSelection" && isRecord(value.timelineSelection)) {
     const miniEditorEdit = parseMiniEditorEdit(value.miniEditorEdit);
+    const timelineSelection = parseTimelineSelection(value.timelineSelection);
+    if (!timelineSelection) return null;
     return {
       nodeId: value.nodeId,
       ...(inputId ? { inputId } : {}),
       ...includeEmbeddedAudio,
       kind: "timelineSelection",
-      timelineSelection: value.timelineSelection as unknown as TimelineSelection,
+      timelineSelection,
       ...(miniEditorEdit ? { miniEditorEdit } : {}),
     };
   }

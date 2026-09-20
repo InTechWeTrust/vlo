@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AssetFamily,
@@ -493,12 +494,12 @@ describe("generation pipeline", () => {
       {
         video_input: {
           type: "video_selection",
-          selection: {
+          selection: makeTimelineSelection({
             start: 0,
             end: 24,
             clips: [],
             fps: 24,
-          },
+          }),
         },
       },
       "client-id",
@@ -513,11 +514,7 @@ describe("generation pipeline", () => {
     );
 
     expect(renderSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        start: 0,
-        end: 24,
-        fps: 24,
-      }),
+      expect.objectContaining({anchor: 0,durationTicks: (24) - (0),fps: 24}),
       [
         {
           sourceNodeId: "video_input",
@@ -573,7 +570,7 @@ describe("generation pipeline", () => {
       {
         video_input: {
           type: "video_selection",
-          selection: {
+          selection: makeTimelineSelection({
             start: 0,
             end: 24,
             clips: [],
@@ -582,7 +579,7 @@ describe("generation pipeline", () => {
             // resolution: without one the selection follows the project's,
             // which may have changed since the file was prepared.
             resolution: 1080,
-          },
+          }),
           preparedVideoFile,
           preparedMaskFile,
           preparedDerivedMaskSignature:
@@ -650,7 +647,7 @@ describe("generation pipeline", () => {
       {
         video_input: {
           type: "video_selection",
-          selection: {
+          selection: makeTimelineSelection({
             start: 0,
             end: 24,
             clips: [],
@@ -674,7 +671,7 @@ describe("generation pipeline", () => {
             ],
             includedTrackIds: ["moving-object"],
             fps: 24,
-          },
+          }),
           preparedVideoFile: staleFilteredVideo,
           preparedMaskFile: staleMask,
           preparedDerivedMaskSignature: null,
@@ -738,12 +735,12 @@ describe("generation pipeline", () => {
       {
         video_input: {
           type: "video_selection",
-          selection: {
+          selection: makeTimelineSelection({
             start: 0,
             end: 24,
             clips: [],
             fps: 24,
-          },
+          }),
         },
       },
       "client-id",
@@ -804,7 +801,7 @@ describe("generation pipeline", () => {
       {
         video_input: {
           type: "video_selection",
-          selection: {
+          selection: makeTimelineSelection({
             start: 0,
             end: 24,
             fps: 24,
@@ -834,7 +831,7 @@ describe("generation pipeline", () => {
                 ],
               },
             ],
-          },
+          }),
         },
       },
       "client-id",
@@ -850,11 +847,7 @@ describe("generation pipeline", () => {
     );
 
     expect(derivedRenderSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        start: 0,
-        end: 24,
-        fps: 24,
-      }),
+      expect.objectContaining({anchor: 0,durationTicks: (24) - (0),fps: 24}),
       [
         {
           sourceNodeId: "video_input",
@@ -904,12 +897,12 @@ describe("generation pipeline", () => {
       {
         video_input: {
           type: "video_selection",
-          selection: {
+          selection: makeTimelineSelection({
             start: 0,
             end: 24,
             clips: [],
             fps: 24,
-          },
+          }),
         },
       },
       "client-id",
@@ -966,7 +959,7 @@ describe("generation pipeline", () => {
       {
         video_input: {
           type: "video_selection",
-          selection: {
+          selection: makeTimelineSelection({
             start: 0,
             end: 24,
             clips: [],
@@ -975,7 +968,7 @@ describe("generation pipeline", () => {
             // resolution: without one the selection follows the project's,
             // which may have changed since the file was prepared.
             resolution: 1080,
-          },
+          }),
           preparedVideoFile,
           preparedMaskFile,
           preparedDerivedMaskSignature: buildDerivedMaskRenderSignature([
@@ -1034,12 +1027,12 @@ describe("generation pipeline", () => {
       {
         video_input: {
           type: "video_selection",
-          selection: {
+          selection: makeTimelineSelection({
             start: 0,
             end: 24,
             clips: [],
             fps: 24,
-          },
+          }),
         },
       },
       "client-id",
@@ -1049,11 +1042,7 @@ describe("generation pipeline", () => {
     );
 
     expect(renderSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        start: 0,
-        end: 24,
-        fps: 24,
-      }),
+      expect.objectContaining({anchor: 0,durationTicks: (24) - (0),fps: 24}),
       { signal: controller.signal },
     );
   });
@@ -1081,12 +1070,7 @@ describe("generation pipeline", () => {
         {
           video_input: {
             type: "video_selection",
-            selection: {
-              start: 0,
-              end: 24,
-              clips: [],
-              fps: 24,
-            },
+            selection: makeTimelineSelection({ start: 0, end: 24, clips: [], fps: 24 }),
           },
         },
         "client-id",

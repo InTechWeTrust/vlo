@@ -1,5 +1,5 @@
 import type { Asset } from "../../../types/Asset";
-import type { TimelineSelection } from "../../../types/TimelineTypes";
+import type { LegacyTimelineSelection, TimelineSelection } from "../../../types/TimelineTypes";
 import { normalizeDetachedTimelineSelection } from "./timelineSelection";
 
 /**
@@ -46,16 +46,21 @@ export function getTimelineSelectionStartFromAsset(
   if (!meta) return null;
 
   if (meta.source === "extracted") {
-    return meta.timelineSelection?.start ?? meta.timelineSelectionStart ?? null;
+    return savedAnchor(meta.timelineSelection) ?? meta.timelineSelectionStart ?? null;
   }
 
   if (meta.source === "generated") {
     for (const input of meta.inputs) {
       if (input.kind !== "timelineSelection") continue;
-      const start = input.timelineSelection?.start ?? input.timelineSelectionStart;
+      const start = savedAnchor(input.timelineSelection) ?? input.timelineSelectionStart;
       if (start !== undefined) return start;
     }
   }
 
   return null;
+}
+
+function savedAnchor(selection: TimelineSelection | LegacyTimelineSelection | undefined): number | undefined {
+  if (!selection) return undefined;
+  return "anchor" in selection ? selection.anchor : selection.start;
 }

@@ -81,8 +81,8 @@ function resolveHasAudio(value: GenerationMediaInputValue): boolean | null {
 function resolveDisplayName(value: GenerationMediaInputValue): string {
   if (value.kind === "asset") return value.asset.name;
   if (value.kind === "frame") return value.file.name;
-  const { start, end } = value.timelineSelection;
-  return `Timeline selection (${start}-${end ?? start})`;
+  const { anchor, durationTicks } = value.timelineSelection;
+  return `Timeline selection (${anchor}-${anchor + durationTicks})`;
 }
 
 /**

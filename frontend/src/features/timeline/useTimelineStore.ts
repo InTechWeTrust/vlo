@@ -1,3 +1,4 @@
+import { setLiveTimelineTimeSource } from "./time";
 import { enablePatches } from "../../lib/immerLite";
 import { create } from "zustand";
 import type {
@@ -101,7 +102,7 @@ import {
 import {
   createTimelinePlacementMapper,
   timelinePresentationRange,
-} from "./utils/timelinePlacementMapper";
+} from "./time/index";
 import {
   presentationTick,
   timelineTimeValue,
@@ -515,7 +516,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
         tracks: get().tracks,
         clips: get().clips,
         fps,
-      });
+      }).snapshot();
       const didCommit = mutationPipeline.commitModelMutation(
         (draft) => {
           // Add first so the target track remains valid while splitting and
@@ -1067,3 +1068,9 @@ if (typeof window !== "undefined") {
   (window as unknown as Record<string, unknown>).__TIMELINE_STORE__ =
     useTimelineStore;
 }
+
+setLiveTimelineTimeSource(() => ({
+  tracks: useTimelineStore.getState().tracks,
+  clips: useTimelineStore.getState().clips,
+  fps: useProjectStore.getState().config.fps,
+}));

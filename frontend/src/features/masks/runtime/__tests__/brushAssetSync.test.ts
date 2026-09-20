@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   BrushPaintedBounds,
@@ -316,12 +317,12 @@ describe("brushAssetSync", () => {
     const newBounds = { x: 20, y: 24, width: 12, height: 16 };
     const brushMask = createBrushMaskClip("brush-asset-1", oldBounds);
     const parent = createParentClip(brushMask.id);
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 120,
       clips: [structuredClone(parent), structuredClone(brushMask)],
       tracks: [createTrack("track_1")],
-    };
+    });
 
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [createTrack("track_1")],
@@ -337,23 +338,23 @@ describe("brushAssetSync", () => {
     mockAddLocalAsset.mockResolvedValue({ id: "brush-asset-2" });
 
     const prepared = await prepareBrushMasksForTimelineRender(selection);
-    const preparedMask = prepared?.clips.find(
+    const preparedMask = prepared?.region.clips.find(
       (clip): clip is MaskTimelineClip => clip.id === brushMask.id,
     );
 
     expect(preparedMask?.brushMaskAssetId).toBe("brush-asset-2");
     expect(preparedMask?.brushPaintedBounds).toEqual(newBounds);
-    expect(selection.clips[1]).toEqual(brushMask);
+    expect(selection.region.clips[1]).toEqual(brushMask);
   });
 
   it("does not consult live brush state for a detached selection", async () => {
     const savedMask = createBrushMaskClip("saved-brush-asset");
-    const selection = {
+    const selection = makeTimelineSelection({
       start: 0,
       end: 120,
       clips: [createParentClip(savedMask.id), savedMask],
       tracks: [createTrack("track_1")],
-    };
+    });
     const liveMask = createBrushMaskClip("live-brush-asset");
     useTimelineStore.getState().replaceTimelineSnapshot({
       tracks: [createTrack("track_1")],
@@ -368,7 +369,7 @@ describe("brushAssetSync", () => {
     expect(prepared).toBe(selection);
     expect(mockIsBrushBufferDirty).not.toHaveBeenCalled();
     expect(mockExtractBrushPng).not.toHaveBeenCalled();
-    expect(prepared?.clips[1]).toEqual(savedMask);
+    expect(prepared?.region.clips[1]).toEqual(savedMask);
   });
 
   it("rejects rendering rather than using a stale brush PNG", async () => {

@@ -14,11 +14,11 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 import { ticksToPx, pxToTicks } from "../../../core/time/pixelGrid";
 import { timelineSpanStyleX } from "../utils/timelineGeometry";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
-import type { TimelineClipPresentation } from "../utils/clipPresentation";
+import type { TimelineClipPresentation } from "../time/index";
 import {
   resolveClipOffsetForPresentationOffset,
   resolvePresentationOffsetForClipOffset,
-} from "../utils/clipPresentation";
+} from "../time/index";
 import type {
   TimelineClipOverlayDefinition,
   TimelineClipOverlayDragContext,

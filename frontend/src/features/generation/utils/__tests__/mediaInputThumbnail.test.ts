@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { describe, expect, it } from "vitest";
 import { mediaInputThumbnail } from "../mediaInputThumbnail";
 import { buildGenerationMediaItems } from "../generationMediaSnapshot";
@@ -11,7 +12,7 @@ const file = new File(["image"], "frame.png", { type: "image/png" });
 const values: GenerationMediaInputValue[] = [
   { kind: "asset", asset },
   { kind: "frame", file, previewUrl: "blob:frame" },
-  { kind: "timelineSelection", mediaType: "video", timelineSelection: { start: 0, end: 96_000, clips: [] }, thumbnailFile: file, thumbnailUrl: "blob:range", isExtracting: false, extractionRequestId: 1, extractionError: null, preparedVideoFile: null, preparedMaskFile: null },
+  { kind: "timelineSelection", mediaType: "video", timelineSelection: makeTimelineSelection({ start: 0, end: 96_000, clips: [] }), thumbnailFile: file, thumbnailUrl: "blob:range", isExtracting: false, extractionRequestId: 1, extractionError: null, preparedVideoFile: null, preparedMaskFile: null },
 ];
 
 describe("shared media previews", () => {

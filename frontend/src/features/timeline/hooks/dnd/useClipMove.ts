@@ -31,7 +31,7 @@ import {
   buildTimelineClipPresentationCollisionView,
   buildTimelineClipPresentationIndex,
   resolveStoredStartForPresentationStart,
-} from "../../utils/clipPresentation";
+} from "../../time/index";
 import { getAssetById } from "../../../userAssets";
 import { useProjectStore } from "../../../project";
 import { getTicksPerFrame, snapTickToFrame } from "../../../timelineSelection";

@@ -2,73 +2,27 @@ import type {
   CompositeContent,
   TimelineClip,
   TimelineSelection,
-  TimelineTrack,
 } from "../../../types/TimelineTypes";
-import {
-  createTimelinePlacementMapper,
-  timelinePresentationRange,
-} from "../../timeline";
+import { projectTimelineSelection } from "../../timeline/time";
 
 /**
  * Converters for moving timeline regions between absolute project time and
  * composite-local time.
  */
 
-function cloneTracks(
-  tracks: TimelineTrack[] | undefined,
-): TimelineTrack[] | undefined {
-  return tracks ? structuredClone(tracks) : undefined;
-}
-
 /**
  * Captures only the portion of each clip inside the selection as
  * composite-local content. Crop/source offsets are preserved by applying the
  * same resize calculations as an interactive timeline trim.
  */
-export function selectionToCompositeContent(
-  selection: TimelineSelection,
-  fps: number,
-  // Required, never defaulted to `selection.clips`: a region's clips alone lack
-  // the retiming adjustments ahead of it that place them, so each caller must
-  // name the full timeline its presentation resolves against.
-  presentationContextClips: readonly TimelineClip[],
-): CompositeContent {
-  const start = selection.start;
-  const tracks = selection.tracks ?? [];
-  const placementMapper = createTimelinePlacementMapper({
-    tracks,
-    clips: presentationContextClips,
-    fps,
-  });
-  const end =
-    selection.end ??
-    selection.clips.reduce((furthest, clip) => {
-      const footprint = placementMapper.getPresentationFootprint(clip.id);
-      return Math.max(furthest, footprint?.end ?? 0);
-    }, start);
-  const durationTicks = Math.max(0, end - start);
-  const projected = placementMapper.projectRegionToLocalTimeline(
-    timelinePresentationRange(start, end),
-    selection.clips.map((clip) => clip.id),
-  );
-
+export function selectionToCompositeContent(selection: TimelineSelection): CompositeContent {
   return {
-    durationTicks,
-    clips: projected.clips,
-    ...(selection.tracks ? { tracks: cloneTracks(selection.tracks) } : {}),
-    ...(selection.transitions
-      ? { transitions: structuredClone(selection.transitions) }
-      : {}),
-    ...(selection.includedTrackIds
-      ? { includedTrackIds: selection.includedTrackIds.slice() }
-      : {}),
-    ...(typeof selection.fps === "number" ? { fps: selection.fps } : {}),
-    ...(typeof selection.frameStep === "number"
-      ? { frameStep: selection.frameStep }
-      : {}),
-    ...(typeof selection.frameOffset === "number"
-      ? { frameOffset: selection.frameOffset }
-      : {}),
+    ...structuredClone(selection.region),
+    durationTicks: selection.durationTicks,
+    ...(selection.includedTrackIds ? { includedTrackIds: selection.includedTrackIds.slice() } : {}),
+    ...(selection.fps ? { fps: selection.fps } : {}),
+    ...(selection.frameStep ? { frameStep: selection.frameStep } : {}),
+    ...(selection.frameOffset ? { frameOffset: selection.frameOffset } : {}),
   };
 }
 
@@ -107,28 +61,10 @@ export function renamespaceCompositeContentTracks(
   };
 }
 
-export function compositeContentToSelection(
-  content: CompositeContent,
-): TimelineSelection {
-  return {
-    start: 0,
-    end: content.durationTicks,
-    clips: structuredClone(content.clips),
-    ...(content.tracks ? { tracks: cloneTracks(content.tracks) } : {}),
-    ...(content.transitions
-      ? { transitions: structuredClone(content.transitions) }
-      : {}),
-    ...(content.includedTrackIds
-      ? { includedTrackIds: content.includedTrackIds.slice() }
-      : {}),
-    ...(typeof content.fps === "number" ? { fps: content.fps } : {}),
-    ...(typeof content.frameStep === "number"
-      ? { frameStep: content.frameStep }
-      : {}),
-    ...(typeof content.frameOffset === "number"
-      ? { frameOffset: content.frameOffset }
-      : {}),
-  };
+export function compositeContentToSelection(content: CompositeContent): TimelineSelection {
+  return projectTimelineSelection({
+    start: 0, end: content.durationTicks, ...structuredClone(content),
+  }, { clips: content.clips, tracks: content.tracks ?? [], fps: content.fps ?? 30 });
 }
 
 /**

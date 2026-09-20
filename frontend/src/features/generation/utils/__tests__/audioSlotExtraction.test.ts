@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockExtractAudioFromVideo, mockResolveAssetFileForGeneration } =
@@ -287,7 +288,7 @@ describe("collectStalledSelectionExtractions", () => {
     mediaType: "video",
     isExtracting: true,
     extractionRequestId: 2,
-    timelineSelection: { start: 0, end: 10, clips: [] },
+    timelineSelection: makeTimelineSelection({ start: 0, end: 10, clips: [] }),
     thumbnailFile: new File(["png"], "thumb.png", { type: "image/png" }),
   } as unknown as GenerationMediaInputValue;
 
@@ -326,7 +327,7 @@ describe("collectStalledSelectionExtractions", () => {
 });
 
 describe("settleFailedSelectionExtraction", () => {
-  const timelineSelection = { start: 0, end: 10, clips: [] } as never;
+  const timelineSelection = makeTimelineSelection({ start: 0, end: 10, clips: [] }) as never;
   const thumbnailFile = new File(["png"], "thumb.png", { type: "image/png" });
 
   function buildOptions(mediaType: "video" | "audio", requestId: number) {

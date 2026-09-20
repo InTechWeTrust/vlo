@@ -8,7 +8,7 @@ import type {
 } from "../../../types/TimelineTypes";
 import { ADJUSTMENT_RETIMING_RIPPLE } from "../../../types/TimelineTypes";
 import { TICKS_PER_SECOND } from "../../../core/time/constants";
-import { buildTimelineClipPresentationIndex } from "../utils/clipPresentation";
+import { buildTimelineClipPresentationIndex } from "../time/clipPresentation";
 
 vi.mock("../../userAssets", () => ({
   deleteAsset: vi.fn(async () => undefined),

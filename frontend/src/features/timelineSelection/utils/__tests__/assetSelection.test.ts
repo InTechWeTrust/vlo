@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Asset } from "../../../../types/Asset";
 import type { TimelineClip } from "../../../../types/TimelineTypes";
@@ -44,11 +45,11 @@ function createGeneratedAsset(clips: TimelineClip[]): Asset {
         {
           nodeId: "input-node",
           kind: "timelineSelection",
-          timelineSelection: {
+          timelineSelection: makeTimelineSelection({
             start: 0,
             end: 100,
             clips,
-          },
+          }),
         },
       ],
     },
@@ -62,7 +63,7 @@ describe("getTimelineSelectionFromAsset", () => {
   });
 
   it("keeps an empty saved snapshot empty instead of filling it from the live timeline", () => {
-    expect(getTimelineSelectionFromAsset(createGeneratedAsset([]))?.clips).toEqual(
+    expect(getTimelineSelectionFromAsset(createGeneratedAsset([]))?.region.clips).toEqual(
       [],
     );
   });
@@ -75,7 +76,7 @@ describe("getTimelineSelectionFromAsset", () => {
     };
 
     expect(
-      getTimelineSelectionFromAsset(createGeneratedAsset([savedClip]))?.clips,
+      getTimelineSelectionFromAsset(createGeneratedAsset([savedClip]))?.region.clips,
     ).toEqual([savedClip]);
   });
 });

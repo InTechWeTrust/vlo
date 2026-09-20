@@ -25,7 +25,7 @@ import {
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { useProjectStore } from "../../project/useProjectStore";
 import { ensureAssetFileLoaded, useAssetStore } from "../../userAssets";
-import type { ClipPresentationContext } from "../../transformations";
+import type { ClipPresentationContext } from "../../timeline/time";
 import {
   getRenderedSourceFrameReferenceFromTicks,
 } from "../../renderer/utils/mediaTime";

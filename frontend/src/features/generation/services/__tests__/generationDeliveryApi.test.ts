@@ -1,3 +1,4 @@
+import { makeTimelineSelection } from "../../../../testUtils/timelineSelection";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMockResponse, stubFetch } from "../../../../testUtils/fetch";
 import {
@@ -27,11 +28,11 @@ describe("generationDeliveryApi", () => {
 
   it("adopts iframe generations with timeline-selection provenance", async () => {
     const fetchMock = stubFetch(createMockResponse({ json: { delivery: {} } }));
-    const timelineSelection = {
+    const timelineSelection = makeTimelineSelection({
       start: 96_000,
       end: 192_000,
       clips: [],
-    };
+    });
 
     await adoptIframeGeneration("project one", "prompt-1", {
       generationMetadata: {

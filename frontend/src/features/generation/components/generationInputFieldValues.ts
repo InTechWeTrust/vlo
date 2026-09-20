@@ -77,7 +77,7 @@ export function toSlotValue(
       : undefined;
   return {
     type: value.mediaType,
-    name: `Timeline selection (${value.timelineSelection.start}-${value.timelineSelection.end ?? value.timelineSelection.start})`,
+    name: `Timeline selection (${value.timelineSelection.anchor}-${(value.timelineSelection.anchor + value.timelineSelection.durationTicks)})`,
     ...(value.mediaType === "video" && !selectionStatus
       ? { thumbnail: mediaInputThumbnail(value, inputType) }
       : {}),
@@ -145,7 +145,7 @@ export function canEditMediaValue(
     value.mediaType === "audio" &&
     !value.isExtracting &&
     (value.preparedAudioFile != null ||
-      value.timelineSelection.clips.length > 0)
+      value.timelineSelection.region.clips.length > 0)
   );
 }
 

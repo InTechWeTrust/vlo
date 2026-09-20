@@ -1,3 +1,4 @@
+import { projectTimelineSelection } from "../../timeline/time";
 import type { GenerationCapturedMedia } from "../utils/capturedMedia";
 import { registerGenerationInputCapture, type GenerationCaptureDestination } from "../services/GenerationInputCapture";
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
@@ -2025,8 +2026,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             }));
           if (!file) throw new Error(NO_SELECTION_AUDIO_TRACK_MESSAGE);
           const durationTicks =
-            typeof selection.end === "number"
-              ? Math.max(0, selection.end - selection.start)
+            typeof (selection.anchor + selection.durationTicks) === "number"
+              ? Math.max(0, (selection.anchor + selection.durationTicks) - selection.anchor)
               : await probeAudioDurationTicks(file);
           return {
             sourceUrl: URL.createObjectURL(file),
@@ -2100,12 +2101,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         }
         setMediaInputTimelineSelection(
           inputId,
-          {
-            start: 0,
-            end: Math.max(1, spec.cropEndTicks - spec.cropStartTicks),
-            clips: [],
-            bakedSource: true,
-          },
+          projectTimelineSelection({ start: 0, end: Math.max(1, spec.cropEndTicks - spec.cropStartTicks), clips: [], bakedSource: true }, { clips: [], tracks: [], fps: 30 }),
           thumbnailFile,
           {
             mediaType: "audio",
@@ -2239,8 +2235,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
             (await renderTimelineSelectionToMp4(previewSelection));
           const videoUrl = URL.createObjectURL(file);
           const durationTicks =
-            typeof selection.end === "number"
-              ? Math.max(0, selection.end - selection.start)
+            typeof (selection.anchor + selection.durationTicks) === "number"
+              ? Math.max(0, (selection.anchor + selection.durationTicks) - selection.anchor)
               : await probeVideoDurationTicks(videoUrl);
           return {
             sourceUrl: videoUrl,
@@ -2331,7 +2327,7 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
 
         setMediaInputTimelineSelection(
           inputId,
-          { start: 0, end: cropLen, clips: [], bakedSource: true },
+          projectTimelineSelection({ start: 0, end: cropLen, clips: [], bakedSource: true }, { clips: [], tracks: [], fps: 30 }),
           thumbnailFile,
           {
             mediaType: "video",

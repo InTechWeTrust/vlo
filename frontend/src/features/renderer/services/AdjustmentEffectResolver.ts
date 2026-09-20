@@ -4,9 +4,9 @@ import {
   type DerivedRenderGroup,
 } from "../utils/deriveAdjustmentGroups";
 import {
-  buildTimelineClipPresentationLookup,
+  getTimelineTime,
   type TimelineClipPresentationLookup,
-} from "../../timeline/utils/clipPresentation";
+} from "../../timeline/time/index";
 
 /**
  * Shared source-of-truth for adjustment-derived visual grouping and
@@ -53,11 +53,9 @@ export class AdjustmentEffectResolver {
 
   getPresentationLookup(): TimelineClipPresentationLookup {
     if (!this.presentationLookup) {
-      this.presentationLookup = buildTimelineClipPresentationLookup(
-        this.tracks,
-        this.clips,
-        this.fps,
-      );
+      this.presentationLookup = getTimelineTime({
+        tracks: this.tracks, clips: this.clips, fps: this.fps,
+      }).renderLookup();
     }
     return this.presentationLookup;
   }
