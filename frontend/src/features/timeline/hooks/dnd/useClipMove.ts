@@ -27,11 +27,7 @@ import {
   getTrackIndexAtY,
 } from "./dropGeometry";
 import { attachGenerationMask } from "../../utils/insertAssetToTimeline";
-import {
-  buildTimelineClipPresentationCollisionView,
-  buildTimelineClipPresentationIndex,
-  resolveStoredStartForPresentationStart,
-} from "../../time/index";
+import { getTimelineTime, presentationTick } from "../../time/index";
 import { getAssetById } from "../../../userAssets";
 import { useProjectStore } from "../../../project";
 import { getTicksPerFrame, snapTickToFrame } from "../../../timelineSelection";
@@ -318,11 +314,13 @@ export const useClipMove = (
       const timelineClips = timelineState.clips ?? [];
       const presentation =
         "trackId" in activeClip
-          ? buildTimelineClipPresentationIndex(
-              timelineTracks,
-              timelineClips,
-              useProjectStore.getState().config.fps,
-            ).get(activeClip.id)
+          ? getTimelineTime({
+              tracks: timelineTracks,
+              clips: timelineClips,
+              fps: useProjectStore.getState().config.fps,
+            })
+              .presentationIndex()
+              .get(activeClip.id)
           : undefined;
       const clipDuration =
         presentation?.duration ?? activeClip.timelineDuration;
@@ -444,12 +442,11 @@ export const useClipMove = (
       }
 
       const collisionTracks = useTimelineStore.getState().tracks;
-      const proposedStoredStart = resolveStoredStartForPresentationStart(
-        collisionTracks,
+      const proposedStoredStart = getTimelineTime({
+        tracks: collisionTracks,
         clips,
-        targetTrackId,
-        presentationStartTicks,
-      );
+        fps: useProjectStore.getState().config.fps,
+      }).resolveStoredStart(targetTrackId, presentationTick(presentationStartTicks));
       const proposedTimelineClip = {
         ...(clip as BaseClip),
         trackId: targetTrackId,
@@ -466,11 +463,14 @@ export const useClipMove = (
                 }
               : candidate,
           );
-      const collisionClips = buildTimelineClipPresentationCollisionView(
-        collisionTracks,
-        proposedClips,
-        useProjectStore.getState().config.fps,
-      );
+      // One clock over the proposed arrangement, shared by the collision test
+      // and the placement inversion below, so both read the same placement.
+      const proposedTime = getTimelineTime({
+        tracks: collisionTracks,
+        clips: proposedClips,
+        fps: useProjectStore.getState().config.fps,
+      });
+      const collisionClips = proposedTime.collisionView();
       const movingCollisionClip = collisionClips.find(
         (candidate) => candidate.id === clip.id,
       );
@@ -488,11 +488,9 @@ export const useClipMove = (
       );
 
       if (finalPresentationStartTicks !== null) {
-        const finalStartTicks = resolveStoredStartForPresentationStart(
-          collisionTracks,
-          proposedClips,
+        const finalStartTicks = proposedTime.resolveStoredStart(
           targetTrackId,
-          finalPresentationStartTicks,
+          presentationTick(finalPresentationStartTicks),
         );
         if (isNewAsset) {
           const newClip = {
@@ -535,11 +533,13 @@ export const useClipMove = (
       selectedClipIds,
       tracks,
       leaderClip,
-      targetStartTicks: resolveStoredStartForPresentationStart(
+      targetStartTicks: getTimelineTime({
         tracks,
         clips,
+        fps: useProjectStore.getState().config.fps,
+      }).resolveStoredStart(
         resolvedLeaderTargetTrackId,
-        presentationStartTicks,
+        presentationTick(presentationStartTicks),
       ),
       targetTrackId: resolvedLeaderTargetTrackId,
       ticksPerFrame,

@@ -161,6 +161,15 @@ describe("TimelineClip Visual Geometry", () => {
     };
   }
 
+  function createCompressedOverlayTimelineTime(): NonNullable<
+    ComponentProps<typeof TimelineClipItem>["timelineTime"]
+  > {
+    return {
+      toClipOffset: (_clipId, offset) => offset * 2,
+      toPresentationOffset: (_clipId, offset) => offset / 2,
+    };
+  }
+
   function TimelineClipWithKeyframeOverlay({
     clip,
     presentation,
@@ -173,6 +182,9 @@ describe("TimelineClip Visual Geometry", () => {
       <TimelineClipItem
         clip={clip}
         presentation={presentation}
+        timelineTime={
+          presentation ? createCompressedOverlayTimelineTime() : undefined
+        }
         clipOverlays={[keyframeOverlay]}
       />
     );
@@ -781,7 +793,7 @@ describe("TimelineClip Visual Geometry", () => {
     expect(sourceItem.style.left).toContain(expectedBaseLeft);
   });
 
-  it("positions source-time overlay items through the clip presentation map", () => {
+  it("positions source-time overlay items through TimelineTime", () => {
     const clipWithKeyframeTransform: TimelineClipType = {
       ...mockClip,
       start: 0,
@@ -799,14 +811,22 @@ describe("TimelineClip Visual Geometry", () => {
       ],
     };
 
+    const rawToClipOffset = vi.fn((offset: number) => offset * 4);
+    const rawToPresentationOffset = vi.fn((offset: number) => offset / 4);
     const presentation = {
       clipId: clipWithKeyframeTransform.id,
       trackId: clipWithKeyframeTransform.trackId,
       start: 0,
       end: TICKS_PER_SECOND,
       duration: TICKS_PER_SECOND,
-      mapPresentationOffsetToClipOffset: (offset: number) => offset * 2,
-      mapClipOffsetToPresentationOffset: (offset: number) => offset / 2,
+      mapPresentationOffsetToClipOffset: rawToClipOffset,
+      mapClipOffsetToPresentationOffset: rawToPresentationOffset,
+    };
+    const timelineTime: NonNullable<
+      ComponentProps<typeof TimelineClipItem>["timelineTime"]
+    > = {
+      toClipOffset: vi.fn((_clipId, offset) => offset * 2),
+      toPresentationOffset: vi.fn((_clipId, offset) => offset / 2),
     };
 
     const overlays = [
@@ -823,6 +843,7 @@ describe("TimelineClip Visual Geometry", () => {
       <TimelineClipItem
         clip={clipWithKeyframeTransform}
         presentation={presentation}
+        timelineTime={timelineTime}
         clipOverlays={overlays}
       />,
     );
@@ -833,6 +854,11 @@ describe("TimelineClip Visual Geometry", () => {
     const sourceItem = screen.getByText("Source").parentElement as HTMLElement;
 
     expect(sourceItem.style.left).toContain(expectedBaseLeft);
+    expect(timelineTime.toPresentationOffset).toHaveBeenCalledWith(
+      clipWithKeyframeTransform.id,
+      TICKS_PER_SECOND,
+    );
+    expect(rawToPresentationOffset).not.toHaveBeenCalled();
   });
 
   it("positions keyframe diamonds through the clip presentation map", () => {
@@ -1003,6 +1029,7 @@ describe("TimelineClip Visual Geometry", () => {
       <TimelineClipItem
         clip={clip}
         presentation={presentation}
+        timelineTime={createCompressedOverlayTimelineTime()}
         clipOverlays={overlays}
       />,
     );

@@ -41,7 +41,11 @@ import { useSamAudioExtractDialogStore } from "../../samAudio";
 import { reverseTimelineClip } from "../utils/reverseClip";
 import { ThumbnailCanvas } from "./ThumbnailCanvas";
 import { TimelineClipOverlayLayer } from "./TimelineClipOverlayLayer";
-import type { TimelineClipPresentation } from "../time/index";
+import {
+  timelineTickDuration,
+  type TimelineClipPresentation,
+  type TimelineTime,
+} from "../time/index";
 import { extensionEntityProviderRegistry } from "../../extensions/entities/publicApi";
 import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
 import { useCompositeLibraryStore } from "../../composite/useCompositeLibraryStore";
@@ -119,6 +123,7 @@ interface TimelineClipProps {
   isOverlay?: boolean;
   clipOverlays?: readonly TimelineClipOverlayDefinition[];
   presentation?: TimelineClipPresentation;
+  timelineTime?: Pick<TimelineTime, "toClipOffset" | "toPresentationOffset">;
 }
 
 function TimelineClipComponent({
@@ -126,7 +131,19 @@ function TimelineClipComponent({
   isOverlay = false,
   clipOverlays = [],
   presentation,
+  timelineTime,
 }: TimelineClipProps) {
+  const mapPresentationOffsetToClipOffset = useMemo(
+    () =>
+      timelineTime
+        ? (offset: number) =>
+            timelineTime.toClipOffset(
+              clip.id,
+              timelineTickDuration(offset),
+            )
+        : undefined,
+    [clip.id, timelineTime],
+  );
   const entityProviderRevision = useSyncExternalStore(
     (listener) => extensionEntityProviderRegistry.subscribe(listener),
     () => extensionEntityProviderRegistry.getRevision(),
@@ -718,9 +735,7 @@ function TimelineClipComponent({
           isDragging={isDragging}
           presentationStart={presentation?.start}
           presentationDuration={presentation?.duration}
-          mapPresentationOffsetToClipOffset={
-            presentation?.mapPresentationOffsetToClipOffset
-          }
+          mapPresentationOffsetToClipOffset={mapPresentationOffsetToClipOffset}
         />
       ) : null}
       {!isDragging && !isOverlay && timelineClip ? (
@@ -729,6 +744,7 @@ function TimelineClipComponent({
           isSelected={isSelected}
           clipOverlays={clipOverlays}
           presentation={presentation}
+          timelineTime={timelineTime}
         />
       ) : null}
       {isSelected && !isDragging && !isOverlay && (

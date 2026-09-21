@@ -4,11 +4,7 @@ import type { BaseClip } from "../../../types/TimelineTypes";
 import { useTimelineStore } from "../useTimelineStore";
 import { useProjectStore } from "../../project/useProjectStore";
 import { mapSourceTimeToVisualTime } from "../../transformations";
-import {
-  buildTimelineClipPresentationIndex,
-  resolvePresentationTickForClipOffset,
-  resolvePresentationOffsetForClipOffset,
-} from "../time/index";
+import { clipOffsetTick, getTimelineTime } from "../time/index";
 
 export type InteractionOperation = "move" | "resize_left" | "resize_right";
 
@@ -102,11 +98,8 @@ export const buildTimelineSnapPoints = (
   const excludedIds = new Set(options.excludedClipIds ?? []);
   const { clips, tracks } = useTimelineStore.getState();
   const fps = useProjectStore.getState().config.fps;
-  const presentationByClipId = buildTimelineClipPresentationIndex(
-    tracks,
-    clips,
-    fps,
-  );
+  const time = getTimelineTime({ tracks, clips, fps });
+  const presentationByClipId = time.presentationIndex();
 
   const points = new Set<number>();
   clips.forEach((timelineClip) => {
@@ -132,9 +125,9 @@ export const buildTimelineSnapPoints = (
         if (visualTicks < 0 || visualTicks > timelineClip.timelineDuration) {
           return;
         }
-        const presentationOffset = resolvePresentationOffsetForClipOffset(
-          presentation,
-          visualTicks,
+        const presentationOffset = time.toPresentationOffset(
+          timelineClip.id,
+          clipOffsetTick(visualTicks),
         );
         const presentationDuration =
           presentation?.duration ?? timelineClip.timelineDuration;
@@ -146,10 +139,9 @@ export const buildTimelineSnapPoints = (
         }
         points.add(
           Math.round(
-            resolvePresentationTickForClipOffset(
-              timelineClip,
-              presentation,
-              visualTicks,
+            time.presentationTickForClipOffset(
+              timelineClip.id,
+              clipOffsetTick(visualTicks),
             ),
           ),
         );

@@ -14,10 +14,11 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 import { ticksToPx, pxToTicks } from "../../../core/time/pixelGrid";
 import { timelineSpanStyleX } from "../utils/timelineGeometry";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
-import type { TimelineClipPresentation } from "../time/index";
 import {
-  resolveClipOffsetForPresentationOffset,
-  resolvePresentationOffsetForClipOffset,
+  clipOffsetTick,
+  timelineTickDuration,
+  type TimelineClipPresentation,
+  type TimelineTime,
 } from "../time/index";
 import type {
   TimelineClipOverlayDefinition,
@@ -32,6 +33,10 @@ interface TimelineClipOverlayLayerProps {
   isSelected: boolean;
   clipOverlays?: readonly TimelineClipOverlayDefinition[];
   presentation?: TimelineClipPresentation;
+  timelineTime?: Pick<
+    TimelineTime,
+    "toClipOffset" | "toPresentationOffset"
+  >;
 }
 
 interface TimelineClipOverlayItemNodeProps {
@@ -39,7 +44,7 @@ interface TimelineClipOverlayItemNodeProps {
   isSelected: boolean;
   item: TimelineClipOverlayItem;
   style?: CSSProperties;
-  presentation?: TimelineClipPresentation;
+  timelineTime?: TimelineClipOverlayLayerProps["timelineTime"];
 }
 
 interface TimelineClipOverlayEndpointGroupProps {
@@ -47,6 +52,7 @@ interface TimelineClipOverlayEndpointGroupProps {
   isSelected: boolean;
   items: readonly TimelineClipOverlayItem[];
   presentation?: TimelineClipPresentation;
+  timelineTime?: TimelineClipOverlayLayerProps["timelineTime"];
 }
 
 interface TimelineClipOverlayItemCollectionProps {
@@ -54,6 +60,7 @@ interface TimelineClipOverlayItemCollectionProps {
   isSelected: boolean;
   items: readonly TimelineClipOverlayItem[];
   presentation?: TimelineClipPresentation;
+  timelineTime?: TimelineClipOverlayLayerProps["timelineTime"];
 }
 
 type TimelineSourceTimeOverlayItem = TimelineClipOverlayItem & {
@@ -85,6 +92,28 @@ const OverlayItemRoot = styled(Box)({
   justifyContent: "center",
   zIndex: 12,
 });
+
+function toClipOffset(
+  timelineTime: TimelineClipOverlayLayerProps["timelineTime"],
+  clipId: string,
+  presentationOffset: number,
+): number {
+  return timelineTime?.toClipOffset(
+    clipId,
+    timelineTickDuration(presentationOffset),
+  ) ?? presentationOffset;
+}
+
+function toPresentationOffset(
+  timelineTime: TimelineClipOverlayLayerProps["timelineTime"],
+  clipId: string,
+  clipOffset: number,
+): number {
+  return timelineTime?.toPresentationOffset(
+    clipId,
+    clipOffsetTick(clipOffset),
+  ) ?? clipOffset;
+}
 
 function toBasePixels(ticks: number): number {
   return ticksToPx(ticks, 1);
@@ -158,14 +187,15 @@ function buildDragContext(
   startSourceTimeTicks: number,
   clipLocalX: number,
   zoomScale: number,
-  presentation?: TimelineClipPresentation,
+  timelineTime?: TimelineClipOverlayLayerProps["timelineTime"],
 ): TimelineClipOverlayDragContext {
   const presentationOffsetTicks = toPresentationOffsetTicks(
     clipLocalX,
     zoomScale,
   );
-  const visualTimeTicks = resolveClipOffsetForPresentationOffset(
-    presentation,
+  const visualTimeTicks = toClipOffset(
+    timelineTime,
+    clip.id,
     presentationOffsetTicks,
   );
   const sourceTimeTicks = calculateClipTime(clip, visualTimeTicks, true);
@@ -184,9 +214,9 @@ function buildDragContext(
     deltaVisualTimeTicks: visualTimeTicks - startVisualTimeTicks,
     deltaSourceTimeTicks: sourceTimeTicks - startSourceTimeTicks,
     mapPresentationOffsetToClipOffset: (offset) =>
-      resolveClipOffsetForPresentationOffset(presentation, offset),
+      toClipOffset(timelineTime, clip.id, offset),
     mapClipOffsetToPresentationOffset: (offset) =>
-      resolvePresentationOffsetForClipOffset(presentation, offset),
+      toPresentationOffset(timelineTime, clip.id, offset),
   };
 }
 
@@ -209,7 +239,7 @@ function TimelineClipOverlayItemNode({
   isSelected,
   item,
   style,
-  presentation,
+  timelineTime,
 }: TimelineClipOverlayItemNodeProps) {
   const isInteractive =
     item.onClick !== undefined ||
@@ -243,8 +273,9 @@ function TimelineClipOverlayItemNode({
         clipLocalX,
         zoomScale,
       );
-      const visualTimeTicks = resolveClipOffsetForPresentationOffset(
-        presentation,
+      const visualTimeTicks = toClipOffset(
+        timelineTime,
+        clip.id,
         presentationOffsetTicks,
       );
       const sourceTimeTicks = calculateClipTime(clip, visualTimeTicks, true);
@@ -271,7 +302,7 @@ function TimelineClipOverlayItemNode({
           sourceTimeTicks,
           clipLocalX,
           zoomScale,
-          presentation,
+          timelineTime,
         ),
       );
     }
@@ -308,7 +339,7 @@ function TimelineClipOverlayItemNode({
         dragStart.sourceTimeTicks,
         clipLocalX,
         zoomScale,
-        presentation,
+        timelineTime,
       ),
     );
   };
@@ -340,7 +371,7 @@ function TimelineClipOverlayItemNode({
         dragStart.sourceTimeTicks,
         clipLocalX,
         zoomScale,
-        presentation,
+        timelineTime,
       ),
     );
 
@@ -368,7 +399,7 @@ function TimelineClipOverlayItemNode({
         dragStart.sourceTimeTicks,
         dragStart.clipLocalX,
         zoomScale,
-        presentation,
+        timelineTime,
       ),
     );
 
@@ -421,7 +452,7 @@ function TimelineClipOverlayEndpointGroup({
   clip,
   isSelected,
   items,
-  presentation,
+  timelineTime,
 }: TimelineClipOverlayEndpointGroupProps) {
   const sortedItems = useMemo(
     () =>
@@ -494,7 +525,7 @@ function TimelineClipOverlayEndpointGroup({
             isSelected={isSelected}
             item={item}
             style={marginStyle}
-            presentation={presentation}
+            timelineTime={timelineTime}
           />
         );
       })}
@@ -506,7 +537,7 @@ function TimelineClipOverlayItemCollection({
   clip,
   isSelected,
   items,
-  presentation,
+  timelineTime,
 }: TimelineClipOverlayItemCollectionProps) {
   const endpointGroups = useMemo(() => {
     const groups = new Map<string, TimelineClipOverlayItem[]>();
@@ -538,7 +569,7 @@ function TimelineClipOverlayItemCollection({
           clip={clip}
           isSelected={isSelected}
           items={groupItems}
-          presentation={presentation}
+          timelineTime={timelineTime}
         />
       ))}
 
@@ -552,8 +583,9 @@ function TimelineClipOverlayItemCollection({
         const offsetPx = placement.offsetPx;
         const verticalOffsetPx = placement.verticalOffsetPx;
 
-        const presentationTicks = resolvePresentationOffsetForClipOffset(
-          presentation,
+        const presentationTicks = toPresentationOffset(
+          timelineTime,
+          clip.id,
           visualTicks,
         );
 
@@ -563,7 +595,7 @@ function TimelineClipOverlayItemCollection({
             clip={clip}
             isSelected={isSelected}
             item={item}
-            presentation={presentation}
+            timelineTime={timelineTime}
             style={{
               position: "absolute",
               // Subtract the parent clip's `--drag-delta-x` so timed items
@@ -592,6 +624,7 @@ function TimelineClipWidthSensitiveItemCollection({
   isSelected,
   items,
   presentation,
+  timelineTime,
 }: TimelineClipOverlayItemCollectionProps) {
   const zoomScale = useTimelineViewStore((state) => state.zoomScale);
   const displayDuration = presentation?.duration ?? clip.timelineDuration;
@@ -611,6 +644,7 @@ function TimelineClipWidthSensitiveItemCollection({
       isSelected={isSelected}
       items={visibleItems}
       presentation={presentation}
+      timelineTime={timelineTime}
     />
   );
 }
@@ -620,6 +654,7 @@ function TimelineClipOverlaySourceSlot({
   isSelected,
   definition,
   presentation,
+  timelineTime,
 }: TimelineClipOverlayLayerProps & {
   definition: TimelineClipOverlayDefinition;
 }) {
@@ -650,6 +685,7 @@ function TimelineClipOverlaySourceSlot({
           isSelected={isSelected}
           items={visibleItems}
           presentation={presentation}
+          timelineTime={timelineTime}
         />
       ) : null}
       {widthSensitiveItems.length > 0 ? (
@@ -658,6 +694,7 @@ function TimelineClipOverlaySourceSlot({
           isSelected={isSelected}
           items={widthSensitiveItems}
           presentation={presentation}
+          timelineTime={timelineTime}
         />
       ) : null}
     </>
@@ -669,6 +706,7 @@ function TimelineClipOverlayLayerComponent({
   isSelected,
   clipOverlays = [],
   presentation,
+  timelineTime,
 }: TimelineClipOverlayLayerProps) {
   if (clipOverlays.length === 0) {
     return null;
@@ -683,6 +721,7 @@ function TimelineClipOverlayLayerComponent({
           isSelected={isSelected}
           definition={definition}
           presentation={presentation}
+          timelineTime={timelineTime}
         />
       ))}
     </OverlayLayerRoot>

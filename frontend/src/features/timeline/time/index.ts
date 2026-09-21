@@ -1,22 +1,16 @@
 export { getTimelineTime } from "./timelineTime";
-export type { TimelineTime, TimelineTimeSnapshot, TimelineTimeQueryOptions, PresentationRange } from "./timelineTime";
+export type { TimelineTime, TimelineTimeSnapshot, TimelineTimeQueryOptions, PresentationRange, TimelineClipPresentation } from "./timelineTime";
 export { getLiveTimelineTime, setLiveTimelineTimeSource } from "./liveTimelineTime";
 export * from "./authoring";
 export * from "../utils/timelineTimeDomains";
 export { timelinePresentationRange } from "./timelinePlacementMapper";
 export type { TimelinePresentationRange, TimelinePlacementMapper, ProjectedTimelineRegion, ProjectedTimelineClipSegment, CreateTimelinePlacementMapperOptions } from "./timelinePlacementMapper";
 export * from "./playheadPlacement";
-export {
-  resolveClipOffsetForPresentationOffset,
-  resolvePresentationOffsetForClipOffset,
-  resolvePresentationTickForClipOffset,
-  resolveStoredStartForPresentationStart,
-  resolveStoredEndForPresentationEnd,
-  buildTimelineClipPresentationCollisionView,
-  introducesTimelineClipPresentationCollision,
-  collectTimelineClipPresentationCollisions,
-} from "./clipPresentation";
-export type { TimelineClipPresentation, TimelineClipPresentationLookup, ProposedClipTimingChange, TimelineClipPresentationCollision } from "./clipPresentation";
+// Placement engines stay inside the boundary. Their behaviour reaches callers
+// as TimelineTime methods (toClipOffset, presentationIndex, resolveStoredEnd,
+// collisionView, ...), so a consumer names the question it is asking rather
+// than the primitive that answers it. Only the value types cross.
+export type { TimelineClipPresentationLookup, ProposedClipTimingChange, TimelineClipPresentationCollision } from "./clipPresentation";
 
 import type { TimelineClip, TimelineTrack } from "../../../types/TimelineTypes";
 import { getTimelineTime, createTimelineTimeSnapshot, type TimelineTimeSnapshot } from "./timelineTime";
@@ -28,13 +22,6 @@ export function createTimelinePlacementMapper(snapshot: TimelineTimeSnapshot) {
 export interface CollectTimelineRegionClipsOptions extends TimelineTimeSnapshot { start: number; end?: number }
 export function collectTimelineRegionClips({ start, end, ...snapshot }: CollectTimelineRegionClipsOptions) {
   return getTimelineTime(snapshot).regionTopology(timelinePresentationRange(start, end ?? start + 1));
-}
-export function buildTimelineClipPresentationIndex(tracks: readonly TimelineTrack[], clips: readonly TimelineClip[], fps: number) {
-  const lookup = getTimelineTime({ tracks, clips, fps }).renderLookup();
-  return new Map(clips.flatMap((clip) => {
-    const entry = lookup.getPresentation(clip.id);
-    return entry ? [[clip.id, entry] as const] : [];
-  }));
 }
 export function buildTimelineClipPresentationLookup(tracks: readonly TimelineTrack[], clips: readonly TimelineClip[], fps: number) {
   return getTimelineTime({ tracks, clips, fps }).renderLookup();

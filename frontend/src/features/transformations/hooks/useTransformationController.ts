@@ -16,9 +16,7 @@ import {
   getTimelinePresentationContext,
 } from "../../timeline/api";
 import { useProjectStore } from "../../project/useProjectStore";
-import {
-  introducesTimelineClipPresentationCollision,
-} from "../../timeline/time/index";
+import { getTimelineTime } from "../../timeline/time/index";
 import { useMaskViewStore } from "../../masks/store/useMaskViewStore";
 import { isDefaultTransform } from "../catalogue/TransformationRegistry";
 import { clampedClipSourceTime } from "../../timeline/time";
@@ -241,18 +239,17 @@ export function useTransformationController(
           // pre-check is dropped: it tested stored timing and so disagreed with
           // the warped presentation footprint under adjustment speed ramps.)
           if (
-            introducesTimelineClipPresentationCollision(
+            getTimelineTime({
               tracks,
-              allClips,
-              useProjectStore.getState().config.fps,
-              {
-                clipId: clip.id,
-                transformations: nextTransforms,
-                timelineDuration: shapeUpdate.timelineDuration,
-                transformedDuration: shapeUpdate.transformedDuration,
-                transformedOffset: shapeUpdate.transformedOffset,
-              },
-            )
+              clips: allClips,
+              fps: useProjectStore.getState().config.fps,
+            }).introducesCollision({
+              clipId: clip.id,
+              transformations: nextTransforms,
+              timelineDuration: shapeUpdate.timelineDuration,
+              transformedDuration: shapeUpdate.transformedDuration,
+              transformedOffset: shapeUpdate.transformedOffset,
+            })
           ) {
             return;
           }

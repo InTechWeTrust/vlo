@@ -2,10 +2,7 @@ import type {
   TimelineClip,
   TimelineTrack,
 } from "../../../types/TimelineTypes";
-import {
-  buildTimelineClipPresentationIndex,
-  type TimelineClipPresentation,
-} from "../../timeline/time/index";
+import { getTimelineTime, presentationTick } from "../../timeline/time/index";
 
 interface FindClipAtPointInput {
   tracks: readonly TimelineTrack[];
@@ -22,31 +19,21 @@ export function findClipAtPoint({
   trackId,
   tick,
 }: FindClipAtPointInput): TimelineClip | null {
-  const presentationByClipId = buildTimelineClipPresentationIndex(
-    tracks,
-    clips,
-    fps,
-  );
+  const time = getTimelineTime({ tracks, clips, fps });
+  // "Which clip is drawn here" is the clock's own question: half-open
+  // [start, end) against the quantized footprint, masks excluded. Ordered by
+  // where the clips are drawn so an overlap resolves to the earlier one, as
+  // the previous hand-rolled scan did.
+  const matches = time
+    .clipsAt(presentationTick(tick), {
+      trackIds: [trackId],
+      includeMaskChildren: false,
+    })
+    .sort(
+      (left, right) =>
+        (time.footprint(left.id)?.start ?? 0) -
+        (time.footprint(right.id)?.start ?? 0),
+    );
 
-  const candidates = clips
-    .filter((clip) => clip.type !== "mask" && clip.trackId === trackId)
-    .map((clip) => ({
-      clip,
-      presentation: presentationByClipId.get(clip.id),
-    }))
-    .filter(
-      (
-        entry,
-      ): entry is {
-        clip: TimelineClip;
-        presentation: TimelineClipPresentation;
-      } => entry.presentation !== undefined,
-    )
-    .sort((left, right) => left.presentation.start - right.presentation.start);
-
-  const match = candidates.find(
-    ({ presentation }) => tick >= presentation.start && tick < presentation.end,
-  );
-
-  return match?.clip ?? null;
+  return matches[0] ?? null;
 }

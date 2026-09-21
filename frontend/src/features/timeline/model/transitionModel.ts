@@ -4,7 +4,7 @@ import type {
   Transition,
 } from "../../../types/TimelineTypes";
 import {
-  buildTimelineClipPresentationIndex,
+  getTimelineTime,
   type TimelineClipPresentation,
 } from "../time/index";
 
@@ -44,11 +44,11 @@ export function buildTransitionResolutionContext(
     trackIndexById: new Map(
       tracks.map((track, index) => [track.id, index] as const),
     ),
-    presentationByClipId: buildTimelineClipPresentationIndex(
+    presentationByClipId: getTimelineTime({
       tracks,
       clips,
       fps,
-    ),
+    }).presentationIndex(),
   };
 }
 

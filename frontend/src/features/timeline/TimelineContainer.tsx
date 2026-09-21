@@ -41,7 +41,7 @@ import type { TimelineClipOverlayDefinition } from "./clipOverlayApi";
 import { useTimelineSelectionStore } from "../timelineSelection";
 import { useAssetBrowserSelectionStore } from "../userAssets/useAssetBrowserSelectionStore";
 import { useAssetBrowserRevealStore } from "../userAssets/useAssetBrowserRevealStore";
-import { buildTimelineClipPresentationIndex } from "./time/index";
+import { getTimelineTime } from "./time/index";
 import { resolveTransitions } from "./model/transitionModel";
 import { TransitionOverlay } from "../transitions/components/TransitionOverlay";
 
@@ -108,9 +108,13 @@ function TimelineContainerComponent({
     () => resolveTransitions(transitions, tracks, clips, projectFps),
     [clips, projectFps, tracks, transitions],
   );
-  const clipPresentationById = React.useMemo(
-    () => buildTimelineClipPresentationIndex(tracks, clips, projectFps),
+  const timelineTime = React.useMemo(
+    () => getTimelineTime({ tracks, clips, fps: projectFps }),
     [tracks, clips, projectFps],
+  );
+  const clipPresentationById = React.useMemo(
+    () => timelineTime.presentationIndex(),
+    [timelineTime],
   );
 
   const { zoomScale, setZoomScale, ticksToPx, pxToTicks, setScrollContainer } =
@@ -515,6 +519,7 @@ function TimelineContainerComponent({
                   key={clip.id}
                   clip={clip}
                   presentation={clipPresentationById.get(clip.id)}
+                  timelineTime={timelineTime}
                   clipOverlays={clipOverlays}
                 />
               ))}

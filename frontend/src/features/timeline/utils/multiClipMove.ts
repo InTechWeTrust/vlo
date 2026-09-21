@@ -6,7 +6,7 @@ import type {
 import { isNonMaskTimelineClip } from "../../../types/TimelineTypes";
 import { snapTickToFrame } from "../../timelineSelection";
 import { hasAnyCollision } from "./collision";
-import { buildTimelineClipPresentationCollisionView } from "../time/index";
+import { getTimelineTime } from "../time/index";
 import { getTrackTypeFromClip } from "./formatting";
 
 export interface PlannedTimelineClipMove {
@@ -141,11 +141,11 @@ export function planMultiClipMove(
         }
       : clip;
   });
-  const collisionClips = buildTimelineClipPresentationCollisionView(
-    virtualTracks,
-    nextClips,
+  const collisionClips = getTimelineTime({
+    tracks: virtualTracks,
+    clips: nextClips,
     fps,
-  );
+  }).collisionView();
 
   for (const move of plannedMoves) {
     const collisionClip = collisionClips.find(

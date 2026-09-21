@@ -19,6 +19,11 @@ describe("TimelineTime", () => {
     const renderer = new AdjustmentEffectResolver();
     renderer.setAdjustmentSource(tracks, clips, snapshot.fps);
     expect(renderer.getPresentationLookup()).toBe(time.renderLookup());
+    const presentationIndex = time.presentationIndex();
+    expect(time.presentationIndex()).toBe(presentationIndex);
+    expect(presentationIndex.get("clip")).toBe(
+      time.renderLookup().getPresentation("clip"),
+    );
     expect(time.footprint("clip")).toEqual({ start: 50, end: 150 });
     for (let tick = 50; tick < 150; tick++) {
       const active = renderer.getPresentationLookup().findActiveClipAt("video", tick)!;

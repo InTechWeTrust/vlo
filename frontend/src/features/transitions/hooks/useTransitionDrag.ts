@@ -24,7 +24,7 @@ import {
 import { useInteractionStore } from "../../timeline/hooks/useInteractionStore";
 import { usePointerTracker } from "../../timeline/hooks/dnd/usePointerTracker";
 import { useTimelineViewStore } from "../../timeline/hooks/useTimelineViewStore";
-import { buildTimelineClipPresentationIndex } from "../../timeline/time/index";
+import { getTimelineTime, type TimelineClipPresentation } from "../../timeline/time/index";
 import { resolveTransition } from "../../timeline/model/transitionModel";
 import { useProjectStore } from "../../project";
 import { ticksPerFrame } from "../../../core/time/frameGrid";
@@ -52,7 +52,7 @@ function isTransitionDragData(data: unknown): data is TransitionDragData {
 function pickOutgoingAndIncoming(
   left: TimelineClip,
   right: TimelineClip,
-  presentationById: ReturnType<typeof buildTimelineClipPresentationIndex>,
+  presentationById: ReadonlyMap<string, TimelineClipPresentation>,
 ): { outgoingClip: TimelineClip; incomingClip: TimelineClip } {
   const leftPresentation = presentationById.get(left.id);
   const rightPresentation = presentationById.get(right.id);
@@ -75,7 +75,7 @@ function pickOutgoingAndIncoming(
 function findActiveClip(
   trackId: string,
   clips: readonly TimelineClip[],
-  presentationById: ReturnType<typeof buildTimelineClipPresentationIndex>,
+  presentationById: ReadonlyMap<string, TimelineClipPresentation>,
   tick: number,
 ): TimelineClip | undefined {
   return clips.find((clip) => {
@@ -99,11 +99,11 @@ function resolveDropForPair(options: {
   const lower = tracks[lowerIndex];
   if (upper?.type !== "visual" || lower?.type !== "visual") return null;
 
-  const presentationById = buildTimelineClipPresentationIndex(
-    [...tracks],
-    [...clips],
+  const presentationById = getTimelineTime({
+    tracks: [...tracks],
+    clips: [...clips],
     fps,
-  );
+  }).presentationIndex();
   const upperActive = findActiveClip(
     upper.id,
     clips,

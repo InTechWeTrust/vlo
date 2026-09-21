@@ -13,12 +13,7 @@ import { useInteractionStore } from "../useInteractionStore";
 import { getEdgeSnapCandidate } from "./snapUtils";
 import { useProjectStore } from "../../../project";
 import { getTicksPerFrame, snapTickToFrame } from "../../../timelineSelection";
-import {
-  buildTimelineClipPresentationCollisionView,
-  buildTimelineClipPresentationIndex,
-  resolveStoredEndForPresentationEnd,
-  resolveStoredStartForPresentationStart,
-} from "../../time/index";
+import { getTimelineTime, presentationTick } from "../../time/index";
 
 export const useClipResize = () => {
   // No subscriptions!
@@ -52,11 +47,12 @@ export const useClipResize = () => {
     const timelineState = useTimelineStore.getState();
     const clips = timelineState.clips ?? [];
     const tracks = timelineState.tracks ?? [];
-    const presentation = buildTimelineClipPresentationIndex(
+    const time = getTimelineTime({
       tracks,
       clips,
-      useProjectStore.getState().config.fps,
-    ).get(clip.id);
+      fps: useProjectStore.getState().config.fps,
+    });
+    const presentation = time.presentationIndex().get(clip.id);
 
     const hysteresisPx = SNAP_THRESHOLD_PX + 3;
 
@@ -77,11 +73,9 @@ export const useClipResize = () => {
       const candidateStoredStart =
         candidate === null
           ? null
-          : resolveStoredStartForPresentationStart(
-              tracks,
-              clips,
+          : time.resolveStoredStart(
               clip.trackId,
-              candidate.snapTick,
+              presentationTick(candidate.snapTick),
             );
 
       if (
@@ -120,12 +114,7 @@ export const useClipResize = () => {
     const candidateStoredEnd =
       candidate === null
         ? null
-        : resolveStoredEndForPresentationEnd(
-            tracks,
-            clips,
-            clip,
-            candidate.snapTick,
-          );
+        : time.resolveStoredEnd(clip.id, presentationTick(candidate.snapTick));
 
     if (
       candidate === null ||
@@ -166,11 +155,12 @@ export const useClipResize = () => {
     const timelineState = useTimelineStore.getState();
     const clips = timelineState.clips ?? [];
     const tracks = timelineState.tracks ?? [];
-    const presentation = buildTimelineClipPresentationIndex(
+    const time = getTimelineTime({
       tracks,
       clips,
-      useProjectStore.getState().config.fps,
-    ).get(clip.id);
+      fps: useProjectStore.getState().config.fps,
+    });
+    const presentation = time.presentationIndex().get(clip.id);
     const currentPresentationStart = presentation?.start ?? clip.start;
     const currentPresentationEnd =
       presentation?.end ?? clip.start + clip.timelineDuration;
@@ -192,14 +182,13 @@ export const useClipResize = () => {
       const rangeSnapPoints = snapPoints.filter((tick) => {
         const storedTick =
           side === "left"
-            ? resolveStoredStartForPresentationStart(
-                tracks,
-                clips,
-                clip.trackId,
-                tick,
-              )
-            : resolveStoredEndForPresentationEnd(tracks, clips, clip, tick);
-        return storedTick >= constraints.min && storedTick <= constraints.max;
+            ? time.resolveStoredStart(clip.trackId, presentationTick(tick))
+            : time.resolveStoredEnd(clip.id, presentationTick(tick));
+        return (
+          storedTick !== null &&
+          storedTick >= constraints.min &&
+          storedTick <= constraints.max
+        );
       });
 
       if (side === "left") {
@@ -211,11 +200,9 @@ export const useClipResize = () => {
           SNAP_THRESHOLD_PX,
         );
         if (candidate) {
-          const candidateStoredStart = resolveStoredStartForPresentationStart(
-            tracks,
-            clips,
+          const candidateStoredStart = time.resolveStoredStart(
             clip.trackId,
-            candidate.snapTick,
+            presentationTick(candidate.snapTick),
           );
           if (
             candidateStoredStart >= constraints.min &&
@@ -234,13 +221,12 @@ export const useClipResize = () => {
           SNAP_THRESHOLD_PX,
         );
         if (candidate) {
-          const candidateStoredEnd = resolveStoredEndForPresentationEnd(
-            tracks,
-            clips,
-            clip,
-            candidate.snapTick,
+          const candidateStoredEnd = time.resolveStoredEnd(
+            clip.id,
+            presentationTick(candidate.snapTick),
           );
           if (
+            candidateStoredEnd !== null &&
             candidateStoredEnd >= constraints.min &&
             candidateStoredEnd <= constraints.max
           ) {
@@ -252,11 +238,9 @@ export const useClipResize = () => {
 
     if (side === "left") {
       const targetPresentationStart = currentPresentationStart + deltaTicks;
-      let newStart = resolveStoredStartForPresentationStart(
-        tracks,
-        clips,
+      let newStart: number = time.resolveStoredStart(
         clip.trackId,
-        targetPresentationStart,
+        presentationTick(targetPresentationStart),
       );
       newStart = clamp(newStart, constraints.min, constraints.max);
       newStart = snapTickToFrame(newStart, ticksPerFrame);
@@ -264,19 +248,14 @@ export const useClipResize = () => {
       const validDelta = newStart - clip.start;
 
       const newShape = getResizedClipLeft(clip, validDelta);
-      const collisionClips = buildTimelineClipPresentationCollisionView(
-        tracks,
-        clips,
-        useProjectStore.getState().config.fps,
-        {
-          clipId: clip.id,
-          start: newShape.start,
-          timelineDuration: newShape.timelineDuration,
-          offset: newShape.offset,
-          transformedOffset: newShape.transformedOffset,
-          croppedSourceDuration: newShape.croppedSourceDuration,
-        },
-      );
+      const collisionClips = time.collisionView({
+        clipId: clip.id,
+        start: newShape.start,
+        timelineDuration: newShape.timelineDuration,
+        offset: newShape.offset,
+        transformedOffset: newShape.transformedOffset,
+        croppedSourceDuration: newShape.croppedSourceDuration,
+      });
       const collisionClip = collisionClips.find(
         (candidate) => candidate.id === clip.id,
       );
@@ -304,16 +283,15 @@ export const useClipResize = () => {
       // The right edge is dragged in presentation space. Outside any
       // adjustment this is identity (stored end shifts by deltaTicks). Inside
       // a speed-up region, a small presentation delta maps to a larger
-      // stored-tick delta: `resolveStoredEndForPresentationEnd` goes through
+      // stored-tick delta: `TimelineTime.resolveStoredEnd` goes through
       // the shared presentation model and is exact for spline-shaped speed
       // transforms.
       const targetPresentationEnd = currentPresentationEnd + deltaTicks;
-      let newEnd = resolveStoredEndForPresentationEnd(
-        tracks,
-        clips,
-        clip,
-        targetPresentationEnd,
-      );
+      // Null only if the clip has left the snapshot mid-drag; its own stored
+      // end is then the no-op target.
+      let newEnd: number =
+        time.resolveStoredEnd(clip.id, presentationTick(targetPresentationEnd)) ??
+        clip.start + clip.timelineDuration;
       newEnd = clamp(newEnd, constraints.min, constraints.max);
       newEnd = snapTickToFrame(newEnd, ticksPerFrame);
       newEnd = clamp(newEnd, constraints.min, constraints.max);
@@ -321,16 +299,11 @@ export const useClipResize = () => {
       const validDelta = newEnd - clip.start - clip.timelineDuration;
 
       const newShape = getResizedClipRight(clip, validDelta);
-      const collisionClips = buildTimelineClipPresentationCollisionView(
-        tracks,
-        clips,
-        useProjectStore.getState().config.fps,
-        {
-          clipId: clip.id,
-          timelineDuration: newShape.timelineDuration,
-          croppedSourceDuration: newShape.croppedSourceDuration,
-        },
-      );
+      const collisionClips = time.collisionView({
+        clipId: clip.id,
+        timelineDuration: newShape.timelineDuration,
+        croppedSourceDuration: newShape.croppedSourceDuration,
+      });
       const collisionClip = collisionClips.find(
         (candidate) => candidate.id === clip.id,
       );
