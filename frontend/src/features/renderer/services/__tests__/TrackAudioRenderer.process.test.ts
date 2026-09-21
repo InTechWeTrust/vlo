@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
     return: ReturnType<typeof vi.fn>;
   }>,
   sinkStarts: [] as number[],
+  /** Answer every request with this, as a sink does for time past its end. */
+  pastEndBuffer: null as WrappedBuffer | null,
 }));
 
 vi.mock("mediabunny", () => ({
@@ -23,7 +25,12 @@ vi.mock("mediabunny", () => ({
     return {
       buffers(start = 0) {
         mocks.sinkStarts.push(start);
-        const values = [...(mocks.bufferBatches.shift() ?? [])];
+        if (mocks.sinkStarts.length > 200) {
+          throw new Error(`the renderer kept reopening its iterator: ${mocks.sinkStarts.slice(0, 8).join(", ")}`);
+        }
+        const values = mocks.pastEndBuffer
+          ? [mocks.pastEndBuffer]
+          : [...(mocks.bufferBatches.shift() ?? [])];
         const iterator = {
           next: vi.fn(async () =>
             values.length > 0
@@ -228,6 +235,7 @@ describe("TrackAudioRenderer process lifecycle", () => {
     mocks.bufferBatches = [];
     mocks.iterators = [];
     mocks.sinkStarts = [];
+    mocks.pastEndBuffer = null;
     vi.stubGlobal("OfflineAudioContext", class OfflineAudioContextMock {});
   });
 
@@ -416,6 +424,62 @@ describe("TrackAudioRenderer process lifecycle", () => {
     expect(sources[0].buffer).toBe(mergedBuffers[0]);
     expect(sources[0].start).toHaveBeenCalledWith(1);
     expect(renderer.getNextScheduleTime()).toBeCloseTo(1.03);
+  });
+
+  it("moves on when asked for time past the end of the source audio", async () => {
+    // A sink asked for time past the end answers with its last buffer, which
+    // ends before the request. Reopening at the same time gets it again.
+    mocks.pastEndBuffer = wrappedBuffer(0.02, 5.33, [[1, 2]]);
+    const renderer = new TrackAudioRenderer("track-1");
+    renderer.reset(5.35); // plus the 0.15 s pre-buffer: schedules from 5.5 s
+    const { context, sources } = createContext(0);
+
+    await renderer.process(
+      context,
+      destination,
+      [clip()],
+      vi.fn(async () => inputWithTrack()),
+      mapping,
+      { lookahead: 6, forceFlush: true },
+    );
+
+    // One open per 0.1 s step through the silence, then the lookahead ends.
+    expect(mocks.sinkStarts.length).toBeLessThanOrEqual(6);
+    expect(sources).toHaveLength(0);
+    expect(renderer.getNextScheduleTime()).toBeGreaterThanOrEqual(6);
+  });
+
+  it("does not play a retimed clip from its raw placement once its presentation has ended", async () => {
+    mocks.bufferBatches = [[wrappedBuffer(0.2)], []];
+    const placed = clip({ id: "placed" });
+    const synthetic = clip({ id: "synthetic", start: 96_000 });
+    // A ripple retime ended `placed` before 0.5 s; its raw placement runs to
+    // 10 s. The lookup has never heard of the synthetic lane clip.
+    const lookup = {
+      findActiveClipAt: vi.fn(() => null),
+      getPresentation: vi.fn((id: string) => (id === "placed" ? {} : null)),
+      resolveEffectiveTrackTickWithinClip: vi.fn(
+        (_clip: TimelineClip, tick: number) => tick,
+      ),
+    };
+    const renderer = new TrackAudioRenderer("track-1", {
+      getPresentationLookup: () => lookup,
+    } as never);
+    const { context } = createContext();
+    const getInput = vi.fn(async () => inputWithTrack());
+
+    await renderer.process(
+      context,
+      destination,
+      [placed, synthetic],
+      getInput,
+      mapping,
+      { lookahead: 1.2, forceFlush: true },
+    );
+
+    // Silence until the synthetic clip, which the fallback still finds.
+    expect(getInput).toHaveBeenCalledTimes(1);
+    expect(mocks.sinkStarts).toHaveLength(1);
   });
 
   it("applies keyframed gain curves and falls back when automation rejects", async () => {
