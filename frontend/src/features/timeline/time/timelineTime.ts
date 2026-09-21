@@ -38,6 +38,12 @@ export interface TimelineTime extends TimelinePlacementMapper {
   toPresentation: TimelinePlacementMapper["mapStoredTickToPresentationTick"];
   clipsAt(tick: PresentationTick, options?: TimelineTimeQueryOptions): TimelineClip[];
   clipsIn(range: PresentationRange, options?: TimelineTimeQueryOptions): TimelineClip[];
+  /**
+   * Source time the clip shows at `tick`. Not a footprint test: outside the
+   * footprint it extrapolates through the clip's presentation (null only for an
+   * unknown clip), which span edges at the exclusive end rely on. Ask
+   * `footprint` or `clipsAt` first when the question is whether the clip plays.
+   */
   sourceAt(clipId: string, tick: PresentationTick): SourceTick | null;
   presentationOf(clipId: string, source: SourceTick): PresentationTick | null;
   clampToFootprint(clipId: string, tick: number): PresentationTick | null;
