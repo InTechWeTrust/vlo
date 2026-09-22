@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import {
+  deferProjectMutation,
+  guardProjectMutation,
+} from "../../core/project/projectMutationGuard";
 import { Input, UrlSource, BlobSource, ALL_FORMATS } from "mediabunny";
 import type {
   Asset,
@@ -517,7 +521,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
   isLoading: false,
   inputCache: new Map(),
 
-  fetchAssets: async () => {
+  fetchAssets: guardProjectMutation(async () => {
     const { rootHandle } = useProjectStore.getState();
     if (!rootHandle) return;
 
@@ -652,9 +656,9 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
-  },
+  }),
 
-  scanForNewAssets: async () => {
+  scanForNewAssets: guardProjectMutation(async () => {
     if (get().isScanning) {
       console.warn("[Scanner] Scan already in progress.");
       return;
@@ -692,13 +696,13 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
         };
       });
     }
-  },
+  }),
 
   uploadAsset: async () => {
     console.warn("uploadAsset is deprecated. Use addLocalAsset.");
   },
 
-  addLocalAsset: async (
+  addLocalAsset: deferProjectMutation(async (
     file: File,
     creationMetadata?: Asset["creationMetadata"],
     familyId?: Asset["familyId"],
@@ -724,9 +728,9 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       options,
     );
     return result.assets[0] ?? null;
-  },
+  }),
 
-  addLocalAssets: async (
+  addLocalAssets: deferProjectMutation(async (
     files: readonly File[],
     creationMetadata?: Asset["creationMetadata"],
     familyId?: Asset["familyId"],
@@ -751,9 +755,9 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       undefined,
       options,
     );
-  },
+  }),
 
-  addLocalAssetWithFamily: async (
+  addLocalAssetWithFamily: deferProjectMutation(async (
     file: File,
     creationMetadata?: Asset["creationMetadata"],
     family?: Pick<AssetFamily, "id" | "compatibility">,
@@ -770,7 +774,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       options,
     );
     return result.assets[0] ?? null;
-  },
+  }),
 
   ensureAssetSourceLoaded: async (assetId: string) => {
     const existingAsset = get().assets.find((asset) => asset.id === assetId);
@@ -899,7 +903,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     return hydrationPromise;
   },
 
-  upsertFamily: async (family: AssetFamily) => {
+  upsertFamily: deferProjectMutation(async (family: AssetFamily) => {
     const previousAssets = get().assets;
     const previousFamilies = get().families;
     const sanitizedState = sanitizeAssetFamilyState(
@@ -920,9 +924,9 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       );
       set({ assets: previousAssets, families: previousFamilies });
     }
-  },
+  }),
 
-  setFamilyRepresentative: async (familyId: string, representativeAssetId: string) => {
+  setFamilyRepresentative: guardProjectMutation(async (familyId: string, representativeAssetId: string) => {
     const previousAssets = get().assets;
     const previousFamilies = get().families;
     const updatedAt = Date.now();
@@ -960,9 +964,9 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       );
       set({ assets: previousAssets, families: previousFamilies });
     }
-  },
+  }),
 
-  updateAsset: async (id: string, updates: Partial<Asset>) => {
+  updateAsset: guardProjectMutation(async (id: string, updates: Partial<Asset>) => {
     const previousAsset = get().assets.find((asset) => asset.id === id);
     if (!previousAsset) {
       return;
@@ -1021,7 +1025,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
       console.error(`Failed to persist asset update for '${id}'`, error);
       set({ assets: previousAssets, families: previousFamilies });
     }
-  },
+  }),
 
   getInput: async (assetId: string) => {
     const { inputCache } = get();
@@ -1056,7 +1060,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     }
   },
 
-  restoreDeletedAsset: async (id: string) => {
+  restoreDeletedAsset: guardProjectMutation(async (id: string) => {
     const existingAsset = get().assets.find((asset) => asset.id === id);
     if (existingAsset) {
       return existingAsset;
@@ -1091,9 +1095,9 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
     }
 
     return get().assets.find((asset) => asset.id === id) ?? restoredAsset;
-  },
+  }),
 
-  deleteAsset: async (id: string, options?: DeleteAssetOptions) => {
+  deleteAsset: guardProjectMutation(async (id: string, options?: DeleteAssetOptions) => {
     const assetToDelete = get().assets.find((a) => a.id === id);
     const cachedInput = get().inputCache.get(id);
     if (
@@ -1204,7 +1208,7 @@ export const useAssetStore = create<AssetStore>((set, get) => ({
         await get().deleteAsset(maskId);
       }
     }
-  },
+  }),
 }));
 // DEBUG: expose for console diagnostics
 (window as unknown as Record<string, unknown>).__ASSET_STORE__ = useAssetStore;

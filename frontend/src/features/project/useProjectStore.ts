@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { guardProjectMutation, projectMutationGuard } from "../../core/project/projectMutationGuard";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Project } from "../../types/ProjectState";
 import { runPreSaveHooks } from "../../core/persistence/preSaveHooks";
@@ -249,7 +250,7 @@ export const useProjectStore = create<ProjectState>()(
       config: { ...DEFAULT_PROJECT_CONFIG },
       timelineSnapshotRequest: null,
 
-      createProject: async (
+      createProject: guardProjectMutation(async (
         title: string,
         parentHandle: FileSystemDirectoryHandle,
         configOverrides?: Partial<ProjectConfig>,
@@ -309,9 +310,9 @@ export const useProjectStore = create<ProjectState>()(
           console.error("Failed to create project", e);
           throw e;
         }
-      },
+      }),
 
-      loadProject: async (handle: FileSystemDirectoryHandle) => {
+      loadProject: guardProjectMutation(async (handle: FileSystemDirectoryHandle) => {
         try {
           await runPreSaveHooksBeforeClosing();
           await runProjectClosingHooks();
@@ -398,9 +399,9 @@ export const useProjectStore = create<ProjectState>()(
           console.error("Failed to load project", e);
           throw e;
         }
-      },
+      }),
 
-      updateTitle: async (newTitle: string) => {
+      updateTitle: guardProjectMutation(async (newTitle: string) => {
         const { project, saveProject } = get();
         if (!project) return;
 
@@ -409,9 +410,9 @@ export const useProjectStore = create<ProjectState>()(
         }));
 
         await saveProject();
-      },
+      }),
 
-      updateConfig: async (updates) => {
+      updateConfig: guardProjectMutation(async (updates) => {
         const currentConfig = get().config;
         const nextConfig = { ...currentConfig, ...updates };
 
@@ -435,14 +436,16 @@ export const useProjectStore = create<ProjectState>()(
         }
 
         await get().saveProject();
-      },
+      }),
 
-      assignAssetFolder: (folderPath) =>
+      assignAssetFolder: (folderPath) => {
+        projectMutationGuard.assertEditable();
         set((state) => ({
           project: state.project
             ? { ...state.project, rootAssetsFolder: folderPath }
             : null,
-        })),
+        }));
+      },
 
       acknowledgeTimelineSnapshotRequest: (requestId) =>
         set((state) =>
@@ -477,6 +480,7 @@ export const useProjectStore = create<ProjectState>()(
       },
 
       resetProject: () => {
+        projectMutationGuard.assertEditable();
         void runProjectClosingHooks();
         void clearProjectDeferredCleanupTrash();
         void clearProjectTemporaryFiles();

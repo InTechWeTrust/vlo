@@ -3,6 +3,8 @@
  * Allows the app to interact with the local disk for project management.
  */
 
+import { projectMutationGuard } from "../../../core/project/projectMutationGuard";
+
 export class FileSystemService {
   private projectHandle: FileSystemDirectoryHandle | null = null;
 
@@ -50,8 +52,9 @@ export class FileSystemService {
    * Prompts the user to select a directory to open as a project.
    */
   async openDirectory(): Promise<FileSystemDirectoryHandle> {
+    projectMutationGuard.assertEditable();
     const handle = await this.pickDirectory();
-    this.projectHandle = handle;
+    this.setHandle(handle);
     return handle;
   }
 
@@ -102,6 +105,8 @@ export class FileSystemService {
    * Sets the project handle explicitly (e.g., from IndexedDB on reload).
    */
   setHandle(handle: FileSystemDirectoryHandle) {
+    // Switching directories mid-export would swap the files under the render.
+    projectMutationGuard.assertEditable();
     this.projectHandle = handle;
   }
 

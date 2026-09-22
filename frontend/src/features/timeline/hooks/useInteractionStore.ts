@@ -1,5 +1,6 @@
 // hooks/useInteractionStore.ts
 import { create } from "zustand";
+import { projectMutationGuard } from "../../../core/project/projectMutationGuard";
 import type { BaseClip } from "../../../types/TimelineTypes";
 import { useTimelineStore } from "../useTimelineStore";
 import { useProjectStore } from "../../project/useProjectStore";
@@ -186,7 +187,8 @@ export const useInteractionStore = create<InteractionState>((set) => ({
   transformDropPreview: null,
   transitionDropPreview: null,
 
-  startDrag: (id, clip, operation, constraints = null) =>
+  startDrag: (id, clip, operation, constraints = null) => {
+    projectMutationGuard.assertEditable();
     set({
       activeId: id,
       activeClip: clip,
@@ -202,7 +204,8 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       snappedStartTicks: null,
       transformDropPreview: null,
       transitionDropPreview: null,
-    }),
+    });
+  },
 
   updateDelta: (deltaX, deltaY = 0) =>
     set({ currentDeltaX: deltaX, currentDeltaY: deltaY }),
@@ -288,3 +291,6 @@ export const useInteractionStore = create<InteractionState>((set) => ({
       transitionDropPreview: null,
     }),
 }));
+
+projectMutationGuard.registerEditBlocker(() => useInteractionStore.getState().activeId
+  ? "Finish the timeline drag before exporting." : null);

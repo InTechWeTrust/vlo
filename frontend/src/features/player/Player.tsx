@@ -1,5 +1,6 @@
 import { useEffect, useRef, useMemo, memo, useCallback, useState } from "react";
 import { isProjectExportRunning } from "../../core/export/exportRunLog";
+import { projectMutationGuard } from "../../core/project/projectMutationGuard";
 import { Box } from "@mui/material";
 import { RenderTexture } from "pixi.js";
 import {
@@ -836,6 +837,17 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
     async (resolution: number, format: ExportFormatValue) => {
       const { setIsProcessing, setProgress, setDialogView } =
         useExtractStore.getState();
+
+      // The export refuses an unfinished edit anyway; asking first spares the
+      // user a save dialog for a file that would never be written.
+      try {
+        projectMutationGuard.assertQuiescent();
+      } catch (error) {
+        useExtractStore.getState().setError(
+          error instanceof Error ? error.message : "Export failed",
+        );
+        return;
+      }
 
       let fileHandle: FileSystemFileHandle;
       try {

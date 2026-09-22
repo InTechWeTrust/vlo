@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { projectMutationGuard } from "../../../../core/project/projectMutationGuard";
 
 const disposeBrushBuffer = vi.fn();
 vi.mock("../../../masks/runtime/brushBufferRegistry", () => ({
@@ -132,6 +133,29 @@ describe("createExtensionTimelineApi", () => {
         },
       ],
     });
+  });
+
+  it("freezes native and SDK edits together during a project export, keeping undo history", async () => {
+    const api = createExtensionTimelineApi(createScope("example.shapes"));
+    const move = () => api.transaction("Move shape", (tx) => {
+      tx.moveEntity("shape-1", { startTicks: 25 });
+    });
+    expect(move()).toMatchObject({ ok: true });
+    const before = useTimelineStore.getState();
+    const lease = await projectMutationGuard.acquire();
+    try {
+      expect(() => useTimelineStore.getState().toggleTrackMute("track-visual")).toThrow(/paused/);
+      expect(() => useTimelineStore.getState().undo()).toThrow(/paused/);
+      expect(() => useTimelineStore.getState().redo()).toThrow(/paused/);
+      expect(move()).toMatchObject({ ok: false, code: "invalid_command", message: expect.stringContaining("paused") });
+      expect(useTimelineStore.getState().clips).toBe(before.clips);
+      expect(useTimelineStore.getState().tracks).toBe(before.tracks);
+      expect(useTimelineStore.getState().undoLabel).toBe(before.undoLabel);
+    } finally {
+      lease.release();
+    }
+    expect(useTimelineStore.getState().undo()).toBe(true);
+    expect(useTimelineStore.getState().clips.find((clip) => clip.id === "shape-1")?.start).toBe(0);
   });
 
   it("creates an extension entity that round-trips through undo and redo", () => {

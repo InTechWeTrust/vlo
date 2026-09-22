@@ -157,6 +157,8 @@ function workedExample(options: { v1HasAudio?: boolean | null } = {}) {
 const asExtension = (inputs: readonly GenerationInputSnapshot[]) =>
   inputs as unknown as readonly ExtensionGenerationInputSnapshot[];
 
+const COMPLETION_EXAMPLE_TIMEOUT_MS = 20_000;
+
 describe.skipIf(!packagePresent)("minimax ref2v: catalogue", () => {
   it("assigns the worked example's labels by occurrence, silent first video included", async () => {
     const { buildReferenceCatalogue } = await loadPackage();
@@ -1879,6 +1881,8 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
     );
   }
 
+  // The plan's whole completion example, typed shot by shot: about 2 s
+  // alone, but three times that under full-suite load, past the 5 s default.
   it("authors the plan's completion example and commits it resolved against the reordered media", async () => {
     const { replaceReferenceText, typeReferenceText } = await loadLoader();
     const pkg = await loadPackage();
@@ -1975,7 +1979,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
     expect(
       session.panelInputs().find((input) => input.id === IMAGES)?.media?.map((entry) => entry.itemId),
     ).toEqual(["media-city", "media-hero"]);
-  });
+  }, COMPLETION_EXAMPLE_TIMEOUT_MS);
 
   it("offers the shots' scope back after the parentheses were deleted in the panel, and audio only audio markers", async () => {
     const pkg = await loadPackage();

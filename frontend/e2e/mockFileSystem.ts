@@ -529,7 +529,19 @@ export async function installMockFileSystem(
                     this.body = next;
                 }
 
+                // The export measurement writes long 1080p exports that
+                // nothing reads back. Keeping them would cap the export at
+                // what one in-page buffer can hold (about 1 GB), and uploading
+                // them would dominate the run, so only their size is kept.
+                private readonly discard = Boolean(
+                    (window as unknown as { __vloMockDiscardWrites?: boolean }).__vloMockDiscardWrites);
+
                 private writeAt(position: number, bytes: Uint8Array) {
+                    if (this.discard) {
+                        this.size = Math.max(this.size, position + bytes.byteLength);
+                        this.cursor = position + bytes.byteLength;
+                        return;
+                    }
                     this.ensureCapacity(position + bytes.byteLength);
                     this.body.set(bytes, position);
                     this.size = Math.max(this.size, position + bytes.byteLength);
@@ -549,8 +561,10 @@ export async function installMockFileSystem(
                             this.cursor = params.position ?? 0;
                         } else if (params.type === 'truncate') {
                             const size = params.size ?? 0;
-                            this.ensureCapacity(size);
-                            if (size > this.size) this.body.fill(0, this.size, size);
+                            if (!this.discard) {
+                                this.ensureCapacity(size);
+                                if (size > this.size) this.body.fill(0, this.size, size);
+                            }
                             this.size = size;
                             this.cursor = Math.min(this.cursor, size);
                         } else {
@@ -562,6 +576,7 @@ export async function installMockFileSystem(
                 }
 
                 async close() {
+                    if (this.discard) return;
                     const response = await fetch(requestUrl(this.filePath), {
                         method: 'PUT',
                         headers: { 'content-type': 'application/octet-stream' },

@@ -1,3 +1,5 @@
+import { projectMutationGuard } from "../project/projectMutationGuard";
+
 export interface LivePreviewParamUpdate {
   transformId: string;
   paramName: string;
@@ -46,6 +48,7 @@ class LivePreviewParamStore {
   }
 
   setMany(updates: readonly LivePreviewParamUpdate[]): void {
+    projectMutationGuard.assertEditable();
     const changed: LivePreviewParamKey[] = [];
     for (const update of updates) {
       const key = createKey(update.transformId, update.paramName);
@@ -110,9 +113,17 @@ class LivePreviewParamStore {
     };
   }
 
+  hasOverrides(): boolean {
+    return this.overrides.size > 0;
+  }
+
   private emit(change: LivePreviewParamChange): void {
     this.listeners.forEach((listener) => listener(change));
   }
 }
 
 export const livePreviewParamStore = new LivePreviewParamStore();
+// The export renders through the same transform path, which reads these
+// overrides, so a preview left in place would reach the output.
+projectMutationGuard.registerEditBlocker(() => livePreviewParamStore.hasOverrides()
+  ? "Finish or cancel the transform edit before exporting." : null);

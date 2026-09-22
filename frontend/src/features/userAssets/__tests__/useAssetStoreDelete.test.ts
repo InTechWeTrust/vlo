@@ -3,6 +3,10 @@ import { useAssetStore } from "../useAssetStore";
 import { fileSystemService } from "../../project/services/FileSystemService";
 import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
 import { deferredAssetCleanupService } from "../services/DeferredAssetCleanupService";
+import {
+  ProjectMutationBlockedError,
+  projectMutationGuard,
+} from "../../../core/project/projectMutationGuard";
 
 const { mockRemoveClipsByAssetId } = vi.hoisted(() => ({
   mockRemoveClipsByAssetId: vi.fn(),
@@ -88,6 +92,20 @@ describe("useAssetStore - Deletion", () => {
     mockRemoveClipsByAssetId.mockReset();
     projectPersistenceService.resetCaches();
     deferredAssetCleanupService.reset();
+  });
+
+  it("refuses to delete an asset while a project export holds the project", async () => {
+    const lease = await projectMutationGuard.acquire();
+    try {
+      await expect(useAssetStore.getState().deleteAsset("asset-1"))
+        .rejects.toBeInstanceOf(ProjectMutationBlockedError);
+    } finally {
+      lease.release();
+    }
+    // Nothing was touched: the render may still be reading this asset.
+    expect(useAssetStore.getState().assets.map((asset) => asset.id)).toEqual(["asset-1", "asset-2"]);
+    expect(mockRemoveClipsByAssetId).not.toHaveBeenCalled();
+    expect(fileSystemService.deleteFile).not.toHaveBeenCalled();
   });
 
   it("should delete an asset from store, file system, and assets.json", async () => {

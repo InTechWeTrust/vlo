@@ -55,6 +55,10 @@ import {
   resetExportRunLogForTests,
   subscribeExportRuns,
 } from "../../../../core/export/exportRunLog";
+import {
+  ProjectMutationBlockedError,
+  projectMutationGuard,
+} from "../../../../core/project/projectMutationGuard";
 
 function abortError(): Error {
   const error = new Error("aborted");
@@ -790,5 +794,109 @@ describe("useExportJobController runProjectExport", () => {
 
     expect(sentinel.release).toHaveBeenCalledOnce();
     expect(console.error).toHaveBeenCalledWith("Export failed", expect.any(Error));
+  });
+});
+
+describe("useExportJobController project export freeze", () => {
+  afterEach(() => {
+    // A leaked lease would freeze every later test in this worker.
+    expect(projectMutationGuard.isFrozen()).toBe(false);
+  });
+
+  it("freezes the project while rendering and unfreezes before the run settles", async () => {
+    const frozenDuringRender: boolean[] = [];
+    vi.mocked(renderSelectionToVideoFile).mockImplementation(async () => {
+      frozenDuringRender.push(projectMutationGuard.isFrozen());
+      expect(() => projectMutationGuard.beginMutation()).toThrow(ProjectMutationBlockedError);
+      return new File(["v"], "export.mp4");
+    });
+    const frozenAtSettle: boolean[] = [];
+    const unsubscribe = subscribeExportRuns(() => {
+      if (getLatestExportRun()?.status === "completed") {
+        frozenAtSettle.push(projectMutationGuard.isFrozen());
+      }
+    });
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runProjectExport({ resolution: 1080 });
+    });
+    unsubscribe();
+
+    expect(frozenDuringRender).toEqual([true]);
+    // A subscriber that edits as soon as it hears the export ended may.
+    expect(frozenAtSettle).toEqual([false]);
+  });
+
+  it("refuses to start behind an unfinished edit, before flushing brush strokes", async () => {
+    const removeBlocker = projectMutationGuard.registerEditBlocker(
+      () => "Finish the timeline drag before exporting.",
+    );
+    try {
+      const { result } = makeController();
+      await act(async () => {
+        await result.current.runProjectExport({ resolution: 1080 });
+      });
+    } finally {
+      removeBlocker();
+    }
+
+    expect(prepareBrushMasksForTimelineRender).not.toHaveBeenCalled();
+    expect(renderSelectionToVideoFile).not.toHaveBeenCalled();
+    expect(getLatestExportRun()).toMatchObject({
+      status: "failed",
+      error: "Finish the timeline drag before exporting.",
+    });
+    expect(useExtractStore.getState().error).toBe("Finish the timeline drag before exporting.");
+  });
+
+  it("waits for a change in flight, then renders what it left", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockResolvedValue(new File(["v"], "export.mp4"));
+    const finishImport = projectMutationGuard.beginMutation();
+
+    const { result } = makeController();
+    let exporting!: Promise<void>;
+    act(() => {
+      exporting = result.current.runProjectExport({ resolution: 1080 });
+    });
+    await waitFor(() => expect(prepareBrushMasksForTimelineRender).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(renderSelectionToVideoFile).not.toHaveBeenCalled();
+
+    finishImport();
+    await act(async () => { await exporting; });
+    expect(renderSelectionToVideoFile).toHaveBeenCalledOnce();
+    expect(getLatestExportRun()?.status).toBe("completed");
+  });
+
+  it("ends as cancelled, without rendering, when cancelled while waiting", async () => {
+    const finishImport = projectMutationGuard.beginMutation();
+
+    const { result } = makeController();
+    let exporting!: Promise<void>;
+    act(() => {
+      exporting = result.current.runProjectExport({ resolution: 1080 });
+    });
+    await waitFor(() => expect(prepareBrushMasksForTimelineRender).toHaveBeenCalled());
+    act(() => result.current.cancel());
+    await act(async () => { await exporting; });
+    finishImport();
+
+    expect(renderSelectionToVideoFile).not.toHaveBeenCalled();
+    expect(getLatestExportRun()?.status).toBe("cancelled");
+  });
+
+  it("leaves the project editable during a range render", async () => {
+    vi.mocked(renderSelectionToVideoFile).mockImplementation(async () => {
+      expect(projectMutationGuard.isFrozen()).toBe(false);
+      return new File(["v"], "clip.mp4");
+    });
+    vi.mocked(addLocalAsset).mockResolvedValue({ id: "asset-1" } as never);
+
+    const { result } = makeController();
+    await act(async () => {
+      await result.current.runSelectionExport(selectionOptions());
+    });
+    expect(renderSelectionToVideoFile).toHaveBeenCalledOnce();
   });
 });

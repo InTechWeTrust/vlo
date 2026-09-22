@@ -6,6 +6,7 @@ import type {
   TimelineSnapshot,
 } from "../project/types/ProjectDocument";
 import { playbackClock } from "../../core/playback/PlaybackClock";
+import { projectMutationGuard } from "../../core/project/projectMutationGuard";
 import {
   createEmptyTimelineSnapshot,
   getTimelineClipById,
@@ -176,6 +177,17 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
       const state = get();
       if (state.isBusy || state.stack.length === 0) return false;
 
+      // Publishing awaits the composite library between the commits that
+      // remap its placement. Counted as one change for the whole run, so an
+      // export waits for it instead of freezing the project between steps.
+      let releaseMutation: () => void;
+      try {
+        releaseMutation = projectMutationGuard.beginMutation();
+      } catch (error) {
+        set({ lastError: getErrorMessage(error) });
+        return false;
+      }
+
       set({ isBusy: true, lastError: null });
 
       // The content of the frame currently being committed. A commit that
@@ -281,6 +293,8 @@ export const useCompositeTimelineStore = create<CompositeTimelineState>(
         set({ isBusy: false, lastError: message });
         console.error("Failed to save composite subtimeline", error);
         return false;
+      } finally {
+        releaseMutation();
       }
     },
 

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { useAssetStore } from "../useAssetStore";
 import { projectPersistenceService } from "../../project/services/ProjectPersistenceService";
 import type { MediaFileProcessor } from "../services/MediaProcessingService";
+import { projectMutationGuard } from "../../../core/project/projectMutationGuard";
 
 // import { useProjectStore } from '../../project/useProjectStore';
 
@@ -127,6 +128,24 @@ describe("useAssetStore - Local Assets", () => {
     expect(asset.file).toBe(file);
     expect(asset.src).toBe("blob:http://localhost:3000/uuid");
     expect(URL.createObjectURL).toHaveBeenCalledWith(file);
+  });
+
+  it("holds an arriving import until a project export ends, instead of losing it", async () => {
+    const file = new File(["content"], "generated.mp4", { type: "video/mp4" });
+    const lease = await projectMutationGuard.acquire();
+    let settled = false;
+    const importing = useAssetStore.getState().addLocalAsset(file).then((asset) => {
+      settled = true;
+      return asset;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(useAssetStore.getState().assets).toHaveLength(0);
+
+    lease.release();
+    const asset = await importing;
+    expect(asset?.name).toBe("generated.mp4");
+    expect(useAssetStore.getState().assets).toHaveLength(1);
   });
 
   it("addLocalAsset detects images correctly", async () => {

@@ -105,6 +105,10 @@
 /frontend/src/core/export/exportProgress.ts extension-surface=host
 /frontend/src/core/extract/useExtractStore.ts extension-surface=adapter
 /frontend/src/core/project/projectLifecycleHooks.ts extension-surface=adapter
+# The project freeze a whole-project export holds. The shared timeline
+# pipeline and asset store check it for native and SDK edits alike.
+/frontend/src/core/project/projectMutationGuard.ts extension-surface=host
+/frontend/src/core/project/__tests__/projectMutationGuard.test.ts extension-surface=host
 /frontend/src/core/persistence/preSaveHooks.ts extension-surface=adapter
 /frontend/src/features/colorGrading/components/GradeManagementControl.tsx extension-surface=adapter
 /frontend/src/features/colorGrading/components/LutControl.tsx extension-surface=adapter

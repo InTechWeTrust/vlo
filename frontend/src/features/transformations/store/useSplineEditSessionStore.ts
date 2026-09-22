@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { projectMutationGuard } from "../../../core/project/projectMutationGuard";
 
 interface SplineEditSession {
   id: string;
@@ -31,6 +32,7 @@ export const useSplineEditSessionStore = create<SplineEditSessionState>(
     activeSession: null,
 
     beginSession: ({ id, originalTargetSnapshot, initialValue }) => {
+      projectMutationGuard.assertEditable();
       set({
         activeSession: {
           id,
@@ -94,3 +96,6 @@ export const useSplineEditSessionStore = create<SplineEditSessionState>(
     },
   }),
 );
+
+projectMutationGuard.registerEditBlocker(() => useSplineEditSessionStore.getState().activeSession
+  ? "Finish or cancel the spline edit before exporting." : null);

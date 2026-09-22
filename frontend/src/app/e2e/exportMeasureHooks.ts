@@ -17,12 +17,15 @@ export interface ExportMeasureRunSummary {
   status: string;
   startedAt: number;
   endedAt: number | null;
+  /** 0–1; sampled over time, it shows whether a long hidden run slows down. */
+  progress: number;
   error: string | null;
 }
 
 export function getLatestExportRunSummary(): ExportMeasureRunSummary | null {
   const run = getLatestExportRun();
   return run
-    ? { kind: run.kind, status: run.status, startedAt: run.startedAt, endedAt: run.endedAt, error: run.error }
+    ? { kind: run.kind, status: run.status, startedAt: run.startedAt, endedAt: run.endedAt,
+      progress: run.progress, error: run.error }
     : null;
 }

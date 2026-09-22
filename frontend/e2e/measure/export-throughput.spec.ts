@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -19,10 +19,16 @@ import { installWebSocketMock } from '../mocks/websocketMock';
  * emulation keep background tabs visible and unthrottled, which is the very
  * thing measured here.
  *
+ * The output is counted but not kept (MEASURE_KEEP_OUTPUT=1 keeps it): the
+ * mocked file lives in one page buffer, which cannot hold much more than a
+ * gigabyte, and uploading it back would dominate a long run.
+ *
  * MEASURE_CHROME picks the browser binary (Playwright's Chromium by default),
  * MEASURE_HEADLESS=1 runs it headless (tab hiding still applies; minimising
  * does not). Whether a minimise actually took effect is recorded, since some
- * window managers (WSLg) ignore it.
+ * window managers (WSLg) ignore it. From WSL with mirrored networking,
+ * MEASURE_CHROME may be a Windows `chrome.exe`: its profile then goes under
+ * the Windows temp folder, and a minimise is real.
  *
  *   npm run measure:export --prefix frontend
  *   MEASURE_PROJECT=/abs/project MEASURE_CONDITIONS=visible,hidden-pip MEASURE_REPEAT=2 ...
@@ -31,13 +37,21 @@ import { installWebSocketMock } from '../mocks/websocketMock';
  * - `visible`: the editor tab stays in front.
  * - `hidden-pip`: another tab is brought to front; the progress PiP opens as usual.
  * - `hidden`: the same, with Document PiP unavailable (the no-PiP control).
- * - `minimized`: the window is minimised; the progress PiP opens as usual.
+ * - `minimized-pip`: the window is minimised; the progress PiP opens as usual.
+ * - `minimized`: the same, with Document PiP unavailable.
+ *
+ * Progress is sampled once a second from the moment the condition applies,
+ * and timers more than a second late are logged with their time, so a long
+ * run shows whether Chrome's intensive throttling (after five minutes hidden)
+ * slows it. The table's `rate<5m` and `rate>5m` compare the two stretches.
  *
  * Results: one JSON line per run in test-results/export-measure.jsonl, and a
  * table printed at the end.
  */
 
-const CONDITIONS = ['visible', 'hidden-pip', 'hidden', 'minimized'] as const;
+const CONDITIONS = ['visible', 'hidden-pip', 'hidden', 'minimized-pip', 'minimized'] as const;
+/** Chrome's intensive wake-up throttling starts after this long hidden. */
+const INTENSIVE_THROTTLING_AFTER_SECONDS = 300;
 type Condition = (typeof CONDITIONS)[number];
 
 const PROJECT = process.env.MEASURE_PROJECT ?? 'project_mask_grade';
@@ -60,6 +74,8 @@ interface PageCounters {
     /** With MEASURE_RAF_CALLERS=1: rAF requests by the first app frame on the stack. */
     rafCallers?: Record<string, number>;
     visibility: [number, string][];
+    /** Timers over a second late: [ms since reset, lateness ms], capped. */
+    lateTimers: [number, number][];
     pipWindows: number;
 }
 
@@ -74,6 +90,7 @@ function installCounters({ traceCallers }: { traceCallers: boolean }) {
     };
     let state = document.visibilityState as string;
     let stateSince = now();
+    let resetAt = now();
     const bucket = (name: string): StateCounters => {
         const counters = target.__measure.byState;
         return (counters[name] ??= {
@@ -87,12 +104,15 @@ function installCounters({ traceCallers }: { traceCallers: boolean }) {
     target.__measure = {
         byState: {},
         visibility: [[now(), state]],
+        lateTimers: [],
         pipWindows: 0,
         // Keeps the PiP count: the window opens as the export starts, before the reset.
         reset() {
             target.__measure.byState = {};
             target.__measure.rafCallers = {};
             target.__measure.visibility = [[now(), document.visibilityState]];
+            target.__measure.lateTimers = [];
+            resetAt = now();
             state = document.visibilityState;
             stateSince = now();
         },
@@ -128,6 +148,10 @@ function installCounters({ traceCallers }: { traceCallers: boolean }) {
             counters.timeouts += 1;
             counters.timeoutLateTotal += late;
             counters.timeoutLateMax = Math.max(counters.timeoutLateMax, late);
+            const lateTimers = target.__measure.lateTimers;
+            if (late > 1000 && lateTimers.length < 2000) {
+                lateTimers.push([Math.round(now() - resetAt), Math.round(late)]);
+            }
             (handler as (...a: unknown[]) => void)(...callArgs);
         }, delay, ...args);
     }) as typeof window.setTimeout;
@@ -145,20 +169,66 @@ function disableDocumentPip() {
     Object.defineProperty(window, 'documentPictureInPicture', { value: undefined, configurable: true });
 }
 
-interface RunSummary { kind: string; status: string; startedAt: number; endedAt: number | null; error: string | null }
+interface RunSummary {
+    kind: string; status: string; startedAt: number; endedAt: number | null; progress: number; error: string | null;
+}
+
+/** Progress per second over the samples in [from, to) seconds. */
+function progressRate(samples: [number, number][], from: number, to: number): number | null {
+    const inRange = samples.filter(([seconds]) => seconds >= from && seconds < to);
+    if (inRange.length < 2) return null;
+    const [firstSeconds, firstProgress] = inRange[0];
+    const [lastSeconds, lastProgress] = inRange[inRange.length - 1];
+    return lastSeconds > firstSeconds ? (lastProgress - firstProgress) / (lastSeconds - firstSeconds) : null;
+}
 
 async function latestRun(page: Page): Promise<RunSummary | null> {
     return (await page.evaluate(() => window.__vloE2E?.getLatestExportRunSummary?.() ?? null)) as RunSummary | null;
 }
 
-interface MeasuredChrome { browser: Browser; process: ChildProcess; profile: string }
+interface MeasuredChrome {
+    browser: Browser;
+    process: ChildProcess;
+    profile: string;
+    /** Set for a Windows Chrome, whose processes outlive the WSL launcher. */
+    windowsProfile?: string;
+}
+
+/**
+ * Killing the WSL launcher leaves a Windows Chrome running, so its processes
+ * are stopped by the profile they were given. The user's own Chrome, on any
+ * other profile, is never matched.
+ */
+function stopWindowsChrome(windowsProfile: string): void {
+    const pattern = `*${windowsProfile.replace(/'/g, "''")}*`;
+    execFileSync('powershell.exe', ['-NoProfile', '-Command',
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | `
+        + `Where-Object { $_.CommandLine -like '${pattern}' } | `
+        + 'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }']);
+}
+
+/**
+ * A Windows Chrome started from WSL cannot read a Linux path, so its profile
+ * goes under the Windows temp folder and is handed over as a Windows path.
+ */
+function profileLocation(executable: string): { profile: string; profileArgument: string } {
+    if (!executable.toLowerCase().endsWith('.exe')) {
+        const profile = mkdtempSync(join(tmpdir(), 'vlo-measure-'));
+        return { profile, profileArgument: profile };
+    }
+    const windowsTemp = execFileSync('cmd.exe', ['/c', 'echo %TEMP%'], { encoding: 'utf8' }).trim();
+    const linuxTemp = execFileSync('wslpath', ['-u', windowsTemp], { encoding: 'utf8' }).trim();
+    const profile = mkdtempSync(join(linuxTemp, 'vlo-measure-'));
+    return { profile, profileArgument: execFileSync('wslpath', ['-w', profile], { encoding: 'utf8' }).trim() };
+}
 
 /** A plain Chrome, attached over CDP without Playwright's page overrides. */
 async function launchMeasuredChrome(): Promise<MeasuredChrome> {
     const port = 9300 + Math.floor(Math.random() * 600);
-    const profile = mkdtempSync(join(tmpdir(), 'vlo-measure-'));
-    const process_ = spawn(process.env.MEASURE_CHROME ?? chromium.executablePath(), [
-        `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
+    const executable = process.env.MEASURE_CHROME ?? chromium.executablePath();
+    const { profile, profileArgument } = profileLocation(executable);
+    const process_ = spawn(executable, [
+        `--remote-debugging-port=${port}`, `--user-data-dir=${profileArgument}`,
         '--no-first-run', '--no-default-browser-check',
         '--autoplay-policy=no-user-gesture-required', '--window-size=1600,900',
         // WSLg's GPU is blocklisted by default; without WebGL Pixi cannot
@@ -166,6 +236,10 @@ async function launchMeasuredChrome(): Promise<MeasuredChrome> {
         // actually used is recorded with each result.
         ...(process.env.MEASURE_GPU_BLOCKLIST === '1' ? [] : ['--ignore-gpu-blocklist']),
         '--enable-unsafe-swiftshader',
+        // Windows marks a window hidden when other windows cover it. Then the
+        // page gets no animation frames and Playwright's clicks never see a
+        // stable target. Only the conditions below may hide the editor.
+        '--disable-features=CalculateNativeWinOcclusion',
         ...(process.env.MEASURE_HEADLESS === '1' ? ['--headless=new'] : []),
         'about:blank',
     ], { stdio: 'ignore' });
@@ -179,7 +253,10 @@ async function launchMeasuredChrome(): Promise<MeasuredChrome> {
         await new Promise((resolve_) => setTimeout(resolve_, 200));
     }
     const browser = await chromium.connectOverCDP({ endpointURL, noDefaults: true });
-    return { browser, process: process_, profile };
+    return {
+        browser, process: process_, profile,
+        ...(profileArgument !== profile ? { windowsProfile: profileArgument } : {}),
+    };
 }
 
 async function applyCondition(condition: Condition, context: BrowserContext, page: Page): Promise<{
@@ -192,7 +269,7 @@ async function applyCondition(condition: Condition, context: BrowserContext, pag
         await cover.bringToFront();
         return { restore: async () => { await page.bringToFront(); } };
     }
-    if (condition === 'minimized') {
+    if (condition === 'minimized' || condition === 'minimized-pip') {
         const cdp = await context.newCDPSession(page);
         const { windowId } = await cdp.send('Browser.getWindowForTarget');
         await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
@@ -222,7 +299,7 @@ function parseFinalLine(line: string | undefined) {
 for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
     for (const condition of SELECTED) {
         test(`${condition} #${repeat}`, async ({ baseURL }, testInfo) => {
-            if (condition === 'minimized' && process.env.MEASURE_HEADLESS === '1') {
+            if (condition.startsWith('minimized') && process.env.MEASURE_HEADLESS === '1') {
                 test.skip(true, 'Minimising needs a headed browser.');
             }
             const chrome = await launchMeasuredChrome();
@@ -234,7 +311,14 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                 await page.addInitScript(installCounters, {
                     traceCallers: process.env.MEASURE_RAF_CALLERS === '1',
                 });
-                if (condition === 'hidden') await page.addInitScript(disableDocumentPip);
+                if (condition === 'hidden' || condition === 'minimized') await page.addInitScript(disableDocumentPip);
+                // Nothing here reads the file, and a long export outgrows what
+                // the mocked file can hold in the page.
+                if (process.env.MEASURE_KEEP_OUTPUT !== '1') {
+                    await page.addInitScript(() => {
+                        (window as unknown as { __vloMockDiscardWrites?: boolean }).__vloMockDiscardWrites = true;
+                    });
+                }
                 const debugLines: string[] = [];
                 page.on('console', (message) => {
                     if (message.text().startsWith('[Export debug')) debugLines.push(message.text());
@@ -255,6 +339,8 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                 await expect.poll(async () => (await latestRun(page))?.status, { timeout: 30_000 }).toBe('running');
                 await page.evaluate(() => (window as unknown as { __measure: { reset(): void } }).__measure.reset());
                 const { restore, minimizeApplied } = await applyCondition(condition, context, page);
+                const appliedAt = Date.now();
+                const progressSamples: [number, number][] = [];
                 let run: RunSummary | null = null;
                 let counters: PageCounters;
                 let pipSupported = false;
@@ -286,6 +372,7 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                     });
                     await expect.poll(async () => {
                         run = await latestRun(page);
+                        if (run) progressSamples.push([(Date.now() - appliedAt) / 1000, run.progress]);
                         return run?.status;
                     }, { timeout: 55 * 60 * 1000, intervals: [1000] }).not.toBe('running');
                     // Before the condition is lifted, so the hidden stretch ends with the export.
@@ -303,6 +390,7 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                     frames: Number(final?.match(/(\d+) frames submitted/)?.[1] ?? NaN),
                     debug: parseFinalLine(final),
                     counters,
+                    progressSamples,
                     pipSupported,
                     pipOpen,
                     minimizeApplied,
@@ -329,14 +417,30 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                     chrome.process.kill();
                     await Promise.race([exited, new Promise((resolve_) => setTimeout(resolve_, 10_000))]);
                 }
-                try {
-                    rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-                } catch (error) {
-                    console.warn(`Could not remove ${chrome.profile}:`, error);
+                if (chrome.windowsProfile) stopWindowsChrome(chrome.windowsProfile);
+                // A Windows Chrome releases its profile a little after exiting,
+                // and a locked file there reports EACCES, which rmSync's own
+                // retries do not cover.
+                for (let attempt = 1; ; attempt += 1) {
+                    try {
+                        rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+                        break;
+                    } catch (error) {
+                        if (attempt >= 20) {
+                            console.warn(`Could not remove ${chrome.profile}:`, error);
+                            break;
+                        }
+                        await new Promise((resolve_) => setTimeout(resolve_, 500));
+                    }
                 }
             }
         });
     }
+}
+
+/** Percent of the export per minute, or blank when the run was too short. */
+function rateLabel(rate: number | null): string {
+    return rate === null ? '' : `${(rate * 6000).toFixed(1)}%/min`;
 }
 
 test.afterAll(() => {
@@ -355,6 +459,8 @@ test.afterAll(() => {
             hiddenSec: hidden ? (hidden.milliseconds / 1000).toFixed(1) : '0',
             hiddenRafs: hidden?.rafs ?? '',
             hiddenTimerLateMax: hidden ? hidden.timeoutLateMax.toFixed(0) : '',
+            'rate<5m': rateLabel(progressRate(row.progressSamples ?? [], 0, INTENSIVE_THROTTLING_AFTER_SECONDS)),
+            'rate>5m': rateLabel(progressRate(row.progressSamples ?? [], INTENSIVE_THROTTLING_AFTER_SECONDS, Infinity)),
             pip: row.pipOpen,
             minimized: row.minimizeApplied ?? '',
         };

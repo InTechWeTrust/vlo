@@ -12,6 +12,10 @@ import {
   type ExportRunHandle,
 } from "../../../core/export/exportRunLog";
 import {
+  projectMutationGuard,
+  type ProjectExportLease,
+} from "../../../core/project/projectMutationGuard";
+import {
   collectTimelineRegionClips,
   getTimelineClips,
   getTimelineDuration,
@@ -175,6 +179,8 @@ export function useExportJobController({
   const cancelRenderRequestedRef = useRef(false);
   const renderSessionRef = useRef(0);
   const activeSessionRef = useRef<number | null>(null);
+  /** Aborts a project export still waiting for the editor to settle. */
+  const freezeAbortRef = useRef<AbortController | null>(null);
 
   const beginSession = useCallback(() => {
     const sessionId = renderSessionRef.current + 1;
@@ -233,6 +239,7 @@ export function useExportJobController({
     if (activeSessionRef.current === null || phase === "saving" || phase === "ingesting") return;
     useExtractStore.getState().setPhase("cancelling");
     cancelRenderRequestedRef.current = true;
+    freezeAbortRef.current?.abort(createAbortError());
     activeRendererRef.current?.cancel();
   }, []);
 
@@ -423,6 +430,9 @@ export function useExportJobController({
     }: ProjectExportOptions) => {
       const sessionId = beginSession();
       let wakeLock: ExportWakeLock | null = null;
+      let lease: ProjectExportLease | null = null;
+      const freezeAbort = new AbortController();
+      freezeAbortRef.current = freezeAbort;
       const run = beginExportRun({
         kind: "project",
         startTicks: 0,
@@ -446,7 +456,15 @@ export function useExportJobController({
           fileHandle,
         };
 
+        // The project stays frozen for the whole render: it reads live state
+        // (assets, parameter overrides) as it goes, so an edit, an import or
+        // a project switch mid-render would reach the output or fail it. An
+        // unfinished edit is refused here, before the brush flush below,
+        // which is itself an edit and so has to run before the freeze.
+        projectMutationGuard.assertQuiescent();
         await prepareBrushMasksForTimelineRender();
+        lease = await projectMutationGuard.acquire({ signal: freezeAbort.signal });
+        if (cancelRenderRequestedRef.current) throw createAbortError();
         const projectData = buildProjectData();
 
         // Disk outputs finish without constructing or reading back a video Blob.
@@ -478,6 +496,10 @@ export function useExportJobController({
           console.error("Export failed", e);
         }
       } finally {
+        // Before the run settles, so a subscriber told the export ended can
+        // edit straight away.
+        lease?.release();
+        if (freezeAbortRef.current === freezeAbort) freezeAbortRef.current = null;
         wakeLock?.release();
         finalizeSession(sessionId);
       }

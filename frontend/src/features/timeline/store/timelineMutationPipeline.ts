@@ -1,4 +1,5 @@
 import { applyPatches, produceWithPatches, type Patch } from "../../../lib/immerLite";
+import { projectMutationGuard } from "../../../core/project/projectMutationGuard";
 import type {
   TimelineClip,
   Transition,
@@ -100,12 +101,17 @@ function queueMaskBackingAssetOperation(
   label: string,
   operation: (assetModule: UserAssetsModule) => Promise<void>,
 ): void {
+  // Counted from the moment it is queued, not when it starts: an export
+  // frozen in between would refuse the cleanup this edit owes, orphaning the
+  // mask assets. Only ever queued after a commit the guard admitted.
+  const releaseMutation = projectMutationGuard.beginMutation();
   const run = maskBackingAssetOperationQueue
     .catch(() => undefined)
     .then(async () => {
       const assetModule = await import("../../userAssets");
       await operation(assetModule);
-    });
+    })
+    .finally(releaseMutation);
 
   maskBackingAssetOperationQueue = run.catch(() => undefined);
 
@@ -335,6 +341,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     recipe: (draft: TimelineModelState) => void,
     commitOptions?: TimelineMutationCommitOptions,
   ): boolean => {
+    projectMutationGuard.assertEditable();
     const {
       label = "Timeline change",
       persist = true,
@@ -418,6 +425,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   };
 
   const undo = (): boolean => {
+    projectMutationGuard.assertEditable();
     const entry = undoStack.pop();
     if (!entry) return false;
     entry.openCoalesceKey = null;
@@ -454,6 +462,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   };
 
   const redo = (): boolean => {
+    projectMutationGuard.assertEditable();
     const entry = redoStack.pop();
     if (!entry) return false;
     entry.openCoalesceKey = null;
@@ -493,6 +502,7 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
   };
 
   const replaceTimelineSnapshot = (snapshot: TimelineSnapshot | null): void => {
+    projectMutationGuard.assertEditable();
     if (pendingPersistTimer !== null) {
       clearTimeout(pendingPersistTimer);
       pendingPersistTimer = null;
