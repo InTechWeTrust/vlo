@@ -93,6 +93,28 @@ describe("cube LUT asset cache", () => {
     await expect(preloadColorGradeLuts([grade("gone")])).resolves.toBeUndefined();
   });
 
+  it("reads supplied render assets instead of the editor's library", async () => {
+    // The default source: no library exists, as in a detached realm.
+    setCubeLutTextSourceForTests(null);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(serializeCubeLut(IDENTITY_3)),
+    );
+    const clips = [{ transformations: [
+      { type: "filter", filterName: "ColorGradeFilter", parameters: { lutAssetId: "look" } },
+    ] }];
+    const look = { id: "look", hash: "look", name: "look.cube", type: "lut" as const,
+      src: "blob:http://host.test/look", createdAt: 0 };
+
+    await preloadColorGradeLuts(clips, { strict: true, assets: [look] });
+    expect(fetchSpy).toHaveBeenCalledWith("blob:http://host.test/look");
+    expect(getLoadedCubeLut("look")?.size).toBe(3);
+    // A LUT the render was not given is absent, not looked up elsewhere.
+    await expect(preloadColorGradeLuts([{ transformations: [
+      { type: "filter", filterName: "ColorGradeFilter", parameters: { lutAssetId: "other" } },
+    ] }], { strict: true, assets: [look] })).rejects.toBeInstanceOf(ColorGradeLutUnavailableError);
+    fetchSpy.mockRestore();
+  });
+
   it("retries a LUT whose earlier load failed before failing a strict preload", async () => {
     let available = false;
     const source = vi.fn(async () => (available ? serializeCubeLut(IDENTITY_3) : null));
@@ -146,7 +168,8 @@ describe("cube LUT asset cache", () => {
     ]);
 
     expect(source).toHaveBeenCalledTimes(1);
-    expect(source).toHaveBeenCalledWith("lut-a");
+    // No render assets supplied: the editor library path.
+    expect(source).toHaveBeenCalledWith("lut-a", undefined);
     expect(getLoadedCubeLut("lut-a")?.size).toBe(3);
   });
 });

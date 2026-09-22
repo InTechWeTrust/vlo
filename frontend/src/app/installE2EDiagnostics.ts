@@ -93,6 +93,11 @@ declare global {
       runProjectExportPixelProbe?: (request: {
         samples: { frame: number; rect: [number, number, number, number] }[];
       }) => Promise<unknown>;
+      captureDetachedRenderProbeInput?: () => Promise<unknown>;
+      runDetachedRenderPixelProbe?: (request: {
+        input: { document: unknown; files: Record<string, string> };
+        samples: { frame: number; rect: [number, number, number, number] }[];
+      }) => Promise<unknown>;
       runRgbSplitConsistencyProbe?: () => Promise<unknown>;
       runCompositeParityProbe?: (request: {
         compositeId: string;
@@ -193,6 +198,16 @@ export function installE2EDiagnostics(): void {
       })
       .catch((error: unknown) => {
         console.error("Failed to install project export pixel probe", error);
+      });
+    void import("./e2e/detachedRenderProbe")
+      .then(({ captureDetachedRenderProbeInput, runDetachedRenderPixelProbe }) => {
+        if (window.__vloE2E) {
+          window.__vloE2E.captureDetachedRenderProbeInput = captureDetachedRenderProbeInput;
+          window.__vloE2E.runDetachedRenderPixelProbe = runDetachedRenderPixelProbe;
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to install detached render probe", error);
       });
     void import("./e2e/glitchConsistencyProbe")
       .then(({ runGlitchConsistencyProbe }) => {

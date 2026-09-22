@@ -15,7 +15,9 @@ root:
 from __future__ import annotations
 
 import json
+import math
 import shutil
+import wave
 from pathlib import Path
 
 import av
@@ -74,6 +76,10 @@ SAM2_SPLIT = 200
 SAM2_GROW = 20
 GREY_SECONDS = (3.5, 4.0)
 MASK_PROJECT_ID = "mask-grade-project"
+#: A tone under the whole timeline, so an export's audio path (and a detached
+#: realm's AAC encoder) is exercised too. Checked as a peak level.
+TONE_FREQUENCY = 440
+TONE_AMPLITUDE = 0.5
 
 
 def _write_solid_video(path: Path, size: tuple[int, int], fps: int, frames: int, paint) -> None:
@@ -89,6 +95,16 @@ def _write_solid_video(path: Path, size: tuple[int, int], fps: int, frames: int,
                 container.mux(packet)
         for packet in stream.encode():
             container.mux(packet)
+
+
+def _write_tone(path: Path, *, frequency: float, amplitude: float, seconds: int) -> None:
+    samples = np.arange(48_000 * seconds)
+    wave_ = (np.sin(samples * 2 * math.pi * frequency / 48_000) * amplitude * 32767).astype("<i2")
+    with wave.open(str(path), "wb") as writer:
+        writer.setnchannels(2)
+        writer.setsampwidth(2)
+        writer.setframerate(48_000)
+        writer.writeframes(np.repeat(wave_[:, None], 2, axis=1).tobytes())
 
 
 def inverting_cube_lut(size: int = 2) -> str:
@@ -146,6 +162,8 @@ def write_mask_grade_project(project: Path) -> None:
 
     _write_solid_video(assets / "subject.mp4", size, video_fps, video_frames, subject)
     _write_solid_video(masks / "subject_sam2.mp4", size, video_fps, video_frames, sam2_matte)
+    _write_tone(assets / "tone.wav", frequency=TONE_FREQUENCY, amplitude=TONE_AMPLITUDE,
+                seconds=MASK_PROJECT_SECONDS)
 
     def ticks(seconds: float) -> int:
         return round(seconds * TICKS_PER_SECOND)
@@ -260,6 +278,8 @@ def write_mask_grade_project(project: Path) -> None:
                       parameters=dict(colorModel=dict(version=1, gradingSpace="srgb-rec709"),
                                       lutAssetId="invert", lutIntensity=1)),
              ]),
+        dict(id="tone", assetId="tone", type="audio", name="tone", trackId="sound",
+             **timing(0, MASK_PROJECT_SECONDS, source_ticks=ticks(MASK_PROJECT_SECONDS)), transformations=[]),
     ]
 
     def asset(identity: str, kind: str, path: str, **fields: object) -> dict[str, object]:
@@ -278,7 +298,7 @@ def write_mask_grade_project(project: Path) -> None:
         "timeline.json": dict(
             documentType="vlo.timeline", schemaVersion=3, updated_at=0,
             tracks=[track("dim", "adjustment"), track("badges", "visual"), track("overlay", "visual"),
-                    track("main", "visual")],
+                    track("main", "visual"), track("sound", "audio")],
             clips=clips, transitions=[]),
         "assets.json": dict(
             documentType="vlo.assets", schemaVersion=1, updated_at=0, assetFamilies={}, assets={
@@ -293,6 +313,7 @@ def write_mask_grade_project(project: Path) -> None:
                     asset("badge", "image", "assets/badge.png"),
                     asset("subject", "video", "assets/subject.mp4", **video),
                     asset("subject-sam2", "video", ".vloproject/masks/subject_sam2.mp4", **video),
+                    asset("tone", "audio", "assets/tone.wav", duration=float(MASK_PROJECT_SECONDS)),
                 )}),
         "composites.json": dict(documentType="vlo.composites", schemaVersion=2, updated_at=0, composites={}),
     }
@@ -325,6 +346,9 @@ def mask_grade_expectations() -> dict[str, object]:
 
     return dict(
         fps=fps, frames=fps * MASK_PROJECT_SECONDS, width=MEDIA_OUTPUT_SIZE[0], height=MEDIA_OUTPUT_SIZE[1],
+        # AAC may overshoot a sine's peak slightly; silence or a doubled mix
+        # both fall well outside.
+        audio=dict(peak=TONE_AMPLITUDE, tolerance=0.15),
         samples=[
             sample("plate inside its matte", 15, (55, 85, 65, 95), PLATE_COLOR, 12),
             sample("plate just inside the matte edge", 15, (MATTE_SPLIT - 13, 85, MATTE_SPLIT - 3, 95), PLATE_COLOR, 12),

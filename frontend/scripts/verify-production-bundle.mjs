@@ -32,6 +32,8 @@ const FORBIDDEN = [
   "RGB Split consistency probe",
   "runProjectExportPixelProbe",
   "project export pixel probe:",
+  "runDetachedRenderPixelProbe",
+  "detached render probe:",
   "A filter consistency probe is running",
   "acceptLiveCompositeFrame",
   "rejectLiveCompositeFrame",

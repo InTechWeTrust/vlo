@@ -100,8 +100,12 @@ export async function renderSelectionToOutput(
     : normalizeDetachedTimelineSelection(preparedTimelineSelection, projectData.fps);
 
   // Strict rendering starts pulling frames immediately; referenced grade LUTs
-  // must be cached up front or early frames would render without them.
-  await preloadColorGradeLuts(selection.region.clips, { strict: true });
+  // must be cached up front or early frames would render without them. Read
+  // from the render's own assets, which a detached realm's library lacks.
+  await preloadColorGradeLuts(selection.region.clips, {
+    strict: true,
+    assets: projectData.assets,
+  });
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {

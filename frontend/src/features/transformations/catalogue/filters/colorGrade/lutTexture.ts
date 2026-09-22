@@ -3,6 +3,7 @@ import {
   parseCubeLut,
   type CubeLut,
 } from "../../../../../core/color";
+import type { Asset } from "../../../../../types/Asset";
 
 /**
  * Per-asset `.cube` cache feeding the fused grade's LUT atlas. Loads are
@@ -11,14 +12,13 @@ import {
  * and load completions notify subscribers so the filter can rebake + rerender.
  */
 
-type CubeLutTextSource = (assetId: string) => Promise<string | null>;
+/**
+ * `asset` is the render's own record when the caller has one (an export's
+ * project data); without it the source falls back to the editor's library.
+ */
+type CubeLutTextSource = (assetId: string, asset?: Asset) => Promise<string | null>;
 
-const defaultTextSource: CubeLutTextSource = async (assetId) => {
-  // Lazy import keeps the render-side module graph free of the userAssets
-  // feature (and its UI) at load time.
-  const { ensureAssetSourceLoaded } = await import("../../../../userAssets");
-  const asset = await ensureAssetSourceLoaded(assetId);
-  if (!asset) return null;
+async function readCubeLutText(asset: Asset): Promise<string | null> {
   if (asset.file) return asset.file.text();
   // A detached render host binds assets to URLs; it has no editor File.
   if (/^(blob:|https?:)/.test(asset.src)) {
@@ -27,6 +27,15 @@ const defaultTextSource: CubeLutTextSource = async (assetId) => {
     return response.text();
   }
   return null;
+}
+
+const defaultTextSource: CubeLutTextSource = async (assetId, asset) => {
+  if (asset) return readCubeLutText(asset);
+  // Lazy import keeps the render-side module graph free of the userAssets
+  // feature (and its UI) at load time.
+  const { ensureAssetSourceLoaded } = await import("../../../../userAssets");
+  const libraryAsset = await ensureAssetSourceLoaded(assetId);
+  return libraryAsset ? readCubeLutText(libraryAsset) : null;
 };
 
 let cubeLutTextSource = defaultTextSource;
@@ -47,10 +56,10 @@ export function subscribeCubeLutLoads(listener: () => void): () => void {
   };
 }
 
-async function loadCubeLut(assetId: string): Promise<CubeLut | null> {
+async function loadCubeLut(assetId: string, asset?: Asset): Promise<CubeLut | null> {
   let lut: CubeLut | null = null;
   try {
-    const text = await cubeLutTextSource(assetId);
+    const text = await cubeLutTextSource(assetId, asset);
     if (text !== null) lut = expandCubeLutTo3d(parseCubeLut(text));
   } catch (error) {
     console.warn(`[ColorGrade] Failed to load LUT asset ${assetId}`, error);
@@ -64,7 +73,7 @@ async function loadCubeLut(assetId: string): Promise<CubeLut | null> {
   return lut;
 }
 
-function ensureCubeLutEntry(assetId: string): CubeLutCacheEntry {
+function ensureCubeLutEntry(assetId: string, asset?: Asset): CubeLutCacheEntry {
   const existing = cubeLutCache.get(assetId);
   if (existing) return existing;
   const entry: CubeLutCacheEntry = {
@@ -73,7 +82,7 @@ function ensureCubeLutEntry(assetId: string): CubeLutCacheEntry {
     promise: Promise.resolve(null),
   };
   cubeLutCache.set(assetId, entry);
-  entry.promise = loadCubeLut(assetId);
+  entry.promise = loadCubeLut(assetId, asset);
   return entry;
 }
 
@@ -87,6 +96,12 @@ export async function getCubeLutForAsset(
   assetId: string,
 ): Promise<CubeLut | null> {
   return ensureCubeLutEntry(assetId).promise;
+}
+
+function loadSuppliedCubeLut(assetId: string, assets: readonly Asset[]): Promise<CubeLut | null> {
+  const asset = assets.find((candidate) => candidate.id === assetId);
+  if (!asset) return Promise.resolve(null);
+  return ensureCubeLutEntry(assetId, asset).promise;
 }
 
 export function setCubeLutTextSourceForTests(
@@ -121,12 +136,17 @@ export class ColorGradeLutUnavailableError extends Error {
  * export must not quietly become an ungraded one. A previously failed load is
  * retried once first, since the file may have been restored since. Without
  * it, failures render as pass-through, matching the live path.
+ *
+ * With `assets`, each LUT is read from the render's own asset records, never
+ * the editor's library: a detached render realm has no library, and an
+ * editor export must read the project it captured. A LUT missing from them
+ * loads as absent.
  */
 export async function preloadColorGradeLuts(
   clips: readonly {
     readonly transformations?: readonly ClipTransformLike[];
   }[],
-  options: { strict?: boolean } = {},
+  options: { strict?: boolean; assets?: readonly Asset[] } = {},
 ): Promise<void> {
   const { COLOR_GRADE_FILTER_NAME } = await import("./definition");
   const assetIds = new Set<string>();
@@ -149,7 +169,9 @@ export async function preloadColorGradeLuts(
     if (options.strict && cubeLutCache.get(assetId)?.status === "error") {
       cubeLutCache.delete(assetId);
     }
-    const lut = await getCubeLutForAsset(assetId);
+    const lut = await (options.assets
+      ? loadSuppliedCubeLut(assetId, options.assets)
+      : getCubeLutForAsset(assetId));
     if (!lut && options.strict) throw new ColorGradeLutUnavailableError(assetId);
   }));
 }

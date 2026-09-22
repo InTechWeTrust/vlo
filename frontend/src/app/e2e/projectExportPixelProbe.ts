@@ -1,4 +1,4 @@
-import { ALL_FORMATS, BlobSource, CanvasSink, Input } from "mediabunny";
+import { ALL_FORMATS, AudioBufferSink, BlobSource, CanvasSink, Input } from "mediabunny";
 import { prepareBrushMasksForTimelineRender } from "../../features/masks/api";
 import { maskAssetId } from "../../features/masks/renderContract";
 import { buildProjectRenderInputs } from "../../features/renderer/services/projectFrameCapture";
@@ -28,6 +28,8 @@ export interface ProjectExportPixelProbeResult {
   height: number;
   /** Mean RGB of each requested sample, in request order. */
   colours: [number, number, number][];
+  /** Peak absolute sample across the soundtrack; null without one. */
+  audioPeak: number | null;
 }
 
 let probeInFlight = false;
@@ -49,7 +51,7 @@ function referencedAssetIds(): Set<string> {
   return ids;
 }
 
-async function waitForReferencedAssets(timeoutMs = 20_000): Promise<void> {
+export async function waitForReferencedAssets(timeoutMs = 20_000): Promise<void> {
   const deadline = performance.now() + timeoutMs;
   for (;;) {
     const available = new Set(getAssets().map((asset) => asset.id));
@@ -77,6 +79,50 @@ function meanColour(
   return [sum[0] / count, sum[1] / count, sum[2] / count];
 }
 
+async function audioPeak(input: Input): Promise<number | null> {
+  const track = await input.getPrimaryAudioTrack();
+  if (!track) return null;
+  let peak = 0;
+  for await (const { buffer } of new AudioBufferSink(track).buffers()) {
+    for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+      for (const sample of buffer.getChannelData(channel)) peak = Math.max(peak, Math.abs(sample));
+    }
+  }
+  return peak;
+}
+
+/** Decodes an exported video and reports each sample rectangle's mean colour. */
+export async function sampleVideoColours(
+  video: Blob,
+  fps: number,
+  samples: readonly ProjectExportPixelSample[],
+): Promise<ProjectExportPixelProbeResult> {
+  const input = new Input({ source: new BlobSource(video), formats: ALL_FORMATS });
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track) throw new Error("project export pixel probe: output has no video track");
+    const frames = (await track.computePacketStats()).packetCount;
+    const sink = new CanvasSink(track, { poolSize: 1 });
+    const colours: [number, number, number][] = [];
+    for (const sample of samples) {
+      // Mid-frame, so the sample cannot land on a neighbouring frame's edge.
+      const wrapped = await sink.getCanvas((sample.frame + 0.5) / fps);
+      if (!wrapped || !(wrapped.canvas instanceof HTMLCanvasElement)) {
+        throw new Error(`project export pixel probe: frame ${sample.frame} is unavailable`);
+      }
+      const context = wrapped.canvas.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("project export pixel probe: no 2D context");
+      colours.push(meanColour(context, sample.rect));
+    }
+    return {
+      frames, width: track.codedWidth, height: track.codedHeight, colours,
+      audioPeak: await audioPeak(input),
+    };
+  } finally {
+    input.dispose();
+  }
+}
+
 export async function runProjectExportPixelProbe(request: {
   samples: ProjectExportPixelSample[];
 }): Promise<ProjectExportPixelProbeResult> {
@@ -88,31 +134,11 @@ export async function runProjectExportPixelProbe(request: {
     await prepareBrushMasksForTimelineRender();
     const { exportConfig, projectData } = buildProjectRenderInputs();
     const result = await renderProjectToOutput({
-      exportConfig, projectData, format: "mp4", includeAudio: false, keyFrameInterval: 1,
+      exportConfig, projectData, format: "mp4", includeAudio: true, keyFrameInterval: 1,
     });
     if (!result.video) throw new Error("project export pixel probe: no video was produced");
 
-    const input = new Input({ source: new BlobSource(result.video), formats: ALL_FORMATS });
-    try {
-      const track = await input.getPrimaryVideoTrack();
-      if (!track) throw new Error("project export pixel probe: output has no video track");
-      const frames = (await track.computePacketStats()).packetCount;
-      const sink = new CanvasSink(track, { poolSize: 1 });
-      const colours: [number, number, number][] = [];
-      for (const sample of request.samples) {
-        // Mid-frame, so the sample cannot land on a neighbouring frame's edge.
-        const wrapped = await sink.getCanvas((sample.frame + 0.5) / projectData.fps);
-        if (!wrapped || !(wrapped.canvas instanceof HTMLCanvasElement)) {
-          throw new Error(`project export pixel probe: frame ${sample.frame} is unavailable`);
-        }
-        const context = wrapped.canvas.getContext("2d", { willReadFrequently: true });
-        if (!context) throw new Error("project export pixel probe: no 2D context");
-        colours.push(meanColour(context, sample.rect));
-      }
-      return { frames, width: track.codedWidth, height: track.codedHeight, colours };
-    } finally {
-      input.dispose();
-    }
+    return await sampleVideoColours(result.video, projectData.fps, request.samples);
   } finally {
     probeInFlight = false;
   }

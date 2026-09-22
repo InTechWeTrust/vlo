@@ -3,6 +3,10 @@
   "frames": 120,
   "width": 320,
   "height": 180,
+  "audio": {
+    "peak": 0.5,
+    "tolerance": 0.15
+  },
   "samples": [
     {
       "name": "plate inside its matte",

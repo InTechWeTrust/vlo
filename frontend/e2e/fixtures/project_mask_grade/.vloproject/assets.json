@@ -91,6 +91,15 @@
       "createdAt": 0,
       "duration": 4.0,
       "fps": 24.0
+    },
+    "tone": {
+      "id": "tone",
+      "type": "audio",
+      "name": "tone.wav",
+      "hash": "fixture-tone",
+      "src": "assets/tone.wav",
+      "createdAt": 0,
+      "duration": 4.0
     }
   }
 }
