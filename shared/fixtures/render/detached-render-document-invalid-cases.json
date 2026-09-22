@@ -1,0 +1,475 @@
+[
+  {
+    "name": "unknown document field",
+    "scope": "structure",
+    "path": [
+      "futureEffect"
+    ],
+    "value": true
+  },
+  {
+    "name": "unknown clip field",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "futureEffect"
+    ],
+    "value": true
+  },
+  {
+    "name": "locator on an asset",
+    "scope": "structure",
+    "path": [
+      "assets",
+      0,
+      "src"
+    ],
+    "value": "file:///private/movie.mp4"
+  },
+  {
+    "name": "missing asset",
+    "scope": "render",
+    "path": [
+      "clips",
+      0,
+      "assetId"
+    ],
+    "value": "absent"
+  },
+  {
+    "name": "wrong asset type",
+    "scope": "render",
+    "path": [
+      "assets",
+      0,
+      "type"
+    ],
+    "value": "audio"
+  },
+  {
+    "name": "unknown track",
+    "scope": "render",
+    "path": [
+      "clips",
+      0,
+      "trackId"
+    ],
+    "value": "absent"
+  },
+  {
+    "name": "unsupported track",
+    "scope": "structure",
+    "path": [
+      "tracks",
+      0,
+      "type"
+    ],
+    "value": "prompt"
+  },
+  {
+    "name": "duplicate track",
+    "scope": "render",
+    "path": [
+      "tracks",
+      0,
+      "id"
+    ],
+    "value": "main"
+  },
+  {
+    "name": "duplicate clip",
+    "scope": "render",
+    "path": [
+      "clips",
+      1,
+      "id"
+    ],
+    "value": "trimmed"
+  },
+  {
+    "name": "same track overlap",
+    "scope": "render",
+    "path": [
+      "clips",
+      1,
+      "start"
+    ],
+    "value": 100
+  },
+  {
+    "name": "wrong audio track",
+    "scope": "render",
+    "path": [
+      "clips",
+      3,
+      "trackId"
+    ],
+    "value": "main"
+  },
+  {
+    "name": "out of source trim",
+    "scope": "render",
+    "path": [
+      "clips",
+      0,
+      "offset"
+    ],
+    "value": 900000
+  },
+  {
+    "name": "retiming",
+    "scope": "render",
+    "path": [
+      "clips",
+      0,
+      "transformedDuration"
+    ],
+    "value": 500000
+  },
+  {
+    "name": "clip beyond range",
+    "scope": "render",
+    "path": [
+      "durationTicks"
+    ],
+    "value": 96000
+  },
+  {
+    "name": "fractional ticks",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "start"
+    ],
+    "value": 0.5
+  },
+  {
+    "name": "invalid frame grid",
+    "scope": "structure",
+    "path": [
+      "fps"
+    ],
+    "value": 29
+  },
+  {
+    "name": "odd output size",
+    "scope": "structure",
+    "path": [
+      "geometry",
+      "outputWidth"
+    ],
+    "value": 1279
+  },
+  {
+    "name": "wrong renderer contract",
+    "scope": "structure",
+    "path": [
+      "renderer",
+      "contract"
+    ],
+    "value": "future-v2"
+  },
+  {
+    "name": "composite dependency",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "compositeId"
+    ],
+    "value": "composite"
+  },
+  {
+    "name": "mask component",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "components"
+    ],
+    "value": [
+      {
+        "type": "mask_ref",
+        "id": "mask"
+      }
+    ]
+  },
+  {
+    "name": "text clip",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "type"
+    ],
+    "value": "text"
+  },
+  {
+    "name": "extension clip",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "extensionPayload"
+    ],
+    "value": {
+      "extensionId": "plugin",
+      "data": {}
+    }
+  },
+  {
+    "name": "speed transform",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      0
+    ],
+    "value": {
+      "id": "speed",
+      "type": "speed",
+      "isEnabled": true,
+      "parameters": {
+        "factor": 2
+      }
+    }
+  },
+  {
+    "name": "unknown filter",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      4,
+      "filterName"
+    ],
+    "value": "LutFilter"
+  },
+  {
+    "name": "unknown transform parameter",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      1,
+      "parameters",
+      "extensionPath"
+    ],
+    "value": {}
+  },
+  {
+    "name": "animated scalar",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      1,
+      "parameters",
+      "x"
+    ],
+    "value": {
+      "type": "spline",
+      "points": []
+    }
+  },
+  {
+    "name": "keyframe value out of bounds",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      1,
+      "parameters",
+      "x"
+    ],
+    "value": {
+      "type": "spline",
+      "points": [
+        {
+          "time": 0,
+          "value": 1000000000.0
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown effect mask mode",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      4,
+      "effectMask"
+    ],
+    "value": {
+      "enabled": true,
+      "expression": null,
+      "mode": "overlay"
+    }
+  },
+  {
+    "name": "advanced blend",
+    "scope": "structure",
+    "path": [
+      "clips",
+      2,
+      "transformations",
+      1,
+      "parameters",
+      "blendMode"
+    ],
+    "value": "overlay"
+  },
+  {
+    "name": "template provider",
+    "scope": "structure",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      1,
+      "templateId"
+    ],
+    "value": "plugin.template"
+  },
+  {
+    "name": "duplicate transform within a clip",
+    "scope": "render",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      1,
+      "id"
+    ],
+    "value": "fit"
+  },
+  {
+    "name": "finite image duration",
+    "scope": "render",
+    "path": [
+      "clips",
+      2,
+      "sourceDuration"
+    ],
+    "value": 384000
+  },
+  {
+    "name": "null video duration",
+    "scope": "render",
+    "path": [
+      "assets",
+      0,
+      "duration"
+    ],
+    "value": null
+  },
+  {
+    "name": "audio filter",
+    "scope": "render",
+    "path": [
+      "clips",
+      3,
+      "transformations",
+      0
+    ],
+    "value": {
+      "id": "audio-blur",
+      "type": "filter",
+      "isEnabled": true,
+      "parameters": {
+        "strength": 1,
+        "quality": 4
+      },
+      "filterName": "BlurFilter"
+    }
+  },
+  {
+    "name": "audio source frame rate",
+    "scope": "render",
+    "path": [
+      "assets",
+      2,
+      "fps"
+    ],
+    "value": 30
+  },
+  {
+    "name": "non-positive video frame rate",
+    "scope": "structure",
+    "path": [
+      "assets",
+      0,
+      "fps"
+    ],
+    "value": 0
+  },
+  {
+    "name": "mask reference to a missing mask",
+    "scope": "render",
+    "path": [
+      "clips",
+      0,
+      "components"
+    ],
+    "value": [
+      {
+        "id": "ref",
+        "type": "mask_ref",
+        "parameters": {
+          "maskClipId": "trimmed::mask::absent"
+        }
+      }
+    ]
+  },
+  {
+    "name": "grade LUT missing from manifest",
+    "scope": "render",
+    "path": [
+      "clips",
+      0,
+      "transformations",
+      4
+    ],
+    "value": {
+      "id": "grade",
+      "type": "filter",
+      "filterName": "ColorGradeFilter",
+      "isEnabled": true,
+      "parameters": {
+        "lutAssetId": "absent-lut"
+      }
+    }
+  },
+  {
+    "name": "adjustment clip on a visual track",
+    "scope": "render",
+    "path": [
+      "clips",
+      1
+    ],
+    "value": {
+      "id": "cut",
+      "type": "adjustment",
+      "name": "cut",
+      "trackId": "main",
+      "start": 288000,
+      "sourceDuration": 288000,
+      "transformedDuration": 288000,
+      "transformedOffset": 0,
+      "timelineDuration": 288000,
+      "croppedSourceDuration": 288000,
+      "offset": 0,
+      "depth": "all",
+      "transformations": []
+    }
+  }
+]

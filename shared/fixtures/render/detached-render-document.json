@@ -1,0 +1,228 @@
+{
+  "version": 1,
+  "renderer": {
+    "contract": "core-v1"
+  },
+  "geometry": {
+    "logicalWidth": 1920,
+    "logicalHeight": 1080,
+    "outputWidth": 1280,
+    "outputHeight": 720,
+    "backgroundAlpha": 1
+  },
+  "encoding": {
+    "format": "mp4",
+    "includeAudio": true,
+    "keyFrameInterval": 2
+  },
+  "fps": 30,
+  "durationTicks": 576000,
+  "tracks": [
+    {
+      "id": "overlay",
+      "type": "visual",
+      "label": "overlay",
+      "isVisible": true,
+      "isMuted": false,
+      "isLocked": false
+    },
+    {
+      "id": "main",
+      "type": "visual",
+      "label": "main",
+      "isVisible": true,
+      "isMuted": false,
+      "isLocked": false
+    },
+    {
+      "id": "sound",
+      "type": "audio",
+      "label": "sound",
+      "isVisible": true,
+      "isMuted": false,
+      "isLocked": false
+    },
+    {
+      "id": "muted",
+      "type": "audio",
+      "label": "Muted",
+      "isVisible": true,
+      "isMuted": true,
+      "isLocked": true
+    }
+  ],
+  "clips": [
+    {
+      "id": "trimmed",
+      "type": "video",
+      "name": "trimmed",
+      "assetId": "movie",
+      "trackId": "main",
+      "start": 0,
+      "sourceDuration": 960000,
+      "transformedDuration": 960000,
+      "transformedOffset": 96000,
+      "timelineDuration": 288000,
+      "croppedSourceDuration": 288000,
+      "offset": 96000,
+      "transformations": [
+        {
+          "id": "fit",
+          "type": "fitMode",
+          "isEnabled": true,
+          "parameters": {
+            "fitMode": "cover"
+          }
+        },
+        {
+          "id": "position",
+          "type": "position",
+          "isEnabled": true,
+          "parameters": {
+            "x": -80,
+            "y": 30
+          }
+        },
+        {
+          "id": "scale",
+          "type": "scale",
+          "isEnabled": true,
+          "parameters": {
+            "x": 0.75,
+            "y": 0.75,
+            "isLinked": true
+          }
+        },
+        {
+          "id": "rotation",
+          "type": "rotation",
+          "isEnabled": true,
+          "parameters": {
+            "angle": 0.1
+          }
+        },
+        {
+          "id": "blur",
+          "type": "filter",
+          "isEnabled": true,
+          "parameters": {
+            "strength": 2,
+            "quality": 4
+          },
+          "filterName": "BlurFilter"
+        }
+      ]
+    },
+    {
+      "id": "cut",
+      "type": "video",
+      "name": "cut",
+      "assetId": "movie",
+      "trackId": "main",
+      "start": 288000,
+      "sourceDuration": 960000,
+      "transformedDuration": 960000,
+      "transformedOffset": 480000,
+      "timelineDuration": 288000,
+      "croppedSourceDuration": 288000,
+      "offset": 480000,
+      "transformations": [],
+      "isMuted": true
+    },
+    {
+      "id": "still",
+      "type": "image",
+      "name": "still",
+      "assetId": "image",
+      "trackId": "overlay",
+      "start": 96000,
+      "sourceDuration": null,
+      "transformedDuration": 384000,
+      "transformedOffset": 0,
+      "timelineDuration": 384000,
+      "croppedSourceDuration": 384000,
+      "offset": 0,
+      "transformations": [
+        {
+          "id": "opacity",
+          "type": "filter",
+          "isEnabled": true,
+          "parameters": {
+            "alpha": 0.6
+          },
+          "filterName": "AlphaFilter"
+        },
+        {
+          "id": "blend",
+          "type": "blendMode",
+          "isEnabled": true,
+          "parameters": {
+            "blendMode": "multiply"
+          }
+        }
+      ]
+    },
+    {
+      "id": "music",
+      "type": "audio",
+      "name": "music",
+      "assetId": "audio",
+      "trackId": "sound",
+      "start": 0,
+      "sourceDuration": 960000,
+      "transformedDuration": 960000,
+      "transformedOffset": 192000,
+      "timelineDuration": 576000,
+      "croppedSourceDuration": 576000,
+      "offset": 192000,
+      "transformations": [
+        {
+          "id": "volume",
+          "type": "volume",
+          "isEnabled": true,
+          "parameters": {
+            "gain": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "id": "muted-clip",
+      "type": "audio",
+      "name": "muted-clip",
+      "assetId": "audio",
+      "trackId": "muted",
+      "start": 0,
+      "sourceDuration": 960000,
+      "transformedDuration": 960000,
+      "transformedOffset": 0,
+      "timelineDuration": 576000,
+      "croppedSourceDuration": 576000,
+      "offset": 0,
+      "transformations": []
+    }
+  ],
+  "assets": [
+    {
+      "id": "movie",
+      "type": "video",
+      "name": "camera.mp4",
+      "duration": 10,
+      "fps": 24
+    },
+    {
+      "id": "image",
+      "type": "image",
+      "name": "overlay.png",
+      "duration": null,
+      "fps": null
+    },
+    {
+      "id": "audio",
+      "type": "audio",
+      "name": "music.wav",
+      "duration": 10,
+      "fps": null
+    }
+  ]
+}

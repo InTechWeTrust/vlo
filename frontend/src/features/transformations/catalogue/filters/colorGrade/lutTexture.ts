@@ -16,9 +16,17 @@ type CubeLutTextSource = (assetId: string) => Promise<string | null>;
 const defaultTextSource: CubeLutTextSource = async (assetId) => {
   // Lazy import keeps the render-side module graph free of the userAssets
   // feature (and its UI) at load time.
-  const { ensureAssetFileLoaded } = await import("../../../../userAssets");
-  const file = await ensureAssetFileLoaded(assetId);
-  return file ? file.text() : null;
+  const { ensureAssetSourceLoaded } = await import("../../../../userAssets");
+  const asset = await ensureAssetSourceLoaded(assetId);
+  if (!asset) return null;
+  if (asset.file) return asset.file.text();
+  // A detached render host binds assets to URLs; it has no editor File.
+  if (/^(blob:|https?:)/.test(asset.src)) {
+    const response = await fetch(asset.src);
+    if (!response.ok) throw new Error(`LUT request failed: ${response.status}`);
+    return response.text();
+  }
+  return null;
 };
 
 let cubeLutTextSource = defaultTextSource;

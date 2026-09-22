@@ -1,0 +1,621 @@
+{
+  "manifest": {
+    "documentType": "vlo.project",
+    "schemaVersion": 3,
+    "id": "saved-project",
+    "title": "Trimmed layered media",
+    "created_at": 0,
+    "last_modified": 1,
+    "config": {
+      "aspectRatio": "16:9",
+      "outputResolution": 720,
+      "fps": 30,
+      "fitMode": "cover"
+    },
+    "files": {
+      "timeline": "timeline.json",
+      "assets": "assets.json",
+      "composites": "composites.json",
+      "assetMetadataDir": "asset-metadata"
+    }
+  },
+  "timeline": {
+    "documentType": "vlo.timeline",
+    "schemaVersion": 3,
+    "updated_at": 1,
+    "tracks": [
+      {
+        "id": "grade",
+        "type": "adjustment",
+        "label": "Grade",
+        "isVisible": true,
+        "isMuted": false,
+        "isLocked": false
+      },
+      {
+        "id": "overlay",
+        "label": "overlay",
+        "isVisible": true,
+        "isMuted": false,
+        "isLocked": false
+      },
+      {
+        "id": "main",
+        "type": "visual",
+        "label": "main",
+        "isVisible": true,
+        "isMuted": false,
+        "isLocked": false
+      },
+      {
+        "id": "sound",
+        "type": "audio",
+        "label": "sound",
+        "isVisible": true,
+        "isMuted": false,
+        "isLocked": false
+      },
+      {
+        "id": "muted",
+        "type": "audio",
+        "label": "Muted",
+        "isVisible": true,
+        "isMuted": true,
+        "isLocked": true
+      }
+    ],
+    "clips": [
+      {
+        "id": "hsl-layer",
+        "type": "adjustment",
+        "name": "Warm",
+        "trackId": "grade",
+        "start": 0,
+        "sourceDuration": 576000,
+        "transformedDuration": 576000,
+        "transformedOffset": 0,
+        "timelineDuration": 576000,
+        "croppedSourceDuration": 576000,
+        "offset": 0,
+        "depth": "all",
+        "retimingMode": "static",
+        "transformations": [
+          {
+            "id": "hsl",
+            "type": "filter",
+            "filterName": "HslAdjustmentFilter",
+            "isEnabled": true,
+            "parameters": {
+              "hue": {
+                "type": "spline",
+                "points": [
+                  {
+                    "time": 0,
+                    "value": 0
+                  },
+                  {
+                    "time": 576000,
+                    "value": 20
+                  }
+                ]
+              },
+              "saturation": 0.1,
+              "lightness": 0,
+              "alpha": 1
+            },
+            "keyframeTimes": [
+              0,
+              576000
+            ]
+          }
+        ]
+      },
+      {
+        "id": "trimmed",
+        "type": "video",
+        "name": "trimmed",
+        "assetId": "movie",
+        "trackId": "main",
+        "start": 0,
+        "sourceDuration": 960000,
+        "transformedDuration": 960000,
+        "transformedOffset": 96000,
+        "timelineDuration": 288000,
+        "croppedSourceDuration": 288000,
+        "offset": 96000,
+        "transformations": [
+          {
+            "id": "fit",
+            "type": "fitMode",
+            "isEnabled": true,
+            "parameters": {
+              "fitMode": "cover"
+            }
+          },
+          {
+            "id": "position",
+            "type": "position",
+            "isEnabled": true,
+            "parameters": {
+              "x": -80,
+              "y": 30
+            }
+          },
+          {
+            "id": "scale",
+            "type": "scale",
+            "isEnabled": true,
+            "parameters": {
+              "x": 0.75,
+              "y": 0.75,
+              "isLinked": true
+            }
+          },
+          {
+            "id": "rotation",
+            "type": "rotation",
+            "isEnabled": true,
+            "parameters": {
+              "angle": 0.1
+            }
+          },
+          {
+            "id": "blur",
+            "type": "filter",
+            "isEnabled": true,
+            "parameters": {
+              "strength": 2,
+              "quality": 4
+            },
+            "filterName": "BlurFilter",
+            "effectMask": {
+              "enabled": true,
+              "expression": {
+                "kind": "mask_ref",
+                "maskId": "circle"
+              },
+              "mode": "composite"
+            }
+          },
+          {
+            "id": "grade",
+            "type": "filter",
+            "filterName": "ColorGradeFilter",
+            "isEnabled": true,
+            "parameters": {
+              "colorModel": {
+                "version": 1,
+                "gradingSpace": "srgb-rec709"
+              },
+              "exposure": {
+                "type": "spline",
+                "points": [
+                  {
+                    "time": 96000,
+                    "value": -0.5
+                  },
+                  {
+                    "time": 288000,
+                    "value": 0.5
+                  }
+                ]
+              },
+              "saturation": 0.8,
+              "qualifierEnabled": false,
+              "curveMaster": [
+                {
+                  "x": 0,
+                  "y": 0
+                },
+                {
+                  "x": 0.5,
+                  "y": 0.6
+                },
+                {
+                  "x": 1,
+                  "y": 1
+                }
+              ],
+              "lutAssetId": "look",
+              "lutIntensity": 0.75
+            },
+            "keyframeTimes": [
+              96000,
+              288000
+            ]
+          }
+        ],
+        "components": [
+          {
+            "id": "ref-circle",
+            "type": "mask_ref",
+            "parameters": {
+              "maskClipId": "trimmed::mask::circle"
+            }
+          },
+          {
+            "id": "ref-sam",
+            "type": "mask_ref",
+            "parameters": {
+              "maskClipId": "trimmed::mask::sam"
+            }
+          },
+          {
+            "id": "range",
+            "type": "range_mask",
+            "parameters": {
+              "startSourceTicks": 300000,
+              "endSourceTicks": 340000,
+              "isActive": true
+            }
+          },
+          {
+            "id": "composition",
+            "type": "mask_composition",
+            "parameters": {
+              "expression": {
+                "kind": "operation",
+                "operator": "union",
+                "left": {
+                  "kind": "mask_ref",
+                  "maskId": "circle"
+                },
+                "right": {
+                  "kind": "mask_ref",
+                  "maskId": "sam",
+                  "inverted": true
+                }
+              },
+              "algebra": "normal",
+              "compositeTransformations": [
+                {
+                  "id": "feather",
+                  "type": "feather",
+                  "isEnabled": true,
+                  "parameters": {
+                    "mode": "hard_outer",
+                    "amount": {
+                      "type": "spline",
+                      "points": [
+                        {
+                          "time": 96000,
+                          "value": 0
+                        },
+                        {
+                          "time": 288000,
+                          "value": 30
+                        }
+                      ]
+                    },
+                    "invert": false
+                  },
+                  "keyframeTimes": [
+                    96000,
+                    288000
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "beats",
+            "type": "markers",
+            "parameters": {
+              "markers": [
+                {
+                  "id": "m1",
+                  "sourceTimeTicks": 120000,
+                  "kind": "beat"
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "cut",
+        "type": "video",
+        "name": "cut",
+        "assetId": "movie",
+        "trackId": "main",
+        "start": 288000,
+        "sourceDuration": 960000,
+        "transformedDuration": 960000,
+        "transformedOffset": 480000,
+        "timelineDuration": 288000,
+        "croppedSourceDuration": 288000,
+        "offset": 480000,
+        "transformations": [],
+        "isMuted": true
+      },
+      {
+        "id": "still",
+        "type": "image",
+        "name": "still",
+        "assetId": "image",
+        "trackId": "overlay",
+        "start": 96000,
+        "sourceDuration": null,
+        "transformedDuration": 384000,
+        "transformedOffset": 0,
+        "timelineDuration": 384000,
+        "croppedSourceDuration": 384000,
+        "offset": 0,
+        "transformations": [
+          {
+            "id": "opacity",
+            "type": "filter",
+            "isEnabled": true,
+            "parameters": {
+              "alpha": 0.6
+            },
+            "filterName": "AlphaFilter"
+          },
+          {
+            "id": "blend",
+            "type": "blendMode",
+            "isEnabled": true,
+            "parameters": {
+              "blendMode": "multiply"
+            }
+          }
+        ],
+        "components": [
+          {
+            "id": "ref-brush",
+            "type": "mask_ref",
+            "parameters": {
+              "maskClipId": "still::mask::brush"
+            }
+          },
+          {
+            "id": "still-composition",
+            "type": "mask_composition",
+            "parameters": {
+              "expression": {
+                "kind": "mask_ref",
+                "maskId": "brush"
+              },
+              "compositeTransformations": []
+            }
+          }
+        ]
+      },
+      {
+        "id": "music",
+        "type": "audio",
+        "name": "music",
+        "assetId": "audio",
+        "trackId": "sound",
+        "start": 0,
+        "sourceDuration": 960000,
+        "transformedDuration": 960000,
+        "transformedOffset": 192000,
+        "timelineDuration": 576000,
+        "croppedSourceDuration": 576000,
+        "offset": 192000,
+        "transformations": [
+          {
+            "id": "volume",
+            "type": "volume",
+            "isEnabled": true,
+            "parameters": {
+              "gain": 0.5
+            }
+          }
+        ]
+      },
+      {
+        "id": "muted-clip",
+        "type": "audio",
+        "name": "muted-clip",
+        "assetId": "audio",
+        "trackId": "muted",
+        "start": 0,
+        "sourceDuration": 960000,
+        "transformedDuration": 960000,
+        "transformedOffset": 0,
+        "timelineDuration": 576000,
+        "croppedSourceDuration": 576000,
+        "offset": 0,
+        "transformations": []
+      },
+      {
+        "id": "trimmed::mask::circle",
+        "type": "mask",
+        "name": "Circle",
+        "parentClipId": "trimmed",
+        "trackId": "main",
+        "start": 0,
+        "sourceDuration": 960000,
+        "transformedDuration": 960000,
+        "transformedOffset": 96000,
+        "timelineDuration": 288000,
+        "croppedSourceDuration": 288000,
+        "offset": 96000,
+        "transformations": [
+          {
+            "id": "circle:position",
+            "type": "position",
+            "isEnabled": true,
+            "parameters": {
+              "x": {
+                "type": "spline",
+                "points": [
+                  {
+                    "time": 96000,
+                    "value": -40
+                  },
+                  {
+                    "time": 288000,
+                    "value": 60
+                  }
+                ]
+              },
+              "y": 0
+            },
+            "keyframeTimes": [
+              96000,
+              288000
+            ]
+          },
+          {
+            "id": "circle:scale",
+            "type": "scale",
+            "isEnabled": true,
+            "parameters": {
+              "x": 1.5,
+              "y": 1.5,
+              "isLinked": true
+            }
+          },
+          {
+            "id": "circle:rotation",
+            "type": "rotation",
+            "isEnabled": true,
+            "parameters": {
+              "angle": 0
+            }
+          }
+        ],
+        "maskType": "circle",
+        "maskMode": "apply",
+        "maskInverted": false,
+        "maskParameters": {
+          "baseWidth": 200,
+          "baseHeight": 200
+        }
+      },
+      {
+        "id": "trimmed::mask::sam",
+        "type": "mask",
+        "name": "Subject",
+        "parentClipId": "trimmed",
+        "trackId": "main",
+        "start": 0,
+        "sourceDuration": 960000,
+        "transformedDuration": 960000,
+        "transformedOffset": 96000,
+        "timelineDuration": 288000,
+        "croppedSourceDuration": 288000,
+        "offset": 96000,
+        "transformations": [],
+        "maskType": "sam2",
+        "maskMode": "apply",
+        "maskInverted": true,
+        "sam2GrowAmount": 2,
+        "maskParameters": {
+          "baseWidth": 1,
+          "baseHeight": 1
+        },
+        "sam2MaskAssetId": "sam-mask",
+        "sam2GeneratedPointsHash": "cbeaae26",
+        "sam2LastGeneratedAt": 1788253779335,
+        "maskPoints": [
+          {
+            "x": 0.5,
+            "y": 0.5,
+            "label": 1,
+            "timeTicks": 96000
+          }
+        ],
+        "activeRange": {
+          "startSourceTicks": 96000,
+          "endSourceTicks": 288000
+        }
+      },
+      {
+        "id": "still::mask::brush",
+        "type": "mask",
+        "name": "Brush",
+        "parentClipId": "still",
+        "trackId": "overlay",
+        "start": 96000,
+        "sourceDuration": null,
+        "transformedDuration": 384000,
+        "transformedOffset": 0,
+        "timelineDuration": 384000,
+        "croppedSourceDuration": 384000,
+        "offset": 0,
+        "transformations": [],
+        "maskType": "brush",
+        "maskMode": "apply",
+        "maskInverted": false,
+        "maskParameters": {
+          "baseWidth": 640,
+          "baseHeight": 360
+        },
+        "brushMaskAssetId": "brush-png",
+        "brushPaintedBounds": {
+          "x": 40,
+          "y": 30,
+          "width": 200,
+          "height": 120
+        }
+      }
+    ],
+    "transitions": []
+  },
+  "assets": {
+    "documentType": "vlo.assets",
+    "schemaVersion": 1,
+    "updated_at": 1,
+    "assets": {
+      "movie": {
+        "id": "movie",
+        "type": "video",
+        "name": "camera.mp4",
+        "hash": "editor-xxhash-movie",
+        "src": "assets/camera.mp4",
+        "createdAt": 0,
+        "duration": 10,
+        "metadataRef": "asset-metadata/movie.json",
+        "fps": 24
+      },
+      "image": {
+        "id": "image",
+        "type": "image",
+        "name": "overlay.png",
+        "hash": "editor-xxhash-image",
+        "src": "assets/overlay.png",
+        "createdAt": 0
+      },
+      "audio": {
+        "id": "audio",
+        "type": "audio",
+        "name": "music.wav",
+        "hash": "editor-xxhash-audio",
+        "src": "assets/music.wav",
+        "createdAt": 0,
+        "duration": 10
+      },
+      "sam-mask": {
+        "id": "sam-mask",
+        "type": "video",
+        "name": "subject_mask.mp4",
+        "hash": "editor-xxhash-sam",
+        "src": "assets/subject_mask.mp4",
+        "createdAt": 0,
+        "duration": 10,
+        "fps": 24
+      },
+      "brush-png": {
+        "id": "brush-png",
+        "type": "image",
+        "name": "brush_mask.png",
+        "hash": "editor-xxhash-brush",
+        "src": ".vloproject/masks/brush_mask.png",
+        "createdAt": 0
+      },
+      "look": {
+        "id": "look",
+        "type": "lut",
+        "name": "look.cube",
+        "hash": "editor-xxhash-lut",
+        "src": "luts/look.cube",
+        "createdAt": 0
+      }
+    },
+    "assetFamilies": {}
+  }
+}

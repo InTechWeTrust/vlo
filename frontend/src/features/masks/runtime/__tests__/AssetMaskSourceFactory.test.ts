@@ -24,6 +24,8 @@ vi.mock("../brushBufferRegistry", async (importOriginal) => ({
 }));
 
 import { AssetMaskSourceFactory } from "../AssetMaskSourceFactory";
+import { ImageMaskSource } from "../ImageMaskSource";
+import type { SourceFrameSyncRef } from "../../../renderer/utils/sourceFrameSync";
 
 function createMask(
   maskType: MaskTimelineClip["maskType"],
@@ -191,5 +193,38 @@ describe("AssetMaskSourceFactory", () => {
         createMask("brush"),
       ),
     ).toBeNull();
+  });
+
+  describe("an image mask whose source fails to load", () => {
+    async function syncFailingImageMask(waitForAssetFrame: boolean) {
+      const factory = new AssetMaskSourceFactory({} as Renderer);
+      const mask = createMask("sam2", { sam2MaskAssetId: "sam2-png" });
+      const { player } = factory.createMaskSource({ maskId: mask.id, assetId: "sam2-png", kind: "image" });
+      expect(player).toBeInstanceOf(ImageMaskSource);
+      vi.spyOn(player as ImageMaskSource, "setSource").mockRejectedValue(new Error("image gone"));
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const node = { player, assetId: "sam2-png" };
+      const sync = factory.syncMaskNode(node, mask, {
+        waitForAssetFrame,
+        skipFrameRender: false,
+        // Never read: the source fails before any frame is requested.
+        sourceFrame: {} as SourceFrameSyncRef,
+        parentClipContentSize: { width: 64, height: 64 },
+        assetsById: new Map([["sam2-png", createImageAsset("sam2-png")]]),
+        hasUsableTexture: () => true,
+      });
+      return { player, sync };
+    }
+
+    it("fails a strict (export) frame rather than rendering the clip unmasked", async () => {
+      const { sync } = await syncFailingImageMask(true);
+      await expect(sync).rejects.toThrow("image gone");
+    });
+
+    it("hides the mask and keeps interactive playback going", async () => {
+      const { player, sync } = await syncFailingImageMask(false);
+      await expect(sync).resolves.toBeUndefined();
+      expect(player.sprite.visible).toBe(false);
+    });
   });
 });

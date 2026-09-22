@@ -628,7 +628,11 @@ export function useTrackRenderEngine(
         );
       },
       app.renderer,
-      { trackId, adjustmentEffectResolver },
+      {
+        trackId,
+        adjustmentEffectResolver,
+        readMaskPreviewTarget: () => useMaskViewStore.getState().maskPreviewTarget,
+      },
     );
 
     if (orchestrator) {

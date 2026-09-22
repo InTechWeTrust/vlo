@@ -42,6 +42,7 @@ import {
   type ResolvedFilterOp,
 } from "../../transformations/effectMaskFilterOps";
 import { SpriteClipMaskController } from "../../masks/runtime/SpriteClipMaskController";
+import type { MaskPreviewTarget } from "../../masks/store/useMaskViewStore";
 import { MaskedEffectRenderer } from "../../masks/runtime/MaskedEffectRenderer";
 import { useDebugStore } from "../../../shared/debug/useDebugStore";
 import { ticksPerFrame } from "../../../core/time/frameGrid";
@@ -171,6 +172,11 @@ interface TrackRenderEngineOptions {
    * abortable presentation generation is replaced.
    */
   decoderSessionKey?: string;
+  /**
+   * The editor's single-mask preview. Supplied by the live player only; every
+   * other engine (export, composite, detached worker) renders without one.
+   */
+  readMaskPreviewTarget?: () => MaskPreviewTarget | null;
 }
 
 let nextTrackRenderEngineInstanceId = 0;
@@ -460,6 +466,7 @@ export class TrackRenderEngine {
         void this.resyncMasksForLatestAssetMaskFrame();
       },
       this.presentationContainer,
+      options.readMaskPreviewTarget,
     );
     this.container.zIndex = zIndex;
   }

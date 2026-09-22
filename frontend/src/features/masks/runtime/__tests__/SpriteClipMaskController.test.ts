@@ -39,6 +39,9 @@ const {
   mockImageRenderAt: vi.fn(async () => undefined),
 }));
 
+/** How the live player supplies the preview; other owners pass nothing. */
+const readLivePreview = () => useMaskViewStore.getState().maskPreviewTarget;
+
 vi.mock("../MaskVideoFramePlayer", async () => {
   const { Sprite, Texture } = await import("pixi.js");
 
@@ -1669,6 +1672,31 @@ describe("SpriteClipMaskController mask composition", () => {
     warnSpy.mockRestore();
   });
 
+  it("ignores the editor's mask preview unless its owner reads it in", async () => {
+    // Export, bake and detached-render engines never pass a reader, so a
+    // preview left on in the editor cannot leak into their output. The same
+    // setup, read in, shows the preview overlay (see the next test).
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sprite = new Sprite(Texture.EMPTY);
+    const controller = new SpriteClipMaskController(sprite, { render: vi.fn() } as unknown as Renderer, new Container());
+    const parent = createParentClip();
+    const mask = createMaskClip("mask_export_ignores_preview", {
+      maskType: "sam2", sam2MaskAssetId: "export-mask-asset",
+    });
+    const asset = createMaskAsset("export-mask-asset");
+    useMaskViewStore.getState().setMaskPreviewTarget(parent.id, "mask_export_ignores_preview");
+    try {
+      await controller.syncMaskClips([mask], parent, { width: 1920, height: 1080 }, 10,
+        new Map([[asset.id, asset]]), { waitForSam2: true });
+      const internals = controller as unknown as { previewContainer: Container };
+      expect(internals.previewContainer.visible).toBe(false);
+    } finally {
+      useMaskViewStore.getState().clearMaskPreviewTarget();
+      controller.dispose();
+      warnSpy.mockRestore();
+    }
+  });
+
   it("renders a SAM2 mask preview through the mask controller without masking the content sprite", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const renderer = {
@@ -1676,7 +1704,7 @@ describe("SpriteClipMaskController mask composition", () => {
     } as unknown as Renderer;
     const sprite = new Sprite(Texture.EMPTY);
     const root = new Container();
-    const controller = new SpriteClipMaskController(sprite, renderer, root);
+    const controller = new SpriteClipMaskController(sprite, renderer, root, undefined, undefined, readLivePreview);
 
     const parent = createParentClip();
     const sam2Mask = createMaskClip("mask_sam2_preview", {
@@ -1751,7 +1779,7 @@ describe("SpriteClipMaskController mask composition", () => {
     } as unknown as Renderer;
     const sprite = new Sprite(Texture.WHITE);
     const root = new Container();
-    const controller = new SpriteClipMaskController(sprite, renderer, root);
+    const controller = new SpriteClipMaskController(sprite, renderer, root, undefined, undefined, readLivePreview);
     const parent = createParentClip();
     const mask = createMaskClip("mask_vector_preview_transition", {
       inverted: true,

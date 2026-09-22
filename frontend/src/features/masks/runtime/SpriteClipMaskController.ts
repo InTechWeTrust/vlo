@@ -24,7 +24,7 @@ import {
   getMaskLocalId,
   resolveRenderableMaskBooleanExpression,
 } from "../model/maskBooleanExpression";
-import { useMaskViewStore } from "../store/useMaskViewStore";
+import type { MaskPreviewTarget } from "../store/useMaskViewStore";
 import {
   createSourceFrameSyncRefFromSourceTicks,
   type SourceFrameSyncRef,
@@ -119,6 +119,7 @@ export class SpriteClipMaskController {
   private readonly previewContainer: Container;
   private readonly previewSprite: Sprite;
   private readonly onAssetMaskFrameReady?: () => void;
+  private readonly readMaskPreviewTarget: () => MaskPreviewTarget | null;
 
   private readonly assetMaskSourceFactory: AssetMaskSourceFactory;
   private readonly nodeRegistry: MaskSceneNodeRegistry;
@@ -154,7 +155,14 @@ export class SpriteClipMaskController {
     maskRootContainer?: Container | null,
     onAssetMaskFrameReady?: () => void,
     maskTarget?: Container | null,
+    /**
+     * The interactive single-mask preview, read on every sync. Only the live
+     * player supplies it: an export, bake or detached render must draw the
+     * project, not whatever mask the user happens to be previewing.
+     */
+    readMaskPreviewTarget: () => MaskPreviewTarget | null = () => null,
   ) {
+    this.readMaskPreviewTarget = readMaskPreviewTarget;
     this.sprite = sprite;
     this.renderer = renderer ?? null;
     this.maskRootContainer = maskRootContainer ?? null;
@@ -266,7 +274,7 @@ export class SpriteClipMaskController {
     // the content, so the full content shows below. Asset-backed previews still
     // sync their mask node here, then render mask coverage through the normal
     // mask texture path before applying it to a blue overlay sprite.
-    const previewTarget = useMaskViewStore.getState().maskPreviewTarget;
+    const previewTarget = this.readMaskPreviewTarget();
     const previewMaskClip =
       parentClip.type !== "mask" &&
       previewTarget?.clipId === parentClip.id

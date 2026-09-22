@@ -245,7 +245,9 @@ export class AssetMaskSourceFactory {
       try {
         await node.player.setSource(asset);
       } catch (error) {
-        if (!(node.player instanceof ImageMaskSource)) {
+        // A strict (export) frame must not quietly drop a mask: the clip would
+        // render unmasked. Only interactive playback tolerates a missing image.
+        if (!(node.player instanceof ImageMaskSource) || options.waitForAssetFrame) {
           throw error;
         }
         node.player.sprite.visible = false;
