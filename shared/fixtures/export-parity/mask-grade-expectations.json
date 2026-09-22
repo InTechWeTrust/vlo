@@ -1,0 +1,376 @@
+{
+  "fps": 30,
+  "frames": 120,
+  "width": 320,
+  "height": 180,
+  "samples": [
+    {
+      "name": "plate inside its matte",
+      "frame": 15,
+      "rect": [
+        55,
+        85,
+        65,
+        95
+      ],
+      "rgb": [
+        40,
+        60,
+        200
+      ],
+      "tolerance": 12
+    },
+    {
+      "name": "plate just inside the matte edge",
+      "frame": 15,
+      "rect": [
+        147,
+        85,
+        157,
+        95
+      ],
+      "rgb": [
+        40,
+        60,
+        200
+      ],
+      "tolerance": 12
+    },
+    {
+      "name": "LUT-graded backdrop outside the matte",
+      "frame": 15,
+      "rect": [
+        255,
+        85,
+        265,
+        95
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "LUT-graded backdrop just outside the matte edge",
+      "frame": 15,
+      "rect": [
+        163,
+        85,
+        173,
+        95
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "card inside its brush",
+      "frame": 38,
+      "rect": [
+        115,
+        65,
+        205,
+        115
+      ],
+      "rgb": [
+        230,
+        200,
+        40
+      ],
+      "tolerance": 20
+    },
+    {
+      "name": "backdrop left of the brush",
+      "frame": 38,
+      "rect": [
+        100,
+        85,
+        107,
+        95
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "backdrop right of the brush",
+      "frame": 38,
+      "rect": [
+        213,
+        85,
+        220,
+        95
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "backdrop above the brush",
+      "frame": 38,
+      "rect": [
+        150,
+        50,
+        170,
+        57
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "undimmed before the adjustment layer",
+      "frame": 42,
+      "rect": [
+        5,
+        5,
+        30,
+        30
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "backdrop dimmed by the adjustment layer",
+      "frame": 48,
+      "rect": [
+        5,
+        5,
+        30,
+        30
+      ],
+      "rgb": [
+        112.5,
+        37.5,
+        97.5
+      ],
+      "tolerance": 25
+    },
+    {
+      "name": "card dimmed by the adjustment layer",
+      "frame": 48,
+      "rect": [
+        115,
+        65,
+        205,
+        115
+      ],
+      "rgb": [
+        115.0,
+        100.0,
+        20.0
+      ],
+      "tolerance": 20
+    },
+    {
+      "name": "panel in the left rectangle, dimmed by its effect mask",
+      "frame": 75,
+      "rect": [
+        60,
+        60,
+        100,
+        120
+      ],
+      "rgb": [
+        117.5,
+        117.5,
+        117.5
+      ],
+      "tolerance": 20
+    },
+    {
+      "name": "panel in the right rectangle, undimmed",
+      "frame": 75,
+      "rect": [
+        220,
+        60,
+        260,
+        120
+      ],
+      "rgb": [
+        235,
+        235,
+        235
+      ],
+      "tolerance": 15
+    },
+    {
+      "name": "backdrop between the rectangles",
+      "frame": 75,
+      "rect": [
+        145,
+        60,
+        175,
+        120
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "backdrop above the rectangles",
+      "frame": 75,
+      "rect": [
+        60,
+        5,
+        100,
+        25
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "badge at its keyframed position, frame 93",
+      "frame": 93,
+      "rect": [
+        74,
+        84,
+        86,
+        96
+      ],
+      "rgb": [
+        230,
+        30,
+        30
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "badge at its keyframed position, frame 102",
+      "frame": 102,
+      "rect": [
+        134,
+        84,
+        146,
+        96
+      ],
+      "rgb": [
+        230,
+        30,
+        30
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "badge gone from where it was",
+      "frame": 102,
+      "rect": [
+        74,
+        84,
+        86,
+        96
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "subject inside its SAM2 mask",
+      "frame": 93,
+      "rect": [
+        260,
+        40,
+        300,
+        60
+      ],
+      "rgb": [
+        250,
+        140,
+        20
+      ],
+      "tolerance": 25
+    },
+    {
+      "name": "subject where only the grown SAM2 mask reaches",
+      "frame": 93,
+      "rect": [
+        192,
+        40,
+        198,
+        50
+      ],
+      "rgb": [
+        250,
+        140,
+        20
+      ],
+      "tolerance": 25
+    },
+    {
+      "name": "backdrop outside the grown SAM2 mask",
+      "frame": 93,
+      "rect": [
+        170,
+        40,
+        180,
+        50
+      ],
+      "rgb": [
+        225,
+        75,
+        195
+      ],
+      "tolerance": 30
+    },
+    {
+      "name": "backdrop made grey by the HSL layer",
+      "frame": 111,
+      "rect": [
+        5,
+        5,
+        30,
+        30
+      ],
+      "rgb": [
+        165,
+        165,
+        165
+      ],
+      "tolerance": 25
+    },
+    {
+      "name": "subject made grey by the HSL layer",
+      "frame": 111,
+      "rect": [
+        260,
+        40,
+        300,
+        60
+      ],
+      "rgb": [
+        138,
+        138,
+        138
+      ],
+      "tolerance": 25
+    }
+  ]
+}

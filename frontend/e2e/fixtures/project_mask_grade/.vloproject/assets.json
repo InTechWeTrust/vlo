@@ -1,0 +1,96 @@
+{
+  "documentType": "vlo.assets",
+  "schemaVersion": 1,
+  "updated_at": 0,
+  "assetFamilies": {},
+  "assets": {
+    "plate": {
+      "id": "plate",
+      "type": "video",
+      "name": "plate.mp4",
+      "hash": "fixture-plate",
+      "src": "assets/plate.mp4",
+      "createdAt": 0,
+      "duration": 4.0,
+      "fps": 24.0
+    },
+    "matte": {
+      "id": "matte",
+      "type": "video",
+      "name": "matte.mp4",
+      "hash": "fixture-matte",
+      "src": ".vloproject/masks/matte.mp4",
+      "createdAt": 0,
+      "duration": 4.0,
+      "fps": 24.0
+    },
+    "card": {
+      "id": "card",
+      "type": "image",
+      "name": "card.png",
+      "hash": "fixture-card",
+      "src": "assets/card.png",
+      "createdAt": 0
+    },
+    "brush": {
+      "id": "brush",
+      "type": "image",
+      "name": "brush.png",
+      "hash": "fixture-brush",
+      "src": ".vloproject/masks/brush.png",
+      "createdAt": 0
+    },
+    "backdrop": {
+      "id": "backdrop",
+      "type": "image",
+      "name": "backdrop.png",
+      "hash": "fixture-backdrop",
+      "src": "assets/backdrop.png",
+      "createdAt": 0
+    },
+    "invert": {
+      "id": "invert",
+      "type": "lut",
+      "name": "invert.cube",
+      "hash": "fixture-invert",
+      "src": "assets/invert.cube",
+      "createdAt": 0
+    },
+    "panel": {
+      "id": "panel",
+      "type": "image",
+      "name": "panel.png",
+      "hash": "fixture-panel",
+      "src": "assets/panel.png",
+      "createdAt": 0
+    },
+    "badge": {
+      "id": "badge",
+      "type": "image",
+      "name": "badge.png",
+      "hash": "fixture-badge",
+      "src": "assets/badge.png",
+      "createdAt": 0
+    },
+    "subject": {
+      "id": "subject",
+      "type": "video",
+      "name": "subject.mp4",
+      "hash": "fixture-subject",
+      "src": "assets/subject.mp4",
+      "createdAt": 0,
+      "duration": 4.0,
+      "fps": 24.0
+    },
+    "subject-sam2": {
+      "id": "subject-sam2",
+      "type": "video",
+      "name": "subject_sam2.mp4",
+      "hash": "fixture-subject-sam2",
+      "src": ".vloproject/masks/subject_sam2.mp4",
+      "createdAt": 0,
+      "duration": 4.0,
+      "fps": 24.0
+    }
+  }
+}

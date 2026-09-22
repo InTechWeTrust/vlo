@@ -90,6 +90,9 @@ declare global {
         legacyReplay?: boolean;
       }) => Promise<unknown>;
       runGlitchConsistencyProbe?: () => Promise<unknown>;
+      runProjectExportPixelProbe?: (request: {
+        samples: { frame: number; rect: [number, number, number, number] }[];
+      }) => Promise<unknown>;
       runRgbSplitConsistencyProbe?: () => Promise<unknown>;
       runCompositeParityProbe?: (request: {
         compositeId: string;
@@ -181,6 +184,15 @@ export function installE2EDiagnostics(): void {
       })
       .catch((error: unknown) => {
         console.error("Failed to install selection export probe", error);
+      });
+    void import("./e2e/projectExportPixelProbe")
+      .then(({ runProjectExportPixelProbe }) => {
+        if (window.__vloE2E) {
+          window.__vloE2E.runProjectExportPixelProbe = runProjectExportPixelProbe;
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to install project export pixel probe", error);
       });
     void import("./e2e/glitchConsistencyProbe")
       .then(({ runGlitchConsistencyProbe }) => {

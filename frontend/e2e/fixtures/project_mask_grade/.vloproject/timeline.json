@@ -1,0 +1,581 @@
+{
+  "documentType": "vlo.timeline",
+  "schemaVersion": 3,
+  "updated_at": 0,
+  "tracks": [
+    {
+      "id": "dim",
+      "type": "adjustment",
+      "label": "dim",
+      "isVisible": true,
+      "isMuted": false,
+      "isLocked": false
+    },
+    {
+      "id": "badges",
+      "type": "visual",
+      "label": "badges",
+      "isVisible": true,
+      "isMuted": false,
+      "isLocked": false
+    },
+    {
+      "id": "overlay",
+      "type": "visual",
+      "label": "overlay",
+      "isVisible": true,
+      "isMuted": false,
+      "isLocked": false
+    },
+    {
+      "id": "main",
+      "type": "visual",
+      "label": "main",
+      "isVisible": true,
+      "isMuted": false,
+      "isLocked": false
+    }
+  ],
+  "clips": [
+    {
+      "id": "dim",
+      "type": "adjustment",
+      "name": "dim",
+      "trackId": "dim",
+      "depth": "all",
+      "retimingMode": "static",
+      "start": 144000,
+      "sourceDuration": 48000,
+      "transformedDuration": 48000,
+      "transformedOffset": 0,
+      "timelineDuration": 48000,
+      "croppedSourceDuration": 48000,
+      "offset": 0,
+      "transformations": [
+        {
+          "id": "dim-adjust",
+          "type": "filter",
+          "filterName": "AdjustmentFilter",
+          "isEnabled": true,
+          "parameters": {
+            "brightness": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "id": "plate",
+      "assetId": "plate",
+      "type": "video",
+      "name": "plate",
+      "trackId": "overlay",
+      "start": 0,
+      "sourceDuration": 384000,
+      "transformedDuration": 384000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "components": [
+        {
+          "id": "plate-ref",
+          "type": "mask_ref",
+          "parameters": {
+            "maskClipId": "plate::mask::matte"
+          }
+        },
+        {
+          "id": "plate-composition",
+          "type": "mask_composition",
+          "parameters": {
+            "expression": {
+              "kind": "mask_ref",
+              "maskId": "matte"
+            },
+            "algebra": "normal",
+            "compositeTransformations": []
+          }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "plate-fit",
+          "type": "fitMode",
+          "isEnabled": true,
+          "parameters": {
+            "fitMode": "contain"
+          }
+        }
+      ]
+    },
+    {
+      "id": "plate::mask::matte",
+      "type": "mask",
+      "name": "matte",
+      "parentClipId": "plate",
+      "trackId": "overlay",
+      "maskMode": "apply",
+      "maskInverted": false,
+      "start": 0,
+      "sourceDuration": 384000,
+      "transformedDuration": 384000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "transformations": [],
+      "maskType": "generation",
+      "maskParameters": {
+        "baseWidth": 1,
+        "baseHeight": 1
+      },
+      "generationMaskAssetId": "matte"
+    },
+    {
+      "id": "card",
+      "assetId": "card",
+      "type": "image",
+      "name": "card",
+      "trackId": "overlay",
+      "start": 96000,
+      "sourceDuration": null,
+      "transformedDuration": 96000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "components": [
+        {
+          "id": "card-ref",
+          "type": "mask_ref",
+          "parameters": {
+            "maskClipId": "card::mask::brush"
+          }
+        },
+        {
+          "id": "card-composition",
+          "type": "mask_composition",
+          "parameters": {
+            "expression": {
+              "kind": "mask_ref",
+              "maskId": "brush"
+            },
+            "algebra": "normal",
+            "compositeTransformations": []
+          }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "card-fit",
+          "type": "fitMode",
+          "isEnabled": true,
+          "parameters": {
+            "fitMode": "contain"
+          }
+        }
+      ]
+    },
+    {
+      "id": "card::mask::brush",
+      "type": "mask",
+      "name": "brush",
+      "parentClipId": "card",
+      "trackId": "overlay",
+      "maskMode": "apply",
+      "maskInverted": false,
+      "start": 96000,
+      "sourceDuration": null,
+      "transformedDuration": 96000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "transformations": [],
+      "maskType": "brush",
+      "maskParameters": {
+        "baseWidth": 320,
+        "baseHeight": 180
+      },
+      "brushMaskAssetId": "brush",
+      "brushPaintedBounds": {
+        "x": 110,
+        "y": 60,
+        "width": 100,
+        "height": 60
+      }
+    },
+    {
+      "id": "grey",
+      "type": "adjustment",
+      "name": "grey",
+      "trackId": "dim",
+      "depth": "all",
+      "retimingMode": "static",
+      "start": 336000,
+      "sourceDuration": 48000,
+      "transformedDuration": 48000,
+      "transformedOffset": 0,
+      "timelineDuration": 48000,
+      "croppedSourceDuration": 48000,
+      "offset": 0,
+      "transformations": [
+        {
+          "id": "grey-hsl",
+          "type": "filter",
+          "filterName": "HslAdjustmentFilter",
+          "isEnabled": true,
+          "parameters": {
+            "hue": 0,
+            "saturation": -1,
+            "lightness": 0,
+            "alpha": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "panel",
+      "assetId": "panel",
+      "type": "image",
+      "name": "panel",
+      "trackId": "overlay",
+      "start": 192000,
+      "sourceDuration": null,
+      "transformedDuration": 96000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "components": [
+        {
+          "id": "panel-ref-left",
+          "type": "mask_ref",
+          "parameters": {
+            "maskClipId": "panel::mask::left"
+          }
+        },
+        {
+          "id": "panel-ref-right",
+          "type": "mask_ref",
+          "parameters": {
+            "maskClipId": "panel::mask::right"
+          }
+        },
+        {
+          "id": "panel-composition",
+          "type": "mask_composition",
+          "parameters": {
+            "expression": {
+              "kind": "operation",
+              "operator": "union",
+              "left": {
+                "kind": "mask_ref",
+                "maskId": "left"
+              },
+              "right": {
+                "kind": "mask_ref",
+                "maskId": "right"
+              }
+            },
+            "algebra": "normal",
+            "compositeTransformations": []
+          }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "panel-fit",
+          "type": "fitMode",
+          "isEnabled": true,
+          "parameters": {
+            "fitMode": "contain"
+          }
+        },
+        {
+          "id": "panel-dim",
+          "type": "filter",
+          "filterName": "AdjustmentFilter",
+          "isEnabled": true,
+          "parameters": {
+            "brightness": 0.5
+          },
+          "effectMask": {
+            "enabled": true,
+            "mode": "composite",
+            "expression": {
+              "kind": "mask_ref",
+              "maskId": "left"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "panel::mask::left",
+      "type": "mask",
+      "name": "left",
+      "parentClipId": "panel",
+      "trackId": "overlay",
+      "maskMode": "apply",
+      "maskInverted": false,
+      "start": 192000,
+      "sourceDuration": null,
+      "transformedDuration": 96000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "transformations": [
+        {
+          "id": "left-position",
+          "type": "position",
+          "isEnabled": true,
+          "parameters": {
+            "x": -80,
+            "y": 0
+          }
+        },
+        {
+          "id": "left-scale",
+          "type": "scale",
+          "isEnabled": true,
+          "parameters": {
+            "x": 0.4,
+            "y": 0.6,
+            "isLinked": false
+          }
+        },
+        {
+          "id": "left-rotation",
+          "type": "rotation",
+          "isEnabled": true,
+          "parameters": {
+            "angle": 0
+          }
+        }
+      ],
+      "maskType": "rectangle",
+      "maskParameters": {
+        "baseWidth": 200,
+        "baseHeight": 200
+      }
+    },
+    {
+      "id": "panel::mask::right",
+      "type": "mask",
+      "name": "right",
+      "parentClipId": "panel",
+      "trackId": "overlay",
+      "maskMode": "apply",
+      "maskInverted": false,
+      "start": 192000,
+      "sourceDuration": null,
+      "transformedDuration": 96000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "transformations": [
+        {
+          "id": "right-position",
+          "type": "position",
+          "isEnabled": true,
+          "parameters": {
+            "x": 80,
+            "y": 0
+          }
+        },
+        {
+          "id": "right-scale",
+          "type": "scale",
+          "isEnabled": true,
+          "parameters": {
+            "x": 0.4,
+            "y": 0.6,
+            "isLinked": false
+          }
+        },
+        {
+          "id": "right-rotation",
+          "type": "rotation",
+          "isEnabled": true,
+          "parameters": {
+            "angle": 0
+          }
+        }
+      ],
+      "maskType": "rectangle",
+      "maskParameters": {
+        "baseWidth": 200,
+        "baseHeight": 200
+      }
+    },
+    {
+      "id": "badge",
+      "assetId": "badge",
+      "type": "image",
+      "name": "badge",
+      "trackId": "badges",
+      "start": 288000,
+      "sourceDuration": null,
+      "transformedDuration": 96000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "transformations": [
+        {
+          "id": "badge-fit",
+          "type": "fitMode",
+          "isEnabled": true,
+          "parameters": {
+            "fitMode": "contain"
+          }
+        },
+        {
+          "id": "badge-position",
+          "type": "position",
+          "isEnabled": true,
+          "keyframeTimes": [
+            0,
+            96000
+          ],
+          "parameters": {
+            "x": {
+              "type": "spline",
+              "points": [
+                {
+                  "time": 0,
+                  "value": -600
+                },
+                {
+                  "time": 96000,
+                  "value": 600
+                }
+              ]
+            },
+            "y": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "subject",
+      "assetId": "subject",
+      "type": "video",
+      "name": "subject",
+      "trackId": "overlay",
+      "start": 288000,
+      "sourceDuration": 384000,
+      "transformedDuration": 384000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "components": [
+        {
+          "id": "subject-ref",
+          "type": "mask_ref",
+          "parameters": {
+            "maskClipId": "subject::mask::sam"
+          }
+        },
+        {
+          "id": "subject-composition",
+          "type": "mask_composition",
+          "parameters": {
+            "expression": {
+              "kind": "mask_ref",
+              "maskId": "sam"
+            },
+            "algebra": "normal",
+            "compositeTransformations": []
+          }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "subject-fit",
+          "type": "fitMode",
+          "isEnabled": true,
+          "parameters": {
+            "fitMode": "contain"
+          }
+        }
+      ]
+    },
+    {
+      "id": "subject::mask::sam",
+      "type": "mask",
+      "name": "sam",
+      "parentClipId": "subject",
+      "trackId": "overlay",
+      "maskMode": "apply",
+      "maskInverted": false,
+      "start": 288000,
+      "sourceDuration": 384000,
+      "transformedDuration": 384000,
+      "transformedOffset": 0,
+      "timelineDuration": 96000,
+      "croppedSourceDuration": 96000,
+      "offset": 0,
+      "transformations": [],
+      "maskType": "sam2",
+      "sam2GrowAmount": 20,
+      "maskParameters": {
+        "baseWidth": 1,
+        "baseHeight": 1
+      },
+      "sam2MaskAssetId": "subject-sam2",
+      "sam2GeneratedPointsHash": "fixture",
+      "maskPoints": [
+        {
+          "x": 0.8,
+          "y": 0.5,
+          "label": 1,
+          "timeTicks": 0
+        }
+      ]
+    },
+    {
+      "id": "backdrop",
+      "assetId": "backdrop",
+      "type": "image",
+      "name": "backdrop",
+      "trackId": "main",
+      "start": 0,
+      "sourceDuration": null,
+      "transformedDuration": 384000,
+      "transformedOffset": 0,
+      "timelineDuration": 384000,
+      "croppedSourceDuration": 384000,
+      "offset": 0,
+      "transformations": [
+        {
+          "id": "backdrop-fit",
+          "type": "fitMode",
+          "isEnabled": true,
+          "parameters": {
+            "fitMode": "contain"
+          }
+        },
+        {
+          "id": "backdrop-grade",
+          "type": "filter",
+          "filterName": "ColorGradeFilter",
+          "isEnabled": true,
+          "parameters": {
+            "colorModel": {
+              "version": 1,
+              "gradingSpace": "srgb-rec709"
+            },
+            "lutAssetId": "invert",
+            "lutIntensity": 1
+          }
+        }
+      ]
+    }
+  ],
+  "transitions": []
+}

@@ -1,0 +1,20 @@
+{
+  "documentType": "vlo.project",
+  "schemaVersion": 3,
+  "id": "mask-grade-project",
+  "title": "Masks and grades",
+  "created_at": 0,
+  "last_modified": 0,
+  "config": {
+    "aspectRatio": "16:9",
+    "outputResolution": 180,
+    "fps": 30,
+    "fitMode": "contain"
+  },
+  "files": {
+    "timeline": "timeline.json",
+    "assets": "assets.json",
+    "composites": "composites.json",
+    "assetMetadataDir": "asset-metadata"
+  }
+}

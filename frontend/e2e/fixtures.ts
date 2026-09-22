@@ -48,6 +48,12 @@ export const test = base.extend<{
     editorCurrent: EditorComponent;
     /** Current-format project alias for mask and mask-composition coverage. */
     editorWithMasks: EditorComponent;
+    /**
+     * The export parity project: real media with mattes, a brush mask, shape
+     * masks, a LUT grade and adjustment layers. Every export host is held to
+     * the same expectations for it.
+     */
+    editorWithMaskGrade: EditorComponent;
     /** Editor opened from the legacy single-document project fixture. */
     legacyEditor: EditorComponent;
     /** An EditorComponent instance without project setup — for tests that need the landing page. */
@@ -124,6 +130,12 @@ export const test = base.extend<{
     editorWithMasks: async ({ page }, runFixture) => {
         const editor = new EditorComponent(page);
         await setupEditor(editor, { fixtureDir: 'project_current' });
+        await runFixture(editor);
+    },
+
+    editorWithMaskGrade: async ({ page }, runFixture) => {
+        const editor = new EditorComponent(page);
+        await setupEditor(editor, { fixtureDir: 'project_mask_grade' });
         await runFixture(editor);
     },
 
