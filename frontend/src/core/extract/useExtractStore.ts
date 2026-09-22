@@ -73,6 +73,14 @@ export const useExtractStore = create<ExtractState>((set) => ({
   error: null,
   setPhase: (phase) => set({ phase }),
   setError: (error) => set({ error, isProcessing: false }),
-  setProgress: (p) => set({ progress: p }),
+  // Whole percentages only, and no update when that does not change: every
+  // update redraws the progress UI, in the dialog and the progress PiP, and
+  // on-screen change during an export slows it down (pip-render-plan.md,
+  // phase 1). Renderers report far more often than a person can read.
+  setProgress: (p) =>
+    set((state) => {
+      const progress = Math.floor(p);
+      return progress === state.progress ? state : { progress };
+    }),
   setIsProcessing: (v) => set(v ? { isProcessing: true, phase: "preparing", error: null } : { isProcessing: false }),
 }));

@@ -259,6 +259,7 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                 let counters: PageCounters;
                 let pipSupported = false;
                 let pipOpen = false;
+                let runningAnimations: { editor: string[]; pip: string[] } = { editor: [], pip: [] };
                 try {
                     // Whether today's progress window is actually open while the export runs.
                     pipSupported = await page.evaluate(() => Boolean(
@@ -267,6 +268,22 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                         (window as unknown as { documentPictureInPicture?: { window: Window | null } })
                             .documentPictureInPicture?.window)), { timeout: 5000 }).toBe(true)
                         .then(() => true, () => false);
+                    // Anything still animating on screen mid-export competes with the
+                    // export; this list should stay empty during rendering.
+                    await page.waitForTimeout(2000);
+                    runningAnimations = await page.evaluate(() => {
+                        const describe = (doc: Document | undefined) => (doc?.getAnimations() ?? [])
+                            .filter((animation) => animation.playState === 'running')
+                            .map((animation) => {
+                                const named = animation as Animation & { animationName?: string; transitionProperty?: string };
+                                const target = (animation.effect as KeyframeEffect | null)?.target as Element | null;
+                                return `${named.animationName ?? named.transitionProperty ?? 'animation'} on ${
+                                    target?.className?.toString().split(' ').find((name) => name.startsWith('Mui')) ?? target?.tagName ?? '?'}`;
+                            });
+                        const pip = (window as unknown as { documentPictureInPicture?: { window: Window | null } })
+                            .documentPictureInPicture?.window?.document;
+                        return { editor: describe(document), pip: describe(pip) };
+                    });
                     await expect.poll(async () => {
                         run = await latestRun(page);
                         return run?.status;
@@ -289,6 +306,7 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                     pipSupported,
                     pipOpen,
                     minimizeApplied,
+                    runningAnimations,
                     userAgent: await page.evaluate(() => navigator.userAgent),
                     webgl: await page.evaluate(() => {
                         const gl = document.createElement('canvas').getContext('webgl2');

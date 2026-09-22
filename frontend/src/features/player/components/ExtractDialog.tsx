@@ -82,6 +82,10 @@ interface ExportProgressProps {
   progress: number;
 }
 
+const STATIC_PROGRESS_SX = {
+  "& .MuiLinearProgress-bar": { transition: "none", animation: "none" },
+} as const;
+
 function ExportProgress({ progress }: ExportProgressProps) {
   const phase = useExtractStore((state) => state.phase);
   const rendering = phase === null || phase === "rendering";
@@ -90,7 +94,16 @@ function ExportProgress({ progress }: ExportProgressProps) {
       <Typography variant="body2" color="text.secondary" gutterBottom>
         {rendering ? `Rendering... ${Math.min(99, Math.round(progress))}%` : EXPORT_PHASE_LABELS[phase]}
       </Typography>
-      <LinearProgress variant={rendering ? "determinate" : "indeterminate"} value={Math.min(99, progress)} />
+      {/* The rendering bar is static on purpose. MUI animates each update,
+          and anything moving on screen competes with the export for the GPU:
+          on vlo_03 the animated bar (here and in the progress PiP) more than
+          doubled export time. The short phases without a percentage keep the
+          indeterminate bar, which announces no value. */}
+      <LinearProgress
+        variant={rendering ? "determinate" : "indeterminate"}
+        value={Math.min(99, progress)}
+        sx={rendering ? STATIC_PROGRESS_SX : undefined}
+      />
     </Box>
   );
 }

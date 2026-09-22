@@ -146,5 +146,18 @@ describe("useExtractStore", () => {
       expect(result.current.isProcessing).toBe(true);
       expect(result.current.progress).toBe(75);
     });
+
+    it("keeps whole percentages and skips updates that do not change them", () => {
+      const listener = vi.fn();
+      const unsubscribe = useExtractStore.subscribe(listener);
+      useExtractStore.getState().setProgress(41.2);
+      useExtractStore.getState().setProgress(41.9);
+      useExtractStore.getState().setProgress(42.01);
+      unsubscribe();
+
+      // Each notification redraws the progress UI during an export.
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(useExtractStore.getState().progress).toBe(42);
+    });
   });
 });
