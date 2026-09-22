@@ -404,7 +404,9 @@ export class MockFileSystem {
     }
 
     async install(page: Page) {
-        await page.route(`${MOCK_FS_ROUTE}**`, (route) => this.handleRoute(route));
+        // `**` prefix, not a bare path: a path pattern resolves against the
+        // context's baseURL, which a browser attached over CDP does not have.
+        await page.route(`**${MOCK_FS_ROUTE}**`, (route) => this.handleRoute(route));
         await installMockFileSystem(page, this.rootName);
     }
 
@@ -507,32 +509,70 @@ export async function installMockFileSystem(
                 throw new TypeError('Unsupported mock filesystem write payload');
             }
 
+            /**
+             * FileSystemWritableFileStream semantics the app relies on: plain
+             * appends, positional `write`/`seek`/`truncate` params (exports
+             * patch MP4 headers in place), `close` to commit and `abort` to
+             * discard without replacing the file.
+             */
             class MockFileSystemWritableStream {
-                private readonly chunks: Uint8Array[] = [];
+                private body = new Uint8Array(0);
+                private size = 0;
+                private cursor = 0;
 
                 constructor(private readonly filePath: string) {}
 
+                private ensureCapacity(length: number) {
+                    if (length <= this.body.byteLength) return;
+                    const next = new Uint8Array(Math.max(length, this.body.byteLength * 2));
+                    next.set(this.body.subarray(0, this.size));
+                    this.body = next;
+                }
+
+                private writeAt(position: number, bytes: Uint8Array) {
+                    this.ensureCapacity(position + bytes.byteLength);
+                    this.body.set(bytes, position);
+                    this.size = Math.max(this.size, position + bytes.byteLength);
+                    this.cursor = position + bytes.byteLength;
+                }
+
                 async write(chunk: unknown) {
-                    this.chunks.push(await toBytes(chunk));
+                    if (chunk && typeof chunk === 'object' && 'type' in chunk
+                        && !(chunk instanceof Blob) && !ArrayBuffer.isView(chunk)) {
+                        const params = chunk as {
+                            type: 'write' | 'seek' | 'truncate';
+                            data?: unknown;
+                            position?: number;
+                            size?: number;
+                        };
+                        if (params.type === 'seek') {
+                            this.cursor = params.position ?? 0;
+                        } else if (params.type === 'truncate') {
+                            const size = params.size ?? 0;
+                            this.ensureCapacity(size);
+                            if (size > this.size) this.body.fill(0, this.size, size);
+                            this.size = size;
+                            this.cursor = Math.min(this.cursor, size);
+                        } else {
+                            this.writeAt(params.position ?? this.cursor, await toBytes(params.data));
+                        }
+                        return;
+                    }
+                    this.writeAt(this.cursor, await toBytes(chunk));
                 }
 
                 async close() {
-                    const size = this.chunks.reduce(
-                        (total, chunk) => total + chunk.byteLength,
-                        0,
-                    );
-                    const body = new Uint8Array(size);
-                    let offset = 0;
-                    for (const chunk of this.chunks) {
-                        body.set(chunk, offset);
-                        offset += chunk.byteLength;
-                    }
                     const response = await fetch(requestUrl(this.filePath), {
                         method: 'PUT',
                         headers: { 'content-type': 'application/octet-stream' },
-                        body,
+                        body: this.body.slice(0, this.size),
                     });
                     await requireOk(response, this.filePath);
+                }
+
+                async abort() {
+                    this.body = new Uint8Array(0);
+                    this.size = 0;
                 }
             }
 

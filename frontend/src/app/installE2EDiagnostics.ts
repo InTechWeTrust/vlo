@@ -94,6 +94,8 @@ declare global {
         samples: { frame: number; rect: [number, number, number, number] }[];
       }) => Promise<unknown>;
       captureDetachedRenderProbeInput?: () => Promise<unknown>;
+      setExportDebugMode?: (on: boolean) => void;
+      getLatestExportRunSummary?: () => unknown;
       runDetachedRenderPixelProbe?: (request: {
         input: { document: unknown; files: Record<string, string> };
         samples: { frame: number; rect: [number, number, number, number] }[];
@@ -208,6 +210,16 @@ export function installE2EDiagnostics(): void {
       })
       .catch((error: unknown) => {
         console.error("Failed to install detached render probe", error);
+      });
+    void import("./e2e/exportMeasureHooks")
+      .then(({ setExportDebugMode, getLatestExportRunSummary }) => {
+        if (window.__vloE2E) {
+          window.__vloE2E.setExportDebugMode = setExportDebugMode;
+          window.__vloE2E.getLatestExportRunSummary = getLatestExportRunSummary;
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("Failed to install export measure hooks", error);
       });
     void import("./e2e/glitchConsistencyProbe")
       .then(({ runGlitchConsistencyProbe }) => {

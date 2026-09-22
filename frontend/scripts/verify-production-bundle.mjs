@@ -33,6 +33,8 @@ const FORBIDDEN = [
   "runProjectExportPixelProbe",
   "project export pixel probe:",
   "runDetachedRenderPixelProbe",
+  "setExportDebugMode",
+  "getLatestExportRunSummary",
   "detached render probe:",
   "A filter consistency probe is running",
   "acceptLiveCompositeFrame",

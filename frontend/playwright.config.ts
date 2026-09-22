@@ -85,7 +85,7 @@ export default defineConfig({
       name: 'chromium',
       // The media lane is nightly-only and needs its own launch flags; keep it
       // out of the default suite and out of smoke.
-      testIgnore: ['**/__tests__/**', '**/media/**'],
+      testIgnore: ['**/__tests__/**', '**/media/**', '**/measure/**'],
       use: { ...devices['Desktop Chrome'] },
     },
     {
@@ -100,6 +100,29 @@ export default defineConfig({
         launchOptions: {
           ...(EXECUTABLE_PATH ? { executablePath: EXECUTABLE_PATH } : {}),
           args: MEDIA_LANE_ARGS,
+        },
+      },
+    },
+    {
+      // Export throughput under tab hiding and minimising
+      // (docs/pip-render-plan.md, phase 1). Manual only: run with
+      // `--project=export-measure`. Headed, because minimising needs a real
+      // window, and without Playwright's default anti-throttling switches,
+      // because background throttling is what it measures.
+      name: 'export-measure',
+      testMatch: '**/measure/**/*.spec.ts',
+      timeout: 60 * 60 * 1000,
+      use: {
+        ...devices['Desktop Chrome'],
+        headless: process.env.PLAYWRIGHT_MEASURE_HEADLESS === '1',
+        launchOptions: {
+          ...(EXECUTABLE_PATH ? { executablePath: EXECUTABLE_PATH } : {}),
+          args: ['--autoplay-policy=no-user-gesture-required'],
+          ignoreDefaultArgs: [
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+          ],
         },
       },
     },

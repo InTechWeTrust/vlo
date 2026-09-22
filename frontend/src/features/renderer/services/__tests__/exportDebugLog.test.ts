@@ -45,6 +45,11 @@ describe("export debug log", () => {
       && line.includes("render 10.0 ms") && line.includes("submit→packet 1.5 s"))).toBe(true);
     expect(output.some((line) => line.includes("finished mux-finalize (video) 1.10 s"))).toBe(true);
     expect(output.filter((line) => line.includes("5 frames submitted, 1 packets encoded"))).toHaveLength(1);
+    // Totals separate frame work from wall time, and name each phase's share.
+    const final = output.find((line) => line.includes("5 frames submitted"))!;
+    expect(final).toContain("frame work: render 0.05 s, output 0.02 s");
+    expect(final).toMatch(/of \d+\.\d{2} s wall/);
+    expect(final).toContain("phases: rendering ");
 
     // The periodic summary stops with the render.
     const printed = info.mock.calls.length;

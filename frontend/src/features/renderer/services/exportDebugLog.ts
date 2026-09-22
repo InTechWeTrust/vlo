@@ -36,6 +36,19 @@ export function startExportDebugLog(label: string): ExportDebugLog | null {
   let windowOutputMs = 0;
   let latestLatencyMs: number | null = null;
   let finished = false;
+  // Whole-render totals, so the final line shows how much of the wall time
+  // was frame work and how much was waiting (scheduling, a hidden tab).
+  let totalRenderMs = 0;
+  let totalOutputMs = 0;
+  const phaseDurations = new Map<ExportPhase, number>();
+  let currentPhase: { phase: ExportPhase; startedAt: number } | null = null;
+  const closePhase = () => {
+    if (!currentPhase) return;
+    const { phase, startedAt: phaseStartedAt } = currentPhase;
+    phaseDurations.set(phase, (phaseDurations.get(phase) ?? 0) + performance.now() - phaseStartedAt);
+    currentPhase = null;
+  };
+  const seconds = (milliseconds: number) => `${(milliseconds / 1000).toFixed(2)} s`;
 
   const summarize = () => {
     const perFrame = (total: number) => (windowFrames ? (total / windowFrames).toFixed(1) : "-");
@@ -52,7 +65,11 @@ export function startExportDebugLog(label: string): ExportDebugLog | null {
 
   log("started");
   return {
-    onPhaseChange: (phase) => log("phase", phase),
+    onPhaseChange: (phase) => {
+      closePhase();
+      currentPhase = { phase, startedAt: performance.now() };
+      log("phase", phase);
+    },
     onDiagnostic: (event) => {
       switch (event.kind) {
         case "frame":
@@ -60,6 +77,8 @@ export function startExportDebugLog(label: string): ExportDebugLog | null {
           windowFrames += 1;
           windowRenderMs += event.renderMilliseconds;
           windowOutputMs += event.outputMilliseconds;
+          totalRenderMs += event.renderMilliseconds;
+          totalOutputMs += event.outputMilliseconds;
           break;
         case "video-packet":
           packets += 1;
@@ -88,7 +107,11 @@ export function startExportDebugLog(label: string): ExportDebugLog | null {
       if (finished) return;
       finished = true;
       clearInterval(timer);
-      log(outcome, `: ${frames} frames submitted, ${packets} packets encoded`);
+      closePhase();
+      log(outcome, `: ${frames} frames submitted, ${packets} packets encoded`,
+        `| frame work: render ${seconds(totalRenderMs)}, output ${seconds(totalOutputMs)}`,
+        `of ${seconds(performance.now() - startedAt)} wall`,
+        `| phases: ${[...phaseDurations].map(([phase, ms]) => `${phase} ${seconds(ms)}`).join(", ") || "none"}`);
     },
   };
 }

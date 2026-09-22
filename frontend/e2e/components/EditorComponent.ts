@@ -24,6 +24,8 @@ interface EditorSetupOptions {
      * that must clear the extension trust prompt, which blocks that screen.
      */
     onProjectMenu?: () => Promise<void>;
+    /** Absolute app URL, for pages whose context has no baseURL (attached over CDP). */
+    appURL?: string;
 }
 
 /**
@@ -78,14 +80,16 @@ export class EditorComponent {
                 ? { fixtureDir: options }
                 : options;
         const fixtureDir = normalizedOptions.fixtureDir ?? 'project_v1';
-        const fixtureRoot = path.join(__dirname, '..', 'fixtures', fixtureDir);
+        // Absolute paths open a project from outside the fixtures folder (the
+        // export measurement); it is read into memory and never written back.
+        const fixtureRoot = path.resolve(__dirname, '..', 'fixtures', fixtureDir);
         this.mockFileSystem = new MockFileSystem(fixtureRoot, {
             rootName: 'Untitled_Project',
             projectFormat: normalizedOptions.projectFormat ?? 'current',
         });
         await this.mockFileSystem.install(this.page);
 
-        await this.page.goto('/');
+        await this.page.goto(normalizedOptions.appURL ?? '/');
         await normalizedOptions.onProjectMenu?.();
         await this.page.getByRole('button', { name: 'Open project' }).click();
         await this.waitUntilReady();
