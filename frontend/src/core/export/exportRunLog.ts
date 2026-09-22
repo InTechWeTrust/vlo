@@ -174,6 +174,16 @@ export function getActiveExportRun(): ExportRunRecord | null {
   return runs.find((record) => record.status === "running") ?? null;
 }
 
+/**
+ * Whether a whole-project export is producing frames. The editor holds still
+ * for one: its export dialog is modal, and the live preview stops redrawing
+ * so it does not compete with the render for the GPU and main thread. Range
+ * renders do not count; they run while the user keeps working.
+ */
+export function isProjectExportRunning(): boolean {
+  return getActiveExportRun()?.kind === "project";
+}
+
 /** The active run, or the most recent one to finish. */
 export function getLatestExportRun(): ExportRunRecord | null {
   return runs[0] ?? null;

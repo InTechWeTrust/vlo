@@ -429,6 +429,11 @@ export class ExportRenderer {
       autoDensity: false,
       // Advanced blend modes read from the back buffer on WebGL.
       useBackBuffer: true,
+      // Every export frame is rendered explicitly. A started ticker would also
+      // redraw the whole stage to the unseen canvas on every animation frame;
+      // on vlo_03 that tripled export time wherever rAF runs (a visible
+      // editor, or a hidden one kept alive by the progress PiP).
+      autoStart: false,
     });
 
     // 2. Setup the "Logical Stage"

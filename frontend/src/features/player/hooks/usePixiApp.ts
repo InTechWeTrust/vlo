@@ -1,8 +1,12 @@
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Application } from "pixi.js";
 import { usePlayerStore } from "../usePlayerStore";
 import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
+import {
+  isProjectExportRunning,
+  subscribeExportRuns,
+} from "../../../core/export/exportRunLog";
 import {
   clearActivePixiApplication,
   setActivePixiApplication,
@@ -101,18 +105,37 @@ export function usePixiApp(
 
   // 3. Ticker Control (Pause = Run Ticker, Play = Stop Ticker)
   const isPlaying = usePlayerStore((state) => state.isPlaying);
-  
+  const projectExportRunning = useSyncExternalStore(
+    subscribeExportRuns,
+    isProjectExportRunning,
+  );
+
+  // Playback renders from the audio clock, not the ticker, so stopping the
+  // ticker alone would leave it running beside the export. Pausing here, off
+  // the run log, covers every entry point, not only the export dialog.
+  useEffect(() => {
+    if (projectExportRunning && isPlaying) {
+      usePlayerStore.getState().setIsPlaying(false);
+    }
+  }, [projectExportRunning, isPlaying]);
+
   useEffect(() => {
     if (!app) return;
-    
+
     if (isPlaying) {
       // During playback, Player.tsx drives rendering via Audio Clock
+      app.ticker.stop();
+    } else if (projectExportRunning) {
+      // The paused ticker redraws the whole stage every frame. Behind the
+      // modal export dialog that only competes with the export, which ran
+      // about 3x faster once the live preview stopped (pip-render-plan.md,
+      // phase 1). The canvas keeps its last frame until the export ends.
       app.ticker.stop();
     } else {
       // When paused, run ticker to handle interaction/drag events & async scrub updates
       app.ticker.start();
     }
-  }, [app, isPlaying]);
+  }, [app, isPlaying, projectExportRunning]);
 
   return { pixiApp: app, canvasSize };
 }

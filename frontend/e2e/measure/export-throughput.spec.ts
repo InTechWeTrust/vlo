@@ -57,6 +57,8 @@ interface StateCounters {
 interface PageCounters {
     /** Per `document.visibilityState`, so hidden stretches are read on their own. */
     byState: Record<string, StateCounters>;
+    /** With MEASURE_RAF_CALLERS=1: rAF requests by the first app frame on the stack. */
+    rafCallers?: Record<string, number>;
     visibility: [number, string][];
     pipWindows: number;
 }
@@ -65,7 +67,7 @@ interface PageCounters {
  * rAF callback latency and timer lateness, bucketed by visibility state, and
  * reset when the export starts.
  */
-function installCounters() {
+function installCounters({ traceCallers }: { traceCallers: boolean }) {
     const now = () => performance.now();
     const target = window as unknown as {
         __measure: PageCounters & { reset(): void; snapshot(): PageCounters };
@@ -89,6 +91,7 @@ function installCounters() {
         // Keeps the PiP count: the window opens as the export starts, before the reset.
         reset() {
             target.__measure.byState = {};
+            target.__measure.rafCallers = {};
             target.__measure.visibility = [[now(), document.visibilityState]];
             state = document.visibilityState;
             stateSince = now();
@@ -101,6 +104,13 @@ function installCounters() {
     const raf = window.requestAnimationFrame.bind(window);
     window.requestAnimationFrame = (callback) => {
         const requested = now();
+        if (traceCallers) {
+            const frames = (new Error().stack ?? '').split('\n').slice(2);
+            const caller = frames.find((frame) => !frame.includes('installCounters') && /\/src\/|assets\/|node_modules/.test(frame)) ?? frames[0] ?? '?';
+            const key = caller.trim().replace(/\?[^:)]*/, '').replace(/^at /, '');
+            const callers = (target.__measure.rafCallers ??= {});
+            callers[key] = (callers[key] ?? 0) + 1;
+        }
         return raf((time) => {
             const counters = bucket(document.visibilityState);
             counters.rafs += 1;
@@ -219,7 +229,11 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
             try {
                 const context = chrome.browser.contexts()[0];
                 const page = context.pages()[0] ?? await context.newPage();
-                await page.addInitScript(installCounters);
+                // One script with its option as an argument: Playwright does not
+                // order separate init scripts.
+                await page.addInitScript(installCounters, {
+                    traceCallers: process.env.MEASURE_RAF_CALLERS === '1',
+                });
                 if (condition === 'hidden') await page.addInitScript(disableDocumentPip);
                 const debugLines: string[] = [];
                 page.on('console', (message) => {
@@ -288,9 +302,20 @@ for (let repeat = 1; repeat <= REPEAT; repeat += 1) {
                 await testInfo.attach('export-debug.log', { body: debugLines.join('\n'), contentType: 'text/plain' });
                 expect(result.status).toBe('completed');
             } finally {
+                // Chrome keeps writing its profile until it has exited. Listen
+                // before closing, since it may exit (or crash) during the close.
+                const alreadyExited = () => chrome.process.exitCode !== null || chrome.process.signalCode !== null;
+                const exited = new Promise((resolve_) => chrome.process.once('exit', resolve_));
                 await chrome.browser.close().catch(() => {});
-                chrome.process.kill();
-                rmSync(chrome.profile, { recursive: true, force: true });
+                if (!alreadyExited()) {
+                    chrome.process.kill();
+                    await Promise.race([exited, new Promise((resolve_) => setTimeout(resolve_, 10_000))]);
+                }
+                try {
+                    rmSync(chrome.profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+                } catch (error) {
+                    console.warn(`Could not remove ${chrome.profile}:`, error);
+                }
             }
         });
     }

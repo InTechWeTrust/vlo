@@ -1,4 +1,5 @@
 import { useEffect, useRef, useMemo, memo, useCallback, useState } from "react";
+import { isProjectExportRunning } from "../../core/export/exportRunLog";
 import { Box } from "@mui/material";
 import { RenderTexture } from "pixi.js";
 import {
@@ -630,7 +631,8 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
           }
         }
       } finally {
-        if (shouldPauseTicker && !isDisposed) {
+        // usePixiApp keeps the ticker stopped during a project export.
+        if (shouldPauseTicker && !isDisposed && !isProjectExportRunning()) {
           pixiApp.ticker.start();
         }
 
@@ -694,7 +696,7 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
       pendingPlaybackFrameQueueRef.current = [];
       unsubscribe();
       unsubscribeFrameRequests?.();
-      if (!isPlaying && pixiApp) {
+      if (!isPlaying && pixiApp && !isProjectExportRunning()) {
         pixiApp.ticker.start();
       }
     };

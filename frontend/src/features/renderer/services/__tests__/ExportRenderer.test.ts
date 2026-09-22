@@ -310,6 +310,10 @@ describe("ExportRenderer", () => {
     // Scale should be 2x (2160 / 1080)
     expect(logicalStage.scale.x).toBe(2);
     expect(logicalStage.scale.y).toBe(2);
+    // No ticker: every export frame is rendered explicitly, and a running
+    // ticker would redraw the stage on every animation frame besides.
+    expect((app as unknown as { init: ReturnType<typeof vi.fn> }).init)
+      .toHaveBeenCalledWith(expect.objectContaining({ autoStart: false }));
 
     renderer.dispose();
   });
