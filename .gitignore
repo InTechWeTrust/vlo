@@ -73,3 +73,4 @@ ComfyUI-vlo
 backend/sam2
 .claude
 backend/runtime/
+frontend/dist-render-worker/
