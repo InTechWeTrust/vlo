@@ -17,9 +17,44 @@ import { V1_COLOR_MODEL } from "../../../core/color";
 import type { ExportPhase } from "../../../core/export/exportProgress";
 import { ExportFileTarget } from "./ExportFileTarget";
 import { ensureAacEncoder } from "./aacEncoderFallback";
+import type { ExportDiagnostic } from "./exportDiagnostics";
 
 export type OutputVideoFormat = "mp4" | "webm";
 export type OutputContentProbe = "non_black_pixels";
+
+/**
+ * Codec settings for one output. Shared with the detached host's readiness
+ * probe, so it checks the configuration that will actually be encoded.
+ */
+export function outputEncodingSettings(
+  format: OutputVideoFormat,
+  rates: { bitrate?: number; audioBitrate?: number } = {},
+) {
+  const isAlphaWebM = format === "webm";
+  return {
+    video: {
+      codec: isAlphaWebM ? ("vp9" as const) : ("avc" as const),
+      bitrate: rates.bitrate ?? 6_000_000,
+      ...(isAlphaWebM ? { alpha: "keep" as const } : {}),
+      latencyMode: "quality" as const,
+      // `no-preference`, not `prefer-hardware`. WebCodecs treats this as a
+      // hint, but mediabunny fails closed on `isConfigSupported`, so
+      // `prefer-hardware` turns "no hardware encoder for this codec" into a
+      // hard export failure even when the software encoder would work.
+      // Hardware VP9 *encode* is far less common than decode, so the WebM
+      // composite-bake path broke on such machines while the H.264 path
+      // kept working and masked it. Measured on a SwiftShader Chromium:
+      // vp09.00.40.08 1920x1080 reports unsupported with `prefer-hardware`
+      // and supported with `no-preference`. Browsers still prefer hardware
+      // when it is available.
+      hardwareAcceleration: "no-preference" as const,
+    },
+    audio: {
+      codec: isAlphaWebM ? ("opus" as const) : ("aac" as const),
+      bitrate: rates.audioBitrate ?? 128_000,
+    },
+  };
+}
 
 export interface OutputVideoAnalysis {
   hasVisibleContent: boolean;
@@ -35,11 +70,25 @@ export interface OutputVideoDefinition {
   audioBitrate?: number;
   transformStack?: OutputTransform[];
   fileHandle?: FileSystemFileHandle;
+  /** Caller-owned stream; successful completion never materializes a Blob. */
+  outputTarget?: ExportFileTarget;
   /**
    * Optional analysis over the transformed output.
    * Used by derived-mask exports to detect effectively empty mattes.
    */
   contentProbe?: OutputContentProbe;
+}
+
+/**
+ * One output's frames submitted and packets received, for the unencoded-frame
+ * bound. Waiters belong to the output too: a packet from another output says
+ * nothing about this one's encoder.
+ */
+interface EncodeCounts {
+  submitted: number;
+  encoded: number;
+  limit: number;
+  packetWaiters: Array<() => void>;
 }
 
 interface ManagedOutput {
@@ -50,6 +99,9 @@ interface ManagedOutput {
   videoSource: CanvasSource;
   audioSource: AudioBufferSource | null;
   fileTarget?: ExportFileTarget;
+  submissionTimes?: Map<number, number>;
+  /** Frames submitted and packets received, for the unencoded-frame bound. */
+  encodeCounts: EncodeCounts;
   measuredContent: boolean;
   hasVisibleContent: boolean;
   canMeasureContent: boolean;
@@ -69,6 +121,7 @@ interface FinalizedOutputBundle {
   blobs: Record<string, Blob>;
   analyses: Record<string, OutputVideoAnalysis>;
   files: Record<string, FileSystemFileHandle>;
+  streamedOutputIds: string[];
 }
 
 function pixelsContainNonBlackContent(pixels: ArrayLike<number>): boolean {
@@ -89,10 +142,34 @@ function pixelsContainNonBlackContent(pixels: ArrayLike<number>): boolean {
  */
 const DEFAULT_ENCODE_QUEUE_FRAMES = 4;
 
+/**
+ * Frames an output may have submitted but not yet received back as packets.
+ *
+ * Mediabunny's own backpressure waits on `encodeQueueSize`, which only counts
+ * frames the encoder has not yet *accepted*. An encoder slower than the render
+ * accepts frames into its own pipeline far faster than it encodes them: a real
+ * 2.5-minute export measured ~2,200 frames outstanding, so progress read 99%
+ * with half the video unencoded and "finishing" spent minutes flushing it.
+ * Bounding what has not come back as a packet keeps rendering, progress and
+ * memory in step with the encoder.
+ *
+ * Generous on purpose: encoders hold frames for lookahead before emitting any
+ * output, and a bound below that would never see a packet.
+ */
+const MAX_UNENCODED_FRAMES = 60;
+/**
+ * How long to wait for a packet before deciding the bound is below the
+ * encoder's lookahead. Such an encoder emits nothing until fed more, so the
+ * wait is released and that output's bound doubled, rather than deadlocking
+ * the export or stalling on every later frame.
+ */
+const UNENCODED_STALL_MILLISECONDS = 2000;
+
 export interface TextureOutputEncoderOptions {
   /** Frames in flight per output before the producer is throttled. Min 1. */
   encodeQueueSize?: number;
   onPhaseChange?: (phase: ExportPhase) => void;
+  onDiagnostic?: (event: ExportDiagnostic) => void;
 }
 
 interface ColorTaggedVideoEncoderConfig extends VideoEncoderConfig {
@@ -137,6 +214,7 @@ export class TextureOutputEncoder {
   private disposed = false;
   public isCommitting = false;
   private readonly onPhaseChange?: (phase: ExportPhase) => void;
+  private readonly onDiagnostic?: (event: ExportDiagnostic) => void;
 
   constructor(
     app: Application,
@@ -146,6 +224,7 @@ export class TextureOutputEncoder {
   ) {
     this.app = app;
     this.onPhaseChange = options?.onPhaseChange;
+    this.onDiagnostic = options?.onDiagnostic;
     if (definitions.length === 0) {
       throw new Error("TextureOutputEncoder requires at least one output");
     }
@@ -172,11 +251,19 @@ export class TextureOutputEncoder {
         const format = definition.format ?? "mp4";
         const isAlphaWebM = format === "webm";
         const mimeType = isAlphaWebM ? "video/webm" : "video/mp4";
+        const encoding = outputEncodingSettings(format, definition);
 
         let target: BufferTarget | StreamTarget;
         let fileTarget: ExportFileTarget | undefined;
 
-        if (definition.fileHandle) {
+        if (definition.fileHandle && definition.outputTarget) {
+          throw new Error("An output cannot have both a file handle and a stream target");
+        }
+        if (definition.outputTarget) {
+          fileTarget = definition.outputTarget;
+          this.fileTargets.push(fileTarget);
+          target = fileTarget.target;
+        } else if (definition.fileHandle) {
           // Keep the late-created stream reachable even if cancellation arrived
           // while the picker-backed createWritable operation was pending.
           fileTarget = new ExportFileTarget(
@@ -198,23 +285,13 @@ export class TextureOutputEncoder {
           target,
         });
 
+        const submissionTimes = this.onDiagnostic ? new Map<number, number>() : undefined;
+        const encodeCounts: EncodeCounts = {
+          submitted: 0, encoded: 0, limit: MAX_UNENCODED_FRAMES, packetWaiters: [],
+        };
         const videoSource = new CanvasSource(this.app.canvas, {
-          codec: isAlphaWebM ? "vp9" : "avc",
-          bitrate: definition.bitrate ?? 6_000_000,
+          ...encoding.video,
           keyFrameInterval: definition.keyFrameInterval,
-          ...(isAlphaWebM ? { alpha: "keep" as const } : {}),
-          latencyMode: "quality",
-          // `no-preference`, not `prefer-hardware`. WebCodecs treats this as a
-          // hint, but mediabunny fails closed on `isConfigSupported`, so
-          // `prefer-hardware` turns "no hardware encoder for this codec" into a
-          // hard export failure even when the software encoder would work.
-          // Hardware VP9 *encode* is far less common than decode, so the WebM
-          // composite-bake path broke on such machines while the H.264 path
-          // kept working and masked it. Measured on a SwiftShader Chromium:
-          // vp09.00.40.08 1920x1080 reports unsupported with `prefer-hardware`
-          // and supported with `no-preference`. Browsers still prefer hardware
-          // when it is available.
-          hardwareAcceleration: "no-preference",
           // Mediabunny 1.34 exposes the WebCodecs config immediately before it
           // checks/configures the encoder. Supplying a complete color space
           // gives the encoder the information needed for H.264 VUI metadata.
@@ -222,11 +299,36 @@ export class TextureOutputEncoder {
             (config as ColorTaggedVideoEncoderConfig).colorSpace = {
               ...V1_COLOR_MODEL.export,
             };
+            this.onDiagnostic?.({
+              kind: "encoder-config", outputId: definition.id,
+              config: structuredClone(config),
+            });
           },
           // The MP4 muxer emits `colr` when the first decoder config carries a
           // complete color space. Keep this explicit even on encoders that omit
           // the fields from their returned metadata.
-          onEncodedPacket: (_packet, metadata) => {
+          onEncodedPacket: (packet, metadata) => {
+            encodeCounts.encoded += 1;
+            const waiters = encodeCounts.packetWaiters;
+            encodeCounts.packetWaiters = [];
+            for (const resolve of waiters) resolve();
+            if (submissionTimes) {
+              const microseconds = Math.round(packet.timestamp * 1_000_000);
+              // Packets can retain the precise timestamp or return whole
+              // microseconds truncated by WebCodecs. Rounding the submission
+              // can differ by 1 us (e.g. 2/30 s); keep matching by timestamp
+              // rather than arrival order, since encoders can reorder packets.
+              const key = [microseconds, microseconds + 1, microseconds - 1]
+                .find((candidate) => submissionTimes.has(candidate));
+              const startedAt = key === undefined ? undefined : submissionTimes.get(key);
+              if (key !== undefined) submissionTimes.delete(key);
+              this.onDiagnostic?.({
+                kind: "video-packet", outputId: definition.id,
+                timestamp: packet.timestamp, bytes: packet.byteLength,
+                submissionToPacketMilliseconds: startedAt === undefined
+                  ? null : performance.now() - startedAt,
+              });
+            }
             if (metadata?.decoderConfig) {
               metadata.decoderConfig.colorSpace = {
                 ...V1_COLOR_MODEL.export,
@@ -238,15 +340,12 @@ export class TextureOutputEncoder {
 
         let audioSource: AudioBufferSource | null = null;
         if (definition.includeAudio) {
-          const audioCodec = isAlphaWebM ? "opus" : "aac";
-          const audioBitrate = definition.audioBitrate ?? 128_000;
-          if (audioCodec === "aac") {
-            await ensureAacEncoder(audioBitrate);
+          if (encoding.audio.codec === "aac") {
+            await ensureAacEncoder(encoding.audio.bitrate);
             this.throwIfCancelled();
           }
           audioSource = new AudioBufferSource({
-            codec: audioCodec,
-            bitrate: audioBitrate,
+            ...encoding.audio,
           });
           output.addAudioTrack(audioSource);
         }
@@ -259,6 +358,8 @@ export class TextureOutputEncoder {
           videoSource,
           audioSource,
           fileTarget,
+          submissionTimes,
+          encodeCounts,
           measuredContent: false,
           hasVisibleContent: false,
           canMeasureContent: definition.contentProbe === "non_black_pixels",
@@ -375,6 +476,8 @@ export class TextureOutputEncoder {
       // encodes; the synchronous snapshot means the shared canvas/frameTexture
       // is free to be overwritten as soon as add() returns. (Promise.resolve
       // normalises the return so the queue is always thenable.)
+      output.submissionTimes?.set(Math.round(timestamp * 1_000_000), performance.now());
+      output.encodeCounts.submitted += 1;
       this.pendingEncodes.push(
         Promise.resolve(output.videoSource.add(timestamp, frameDuration)).then(
           (): SettledEncode => ({ status: "fulfilled" }),
@@ -395,6 +498,44 @@ export class TextureOutputEncoder {
       const oldest = this.pendingEncodes.shift();
       if (oldest) {
         throwIfRejected(await this.interruptible(oldest));
+      }
+    }
+    await this.waitForEncoderToCatchUp();
+  }
+
+  /**
+   * Hold the producer while any output has more frames outstanding than its
+   * bound (initially {@link MAX_UNENCODED_FRAMES}), once it has produced its
+   * first packet. A wait that sees no packet
+   * for {@link UNENCODED_STALL_MILLISECONDS} doubles that output's bound, so an
+   * encoder that buffers more than the bound cannot deadlock the export.
+   */
+  private async waitForEncoderToCatchUp(): Promise<void> {
+    for (const output of this.outputs) {
+      const counts = output.encodeCounts;
+      // Until the first packet the encoder is still filling its lookahead;
+      // holding the producer then can only delay the packet it is waiting for.
+      if (counts.encoded === 0) continue;
+      while (counts.submitted - counts.encoded > counts.limit) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let wake!: () => void;
+        let woken: "packet" | "stall";
+        try {
+          woken = await this.interruptible(Promise.race([
+            new Promise<"packet">((resolve) => {
+              wake = () => resolve("packet");
+              counts.packetWaiters.push(wake);
+            }),
+            new Promise<"stall">((resolve) => {
+              timer = setTimeout(() => resolve("stall"), UNENCODED_STALL_MILLISECONDS);
+            }),
+          ]));
+        } finally {
+          clearTimeout(timer);
+          // A stall or cancellation leaves the waiter behind; drop it.
+          counts.packetWaiters = counts.packetWaiters.filter((waiter) => waiter !== wake);
+        }
+        if (woken === "stall") counts.limit *= 2;
       }
     }
   }
@@ -471,10 +612,12 @@ export class TextureOutputEncoder {
     this.throwIfCancelled();
     this.onPhaseChange?.("finalizing");
     // Drain any frames still encoding before closing the sources.
-    await this.flushPendingEncodes();
+    await this.measureFinishing("encoder-drain", undefined, () => this.flushPendingEncodes());
     for (const output of this.outputs) {
-      await this.interruptible(Promise.resolve(output.videoSource.close()));
-      await this.interruptible(output.output.finalize());
+      await this.measureFinishing("video-close", output.definition.id,
+        () => this.interruptible(Promise.resolve(output.videoSource.close())));
+      await this.measureFinishing("mux-finalize", output.definition.id,
+        () => this.interruptible(output.output.finalize()));
     }
 
     const blobs: Record<string, Blob> = {};
@@ -503,6 +646,7 @@ export class TextureOutputEncoder {
 
     this.throwIfCancelled();
     const files: Record<string, FileSystemFileHandle> = {};
+    const streamedOutputIds: string[] = [];
     if (this.fileTargets.length > 0) {
       // close() is the commit boundary. Cancellation is no longer safe once
       // replacement of the destination has begun; keep the UI waiting for it.
@@ -510,9 +654,14 @@ export class TextureOutputEncoder {
       this.onPhaseChange?.("saving");
       try {
         for (const output of this.outputs) {
-          if (output.fileTarget && output.definition.fileHandle) {
-            await output.fileTarget.commit();
-            files[output.definition.id] = output.definition.fileHandle;
+          if (output.fileTarget) {
+            await this.measureFinishing("output-commit", output.definition.id,
+              () => output.fileTarget!.commit());
+            if (output.definition.fileHandle) {
+              files[output.definition.id] = output.definition.fileHandle;
+            } else {
+              streamedOutputIds.push(output.definition.id);
+            }
           }
         }
       } finally {
@@ -520,7 +669,20 @@ export class TextureOutputEncoder {
       }
     }
     this.finalized = true;
-    return { blobs, analyses, files };
+    return { blobs, analyses, files, streamedOutputIds };
+  }
+
+  private async measureFinishing(
+    stage: Extract<ExportDiagnostic, { kind: "finishing" }>["stage"],
+    outputId: string | undefined,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    if (!this.onDiagnostic) return operation();
+    const startedAt = performance.now();
+    this.onDiagnostic({ kind: "finishing", stage, outputId, state: "started" });
+    await operation();
+    this.onDiagnostic({ kind: "finishing", stage, outputId, state: "completed",
+      elapsedMilliseconds: performance.now() - startedAt });
   }
 
   public dispose(): void {

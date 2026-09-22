@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Application, Texture } from "pixi.js";
+import { ExportFileTarget } from "../ExportFileTarget";
+import type { ExportDiagnostic } from "../exportDiagnostics";
 import {
   TextureOutputEncoder,
   type OutputVideoDefinition,
@@ -161,6 +163,36 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     encoder.dispose();
   });
 
+  it("uses the same commit and cancellation rules for a caller-owned stream", async () => {
+    const { stream } = fileDestination();
+    const encoder = new TextureOutputEncoder(app, 30, [
+      { ...definition, outputTarget: new ExportFileTarget(stream) },
+    ]);
+    await encoder.start();
+    expect(mp4Options[0].fastStart).toBe(false);
+    const result = await encoder.finalize();
+    expect(result.blobs).toEqual({});
+    expect(result.files).toEqual({});
+    expect(result.streamedOutputIds).toEqual(["video"]);
+    expect(stream.close).toHaveBeenCalledOnce();
+    await encoder.abort();
+    expect(stream.abort).not.toHaveBeenCalled();
+    encoder.dispose();
+  });
+
+  it("does not report a streamed artifact when sealing fails", async () => {
+    const { stream } = fileDestination();
+    stream.close.mockRejectedValueOnce(new Error("Stream disk full"));
+    const encoder = new TextureOutputEncoder(app, 30, [
+      { ...definition, outputTarget: new ExportFileTarget(stream) },
+    ]);
+    await encoder.start();
+    await expect(encoder.finalize()).rejects.toThrow("Stream disk full");
+    await encoder.abort();
+    expect(stream.abort).toHaveBeenCalledOnce();
+    encoder.dispose();
+  });
+
   it("discards a file created after cancellation was requested", async () => {
     const { stream, fileHandle } = fileDestination();
     let opened!: (stream: FileSystemWritableFileStream) => void;
@@ -193,10 +225,16 @@ describe("TextureOutputEncoder encode backpressure window", () => {
 
   it("does not commit when mux finalization fails", async () => {
     const { stream, fileHandle } = fileDestination();
-    const encoder = new TextureOutputEncoder(app, 30, [{ ...definition, fileHandle }]);
+    const diagnostics: ExportDiagnostic[] = [];
+    const encoder = new TextureOutputEncoder(app, 30, [{ ...definition, fileHandle }], {
+      onDiagnostic: (event) => diagnostics.push(event),
+    });
     await encoder.start();
     outputs[0].finalize.mockRejectedValueOnce(new Error("Write failed"));
     await expect(encoder.finalize()).rejects.toThrow("Write failed");
+    expect(diagnostics.at(-1)).toMatchObject({
+      kind: "finishing", stage: "mux-finalize", outputId: "video", state: "started",
+    });
     await encoder.abort();
     expect(stream.close).not.toHaveBeenCalled();
     expect(stream.abort).toHaveBeenCalledOnce();
@@ -229,6 +267,115 @@ describe("TextureOutputEncoder encode backpressure window", () => {
     expect(f0.isDone()).toBe(true);
     expect(f1.isDone()).toBe(true);
     expect(addCalls).toHaveLength(2);
+  });
+
+  it("holds rendering once the encoder falls far behind, until a packet returns", async () => {
+    // A window this large never awaits add() itself: only the unencoded bound
+    // can hold the producer, as with an encoder that accepts frames eagerly.
+    const encoder = new TextureOutputEncoder(app, 30, [definition], {
+      encodeQueueSize: 1000,
+    });
+    await encoder.start();
+
+    // The first packet shows the pipeline is flowing; 61 more then exceed 60.
+    await encoder.addTextureFrame(texture, 0, 1 / 30);
+    canvasSourceConfigs[0].onEncodedPacket?.({}, undefined);
+    for (let frame = 1; frame <= 60; frame += 1) {
+      await encoder.addTextureFrame(texture, frame / 30, 1 / 30);
+    }
+    const held = settled(encoder.addTextureFrame(texture, 61 / 30, 1 / 30));
+    await flushMicrotasks();
+    expect(held.isDone()).toBe(false);
+
+    canvasSourceConfigs[0].onEncodedPacket?.({}, undefined);
+    await flushMicrotasks();
+    expect(held.isDone()).toBe(true);
+    encoder.dispose();
+  });
+
+  it("does not hold rendering before the encoder's first packet", async () => {
+    const encoder = new TextureOutputEncoder(app, 30, [definition], {
+      encodeQueueSize: 1000,
+    });
+    await encoder.start();
+    for (let frame = 0; frame < 200; frame += 1) {
+      const added = settled(encoder.addTextureFrame(texture, frame / 30, 1 / 30));
+      await flushMicrotasks();
+      expect(added.isDone()).toBe(true);
+    }
+    encoder.dispose();
+  });
+
+  it("is not released by packets from an unrelated output", async () => {
+    // Video plus mask: two encoders, one slow. A mask packet says nothing
+    // about the video encoder, and must neither release nor widen its bound.
+    const encoder = new TextureOutputEncoder(app, 30, [
+      definition,
+      { id: "mask", format: "mp4", includeAudio: false },
+    ], { encodeQueueSize: 1000 });
+    await encoder.start();
+    const [video, mask] = canvasSourceConfigs;
+
+    await encoder.addTextureFrame(texture, 0, 1 / 30);
+    video.onEncodedPacket?.({}, undefined);
+    mask.onEncodedPacket?.({}, undefined);
+    for (let frame = 1; frame <= 60; frame += 1) {
+      await encoder.addTextureFrame(texture, frame / 30, 1 / 30);
+      mask.onEncodedPacket?.({}, undefined);
+    }
+    const held = settled(encoder.addTextureFrame(texture, 61 / 30, 1 / 30));
+    await flushMicrotasks();
+    expect(held.isDone()).toBe(false);
+
+    for (let packet = 0; packet < 5; packet += 1) {
+      mask.onEncodedPacket?.({}, undefined);
+      await flushMicrotasks();
+    }
+    expect(held.isDone()).toBe(false);
+
+    video.onEncodedPacket?.({}, undefined);
+    await flushMicrotasks();
+    expect(held.isDone()).toBe(true);
+
+    // The bound is still 60: one frame past it holds again.
+    const pending = encoder.addTextureFrame(texture, 62 / 30, 1 / 30);
+    // Observed through a handled copy: `settled` would otherwise leave its own
+    // derived promise to reject unobserved when the encoder is disposed.
+    const heldAgain = settled(pending.catch(() => undefined));
+    await flushMicrotasks();
+    expect(heldAgain.isDone()).toBe(false);
+    // Disposing cancels the render that is still waiting on the encoder.
+    const cancelled = expect(pending).rejects.toThrow("Render cancelled");
+    encoder.dispose();
+    await cancelled;
+  });
+
+  it("widens the bound instead of deadlocking an encoder that buffers past it", async () => {
+    vi.useFakeTimers();
+    try {
+      const encoder = new TextureOutputEncoder(app, 30, [definition], {
+        encodeQueueSize: 1000,
+      });
+      await encoder.start();
+      await encoder.addTextureFrame(texture, 0, 1 / 30);
+      canvasSourceConfigs[0].onEncodedPacket?.({}, undefined);
+      for (let frame = 1; frame <= 60; frame += 1) {
+        await encoder.addTextureFrame(texture, frame / 30, 1 / 30);
+      }
+      const held = settled(encoder.addTextureFrame(texture, 61 / 30, 1 / 30));
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(held.isDone()).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(held.isDone()).toBe(true);
+
+      // The next frames fit the doubled bound, so they do not stall again.
+      const next = settled(encoder.addTextureFrame(texture, 62 / 30, 1 / 30));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(next.isDone()).toBe(true);
+      encoder.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("configures WebM caches to retain alpha side data", async () => {
@@ -324,8 +471,10 @@ describe("TextureOutputEncoder encode backpressure window", () => {
   });
 
   it("finalize() awaits every outstanding encode before closing", async () => {
+    const diagnostics: ExportDiagnostic[] = [];
     const encoder = new TextureOutputEncoder(app, 30, [definition], {
       encodeQueueSize: 4,
+      onDiagnostic: (event) => diagnostics.push(event),
     });
     await encoder.start();
 
@@ -338,11 +487,84 @@ describe("TextureOutputEncoder encode backpressure window", () => {
 
     // Two encodes still in flight → finalize must not resolve yet.
     expect(fin.isDone()).toBe(false);
+    expect(diagnostics).toContainEqual({ kind: "finishing", stage: "encoder-drain", state: "started" });
+    expect(diagnostics.some((event) => event.kind === "finishing" && event.state === "completed")).toBe(false);
 
     addCalls.forEach((call) => call.resolve());
     await flushMicrotasks();
 
     expect(fin.isDone()).toBe(true);
+    expect(diagnostics).toContainEqual(expect.objectContaining({ kind: "finishing", stage: "encoder-drain", state: "completed" }));
+  });
+
+  it("reports the configured codec and submission-to-packet latency", async () => {
+    const diagnostics: ExportDiagnostic[] = [];
+    const encoder = new TextureOutputEncoder(app, 30, [definition], {
+      onDiagnostic: (event) => diagnostics.push(event),
+    });
+    await encoder.start();
+    const config: VideoEncoderConfig = { codec: "avc1.42001f", width: 320, height: 180 };
+    canvasSourceConfigs[0].onEncoderConfig?.(config);
+    expect(diagnostics[0]).toMatchObject({ kind: "encoder-config", config: {
+      codec: config.codec, colorSpace: { primaries: "bt709" },
+    } });
+    const clock = vi.spyOn(performance, "now");
+    try {
+      clock.mockReturnValue(100);
+      await encoder.addTextureFrame(texture, 1 / 30, 1 / 30);
+      clock.mockReturnValue(140);
+      // WebCodecs timestamps are quantized to microseconds.
+      canvasSourceConfigs[0].onEncodedPacket?.({ timestamp: 0.033333, byteLength: 42 }, undefined);
+      expect(diagnostics.at(-1)).toEqual({ kind: "video-packet", outputId: "video",
+        timestamp: 0.033333, bytes: 42, submissionToPacketMilliseconds: 40 });
+      addCalls[0].resolve();
+      await encoder.finalize();
+    } finally {
+      clock.mockRestore();
+      encoder.dispose();
+    }
+  });
+
+  it.each([
+    { name: "precise", packetTime: (time: number) => time },
+    { name: "truncated", packetTime: (time: number) => Math.trunc(time * 1_000_000) / 1_000_000 },
+    { name: "rounded", packetTime: (time: number) => Math.round(time * 1_000_000) / 1_000_000 },
+  ])("matches $name packet timestamps even when packets arrive out of order", async ({ packetTime }) => {
+    const diagnostics: ExportDiagnostic[] = [];
+    const encoder = new TextureOutputEncoder(app, 30, [definition], {
+      onDiagnostic: (event) => diagnostics.push(event),
+    });
+    const clock = vi.spyOn(performance, "now");
+    try {
+      await encoder.start();
+      // 2/30 rounds up to 66667 us but can return as 66666 us. Later
+      // timestamps also exercise floating-point conversion at second boundaries.
+      const frames = [0, 1, 2, 173, 3599];
+      for (const frame of frames) {
+        clock.mockReturnValue(100 + frame);
+        await encoder.addTextureFrame(texture, frame / 30, 1 / 30);
+        addCalls.at(-1)!.resolve();
+      }
+      clock.mockReturnValue(4000);
+      canvasSourceConfigs[0].onEncodedPacket?.({ timestamp: packetTime(2 / 30) - 0.000002, byteLength: 42 }, undefined);
+      expect(diagnostics.at(-1)).toMatchObject({ submissionToPacketMilliseconds: null });
+      for (const frame of [...frames].reverse()) {
+        canvasSourceConfigs[0].onEncodedPacket?.({ timestamp: packetTime(frame / 30), byteLength: 42 }, undefined);
+      }
+      expect(diagnostics.filter((event) => event.kind === "video-packet")
+        .map((event) => event.submissionToPacketMilliseconds))
+        .toEqual([null, ...[...frames].reverse().map((frame) => 3900 - frame)]);
+
+      // Consumed or genuinely unknown timestamps must not borrow another sample.
+      for (const timestamp of [packetTime(2 / 30), 10]) {
+        canvasSourceConfigs[0].onEncodedPacket?.({ timestamp, byteLength: 42 }, undefined);
+        expect(diagnostics.at(-1)).toMatchObject({ submissionToPacketMilliseconds: null });
+      }
+      await encoder.finalize();
+    } finally {
+      clock.mockRestore();
+      encoder.dispose();
+    }
   });
 
   it("finalize observes every encode before re-throwing the first failure", async () => {

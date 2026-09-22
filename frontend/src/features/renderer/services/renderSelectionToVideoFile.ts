@@ -13,6 +13,9 @@ import {
 } from "./ExportRenderer";
 import { buildProjectRenderInputs } from "./projectFrameCapture";
 import type { OutputVideoFormat } from "./TextureOutputEncoder";
+import type { ExportDiagnostic } from "./exportDiagnostics";
+import { startExportDebugLog } from "./exportDebugLog";
+import { isAbortError } from "./framePlanning/BatchFrameGraphExecutor";
 
 export interface SelectionRenderInputs {
   exportConfig: ExportConfig;
@@ -36,13 +39,18 @@ export interface RenderSelectionToVideoFileOptions {
   signal?: AbortSignal;
   onProgress?: (percentage: number) => void;
   onPhaseChange?: (phase: ExportPhase) => void;
+  onDiagnostic?: (event: ExportDiagnostic) => void;
   /** Output container. WebM is used for alpha-preserving composite caches. */
   format?: OutputVideoFormat;
   /** Seconds between keyframes in the rendered video. */
   keyFrameInterval?: number;
+  /** Whether the output carries a soundtrack. Defaults to true. */
+  includeAudio?: boolean;
   preserveAlpha?: boolean;
   /** Base name for the produced File; timestamp and extension are appended. */
   filenamePrefix?: string;
+  /** Names this render in debug-mode console diagnostics. */
+  debugLabel?: string;
   /**
    * Invoked with the renderer immediately after creation — e.g. to register it
    * with a cancellation session. Throwing here disposes the renderer.
@@ -93,7 +101,7 @@ export async function renderSelectionToOutput(
 
   // Strict rendering starts pulling frames immediately; referenced grade LUTs
   // must be cached up front or early frames would render without them.
-  await preloadColorGradeLuts(selection.region.clips);
+  await preloadColorGradeLuts(selection.region.clips, { strict: true });
 
   const renderer = await ExportRenderer.create(exportConfig);
   try {
@@ -103,23 +111,50 @@ export async function renderSelectionToOutput(
     throw error;
   }
 
-  const result = await renderer.render(
-    projectData,
-    exportConfig,
-    (percentage) => options.onProgress?.(percentage),
-    {
-      timelineSelection: selection,
-      onPhaseChange: options.onPhaseChange,
-      format: options.format ?? "mp4",
-      keyFrameInterval: options.keyFrameInterval,
-      preserveAlpha: options.preserveAlpha,
-      includeTimelineMasks: options.includeTimelineMasks,
-      signal: options.signal,
-      ...(options.onBeforeEncodeFrame
-        ? { onBeforeEncodeFrame: options.onBeforeEncodeFrame }
-        : {}),
-    },
+  // Started with the render, so debug mode toggled mid-render changes nothing.
+  const debugLog = startExportDebugLog(
+    options.debugLabel ?? options.filenamePrefix ?? "render",
   );
+  const onDiagnostic = debugLog
+    ? (event: ExportDiagnostic) => {
+        debugLog.onDiagnostic(event);
+        options.onDiagnostic?.(event);
+      }
+    : options.onDiagnostic;
+
+  let result: RenderResult;
+  try {
+    result = await renderer.render(
+      projectData,
+      exportConfig,
+      (percentage) => options.onProgress?.(percentage),
+      {
+        timelineSelection: selection,
+        onPhaseChange: debugLog
+          ? (phase) => {
+              debugLog.onPhaseChange(phase);
+              options.onPhaseChange?.(phase);
+            }
+          : options.onPhaseChange,
+        ...(onDiagnostic ? { onDiagnostic } : {}),
+        format: options.format ?? "mp4",
+        keyFrameInterval: options.keyFrameInterval,
+        ...(options.includeAudio !== undefined
+          ? { includeAudio: options.includeAudio }
+          : {}),
+        preserveAlpha: options.preserveAlpha,
+        includeTimelineMasks: options.includeTimelineMasks,
+        signal: options.signal,
+        ...(options.onBeforeEncodeFrame
+          ? { onBeforeEncodeFrame: options.onBeforeEncodeFrame }
+          : {}),
+      },
+    );
+    debugLog?.finish("completed");
+  } catch (error) {
+    debugLog?.finish(isAbortError(error) ? "cancelled" : "failed");
+    throw error;
+  }
 
   options.onRenderHealth?.(result.renderHealth);
 

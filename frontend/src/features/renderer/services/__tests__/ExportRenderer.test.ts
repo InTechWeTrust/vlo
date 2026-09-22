@@ -4,6 +4,7 @@ import {
   resolveOutputDefinitions,
 } from "../ExportRenderer";
 import type { ProjectData } from "../ExportRenderer";
+import { ExportFileTarget } from "../ExportFileTarget";
 import { beforeEach, describe, it, expect, vi } from "vitest";
 import type { Mock } from "vitest";
 import { Application, Container } from "pixi.js";
@@ -379,6 +380,22 @@ describe("ExportRenderer", () => {
     renderer.cancel();
     await expect(renderer.render({ tracks: [], clips: [], assets: [], duration: 9600, fps: 30 }, config, vi.fn())).rejects.toMatchObject({ name: "AbortError" });
     expect(fileHandle.createWritable).not.toHaveBeenCalled();
+  });
+
+  it("completes a caller-owned stream without a file handle or Blob", async () => {
+    const stream = { write: vi.fn(), close: vi.fn().mockResolvedValue(undefined), abort: vi.fn().mockResolvedValue(undefined) };
+    const config = { logicalWidth: 64, logicalHeight: 64, outputWidth: 64, outputHeight: 64 };
+    const renderer = await ExportRenderer.create(config);
+    const result = await renderer.render(
+      { tracks: [], clips: [], assets: [], duration: 9600, fps: 30 }, config, vi.fn(),
+      { outputs: [{ id: "video", includeAudio: false, outputTarget: new ExportFileTarget(stream) }] },
+    );
+    expect(result.video).toBeUndefined();
+    expect(result.outputs).toEqual({});
+    expect(result.files).toEqual({});
+    expect(result.streamedOutputIds).toEqual(["video"]);
+    expect(stream.close).toHaveBeenCalledOnce();
+    expect(stream.abort).not.toHaveBeenCalled();
   });
 
   it("should render project with clips without hanging", async () => {

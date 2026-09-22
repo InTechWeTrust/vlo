@@ -1,5 +1,7 @@
 import { convertLegacyTimelineSelection, projectTimelineSelection } from "../../timeline/time";
 import type { ExportPhase } from "../../../core/export/exportProgress";
+import type { ExportDiagnostic } from "./exportDiagnostics";
+import type { ExportFileTarget } from "./ExportFileTarget";
 import { Application, Container, RenderTexture } from "pixi.js";
 import { enableAdvancedBlendModes } from "../../../core/pixi/advancedBlendModes";
 import type {
@@ -186,7 +188,7 @@ export function resolveOutputDefinitions(
     {
       id: "video",
       format: fallbackFormat,
-      includeAudio: true,
+      includeAudio: options.includeAudio ?? true,
       keyFrameInterval: options.keyFrameInterval,
       transformStack: options.preserveAlpha
         ? []
@@ -309,6 +311,11 @@ export interface ExportConfig {
   outputHeight: number;
   backgroundAlpha?: number;
   fileHandle?: FileSystemFileHandle;
+  /**
+   * A caller-owned stream for the single output, for a disk export whose
+   * destination is not a browser file handle.
+   */
+  outputTarget?: ExportFileTarget;
 }
 
 export interface ProjectData {
@@ -325,10 +332,13 @@ export interface ProjectData {
 
 export interface RenderOptions {
   onPhaseChange?: (phase: ExportPhase) => void;
+  onDiagnostic?: (event: ExportDiagnostic) => void;
   timelineSelection?: TimelineSelection;
   format?: OutputVideoFormat;
   /** Seconds between keyframes in the default output. */
   keyFrameInterval?: number;
+  /** Whether the default output carries a soundtrack. Defaults to true. */
+  includeAudio?: boolean;
   /** Keep transparent project pixels; requires an alpha-capable output. */
   preserveAlpha?: boolean;
   outputs?: OutputVideoDefinition[];
@@ -364,6 +374,7 @@ export interface RenderResult {
   video?: Blob;
   /** Committed file-backed outputs, which intentionally have no Blob. */
   files?: Record<string, FileSystemFileHandle>;
+  streamedOutputIds?: readonly string[];
   mask?: Blob;
   outputs: Record<string, Blob>;
   outputAnalyses?: Record<string, OutputVideoAnalysis>;
@@ -511,12 +522,13 @@ export class ExportRenderer {
       const rangeDurationTicks = totalFrames * ticksPerFrame;
 
       const definitions = resolveOutputDefinitions(options);
-      if (config.fileHandle && definitions.length !== 1) {
+      if ((config.fileHandle || config.outputTarget) && definitions.length !== 1) {
         throw new Error("A disk export requires exactly one output");
       }
       const outputDefinitions = definitions.map((def) => ({
         ...def,
         fileHandle: config.fileHandle ?? def.fileHandle,
+        outputTarget: config.outputTarget ?? def.outputTarget,
       }));
       const hasAudioOutput = outputDefinitions.some(
         (output) => output.includeAudio,
@@ -544,7 +556,7 @@ export class ExportRenderer {
         this.app,
         renderFps,
         outputDefinitions,
-        { onPhaseChange: options.onPhaseChange },
+        { onPhaseChange: options.onPhaseChange, onDiagnostic: options.onDiagnostic },
       );
       this.outputEncoder = outputEncoder;
       await outputEncoder.start();
@@ -784,6 +796,7 @@ export class ExportRenderer {
 
       for (let i = 0; i < totalFrames; i += 1) {
         this.throwIfCancelled();
+        const frameStartedAt = options.onDiagnostic ? performance.now() : 0;
 
         const currentTime = startTick + i * ticksPerFrame;
         // Output timestamp from the frame index (drift-free, monotonic) via the
@@ -823,11 +836,15 @@ export class ExportRenderer {
         }
 
         // Encode one or more outputs by applying per-output transform stacks.
+        const outputStartedAt = options.onDiagnostic ? performance.now() : 0;
         await outputEncoder.addTextureFrame(
           frameTexture,
           timestamp,
           1 / renderFps,
         );
+        options.onDiagnostic?.({ kind: "frame", frameIndex: i,
+          renderMilliseconds: outputStartedAt - frameStartedAt,
+          outputMilliseconds: performance.now() - outputStartedAt });
 
         this.throwIfCancelled();
 
@@ -843,18 +860,19 @@ export class ExportRenderer {
       const renderHealth = this.collectRenderHealth(visualTracks);
       this.warnOnDegradedRenderHealth(renderHealth, "selection render");
 
-      const { blobs: outputs, analyses: outputAnalyses, files } =
+      const { blobs: outputs, analyses: outputAnalyses, files, streamedOutputIds = [] } =
         await outputEncoder.finalize();
       const primaryOutputId = outputs.video
         ? "video"
         : (Object.keys(outputs)[0] ?? null);
-      if (!primaryOutputId && Object.keys(files).length === 0) {
+      if (!primaryOutputId && Object.keys(files).length === 0 && streamedOutputIds.length === 0) {
         throw new Error("Renderer produced no video outputs");
       }
 
       return {
         video: primaryOutputId ? outputs[primaryOutputId] : undefined,
         files,
+        ...(streamedOutputIds.length > 0 ? { streamedOutputIds } : {}),
         mask: outputs.mask,
         outputs,
         outputAnalyses,

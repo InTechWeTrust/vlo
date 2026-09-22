@@ -5,6 +5,7 @@ import {
   serializeCubeLut,
 } from "../../../../../../core/color";
 import {
+  ColorGradeLutUnavailableError,
   getCubeLutForAsset,
   getLoadedCubeLut,
   planCubeLutAtlas,
@@ -76,6 +77,35 @@ describe("cube LUT asset cache", () => {
     expect(getLoadedCubeLut("missing")).toBeNull();
     expect(onLoad).toHaveBeenCalledTimes(1);
     unsubscribe();
+  });
+
+  it("fails a strict preload on a LUT that is missing or does not parse", async () => {
+    setCubeLutTextSourceForTests(async (assetId) => (assetId === "garbled" ? "not a cube file" : null));
+    const grade = (lutAssetId: string) => ({ transformations: [
+      { type: "filter", filterName: "ColorGradeFilter", parameters: { lutAssetId } },
+    ] });
+
+    await expect(preloadColorGradeLuts([grade("gone")], { strict: true }))
+      .rejects.toBeInstanceOf(ColorGradeLutUnavailableError);
+    await expect(preloadColorGradeLuts([grade("garbled")], { strict: true }))
+      .rejects.toThrow(/could not be loaded or parsed/);
+    // Interactive preview keeps rendering, as pass-through.
+    await expect(preloadColorGradeLuts([grade("gone")])).resolves.toBeUndefined();
+  });
+
+  it("retries a LUT whose earlier load failed before failing a strict preload", async () => {
+    let available = false;
+    const source = vi.fn(async () => (available ? serializeCubeLut(IDENTITY_3) : null));
+    setCubeLutTextSourceForTests(source);
+    const clips = [{ transformations: [
+      { type: "filter", filterName: "ColorGradeFilter", parameters: { lutAssetId: "restored" } },
+    ] }];
+
+    expect(await getCubeLutForAsset("restored")).toBeNull();
+    available = true;
+    await preloadColorGradeLuts(clips, { strict: true });
+    expect(getLoadedCubeLut("restored")?.size).toBe(3);
+    expect(source).toHaveBeenCalledTimes(2);
   });
 
   it("preloads every LUT referenced by enabled clip grades before export", async () => {

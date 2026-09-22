@@ -1,5 +1,12 @@
 import { StreamTarget, type StreamTargetChunk } from "mediabunny";
 
+/** Positional, transactional sink shared by browser files and caller-owned streams. */
+export interface ExportWritableSink {
+  write(chunk: StreamTargetChunk): Promise<unknown>;
+  close(): Promise<void>;
+  abort(): Promise<void>;
+}
+
 /**
  * The muxer may close its writer on cancellation, so only the job's explicit
  * commit is allowed to replace the destination file.
@@ -10,9 +17,9 @@ export class ExportFileTarget {
   private committed = false;
   private abortPromise: Promise<void> | null = null;
   private committing = false;
-  private readonly fileStream: FileSystemWritableFileStream;
+  private readonly fileStream: ExportWritableSink;
 
-  constructor(fileStream: FileSystemWritableFileStream) {
+  constructor(fileStream: ExportWritableSink) {
     this.fileStream = fileStream;
     this.target = new StreamTarget(
       new WritableStream<StreamTargetChunk>({

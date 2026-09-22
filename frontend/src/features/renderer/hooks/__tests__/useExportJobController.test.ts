@@ -716,7 +716,9 @@ describe("useExportJobController runProjectExport", () => {
     expect(prepareBrushMasksForTimelineRender).toHaveBeenCalledOnce();
     const [selection, opts] = vi.mocked(renderSelectionToVideoFile).mock.calls[0];
     expect(selection).toMatchObject({anchor: 0,durationTicks: (5000) - (0),fps: 24,region: expect.objectContaining({clips: [],tracks: [{ id: "t1" }],})});
-    expect(opts!.filenamePrefix).toBe("export");
+    // The shared whole-project path a detached render host also takes.
+    expect(opts!.skipNormalize).toBe(true);
+    expect(opts!.renderInputs!.brushMasksPrepared).toBe(true);
     expect(opts!.format).toBe("webm");
     expect(opts!.keyFrameInterval).toBe(2);
     expect(opts!.renderInputs!.exportConfig).toMatchObject({

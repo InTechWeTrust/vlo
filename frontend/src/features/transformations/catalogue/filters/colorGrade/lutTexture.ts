@@ -95,16 +95,30 @@ interface ClipTransformLike {
   readonly parameters?: Readonly<Record<string, unknown>>;
 }
 
+export class ColorGradeLutUnavailableError extends Error {
+  readonly assetId: string;
+  constructor(assetId: string) {
+    super(`The LUT used by a Color Grade (asset ${assetId}) could not be loaded or parsed, so the export would not match the grade.`);
+    this.name = "ColorGradeLutUnavailableError";
+    this.assetId = assetId;
+  }
+}
+
 /**
- * Awaits every `.cube` referenced by the clips' Color Grade transforms so
- * strict (export) rendering never emits early frames with a still-loading
- * LUT. Failed loads resolve to null and render as pass-through, matching the
- * live path.
+ * Awaits every `.cube` referenced by the clips' enabled Color Grade
+ * transforms so strict (export) rendering never emits early frames with a
+ * still-loading LUT.
+ *
+ * With `strict`, a LUT that cannot be loaded or parsed fails the render: an
+ * export must not quietly become an ungraded one. A previously failed load is
+ * retried once first, since the file may have been restored since. Without
+ * it, failures render as pass-through, matching the live path.
  */
 export async function preloadColorGradeLuts(
   clips: readonly {
     readonly transformations?: readonly ClipTransformLike[];
   }[],
+  options: { strict?: boolean } = {},
 ): Promise<void> {
   const { COLOR_GRADE_FILTER_NAME } = await import("./definition");
   const assetIds = new Set<string>();
@@ -123,7 +137,13 @@ export async function preloadColorGradeLuts(
       }
     }
   }
-  await Promise.all([...assetIds].map((assetId) => getCubeLutForAsset(assetId)));
+  await Promise.all([...assetIds].map(async (assetId) => {
+    if (options.strict && cubeLutCache.get(assetId)?.status === "error") {
+      cubeLutCache.delete(assetId);
+    }
+    const lut = await getCubeLutForAsset(assetId);
+    if (!lut && options.strict) throw new ColorGradeLutUnavailableError(assetId);
+  }));
 }
 
 // === 2D-atlas layout ===

@@ -26,7 +26,8 @@ import {
   type ProjectData,
   type ExportConfig,
 } from "../services/ExportRenderer";
-import { renderSelectionToVideoFile, renderSelectionToOutput } from "../services/renderSelectionToVideoFile";
+import { renderSelectionToVideoFile } from "../services/renderSelectionToVideoFile";
+import { renderProjectToOutput } from "../services/renderProjectToOutput";
 import { acquireExportWakeLock } from "../services/exportWakeLock";
 import { resolveRenderOutputDimensions } from "../utils/dimensions";
 import type { AspectRatio } from "../../project/useProjectStore";
@@ -447,22 +448,11 @@ export function useExportJobController({
 
         await prepareBrushMasksForTimelineRender();
         const projectData = buildProjectData();
-        const fullTimelineSelection = projectTimelineSelection({
-          start: 0,
-          end: projectData.duration,
-          clips: projectData.clips,
-          tracks: projectData.tracks,
-          transitions: projectData.transitions,
-          fps: projectData.fps,
-        }, projectData);
 
         // Disk outputs finish without constructing or reading back a video Blob.
-        await renderSelectionToOutput(fullTimelineSelection, {
-          renderInputs: {
-            exportConfig,
-            projectData,
-            brushMasksPrepared: true,
-          },
+        await renderProjectToOutput({
+          exportConfig,
+          projectData,
           onPhaseChange: (phase) => {
             if (sessionId === renderSessionRef.current && !cancelRenderRequestedRef.current) {
               useExtractStore.getState().setPhase(phase);
@@ -474,8 +464,6 @@ export function useExportJobController({
           },
           format,
           keyFrameInterval,
-          skipNormalize: true,
-          filenamePrefix: "export",
           onRendererCreated: (renderer) =>
             registerRenderer(renderer, sessionId),
         });
