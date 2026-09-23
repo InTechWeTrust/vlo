@@ -869,4 +869,47 @@ describe("TrackRenderEngine masks", () => {
 
     engine.dispose();
   });
+
+  it("does not present a frame into an engine disposed during mask sync", async () => {
+    const engine = new TrackRenderEngine(1);
+    const internals = engine as unknown as {
+      maskController: { syncMaskClips: (...args: unknown[]) => Promise<void> };
+      applyTexture: (...args: unknown[]) => boolean;
+    };
+    let finishMaskSync: () => void = () => undefined;
+    vi.spyOn(internals.maskController, "syncMaskClips").mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishMaskSync = resolve;
+        }),
+    );
+    const applyTextureSpy = vi.spyOn(internals, "applyTexture");
+    const release = vi.fn();
+    const clip = createParentClip();
+
+    const presented = engine.presentResolvedFrameJob(
+      {
+        id: "job-1",
+        trackId: clip.trackId,
+        activeClip: clip,
+        effectiveTrackTick: 0,
+        rawClipTick: 0,
+        sourceFrame: { key: "frame-0", generation: 0 },
+        maskClips: [],
+        logicalDimensions: { width: 1920, height: 1080 },
+        contentSize: { width: 1920, height: 1080 },
+        fps: 30,
+      } as never,
+      { texture: { width: 100, height: 100, destroy: vi.fn() }, release } as never,
+      new Map(),
+      { mode: "export" },
+    );
+    // A project reopen tears the engine down while its mask sync is pending.
+    engine.dispose();
+    finishMaskSync();
+
+    await expect(presented).resolves.toBe(false);
+    expect(applyTextureSpy).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalled();
+  });
 });

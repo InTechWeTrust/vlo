@@ -845,7 +845,12 @@ export class TrackRenderEngine {
       sourceHandle.release();
       throw createRenderAbortError();
     }
-    if (policy.mode === "live" && !this.isFrameJobCurrent(job)) {
+    // Disposal keeps the planned frame intent, so a job that resumes after the
+    // engine was torn down still reads as current; its sprite is destroyed.
+    if (
+      this.disposed ||
+      (policy.mode === "live" && !this.isFrameJobCurrent(job))
+    ) {
       sourceHandle.release();
       return false;
     }
@@ -866,6 +871,9 @@ export class TrackRenderEngine {
         job.sourceFrame,
         job.fps,
       );
+      // applyTexture already handed the texture to the engine, so dispose
+      // released it; only the sprite write has to be skipped.
+      if (this.disposed) return false;
     }
     this.applyClipTransformsForClip(
       presentationClip,
