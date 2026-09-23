@@ -157,7 +157,9 @@ function workedExample(options: { v1HasAudio?: boolean | null } = {}) {
 const asExtension = (inputs: readonly GenerationInputSnapshot[]) =>
   inputs as unknown as readonly ExtensionGenerationInputSnapshot[];
 
-const COMPLETION_EXAMPLE_TIMEOUT_MS = 20_000;
+// Long end-to-end authoring flows run ~2s alone and exceed the 5s default
+// under full-suite parallel load.
+const LONG_AUTHORING_TIMEOUT_MS = 20_000;
 
 describe.skipIf(!packagePresent)("minimax ref2v: catalogue", () => {
   it("assigns the worked example's labels by occurrence, silent first video included", async () => {
@@ -1189,7 +1191,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: prompt-object view", () => {
     );
     act(() => session!.publish({ nodes: REFERENCE_NODES, inputs: [...edited] }));
     expect(chipLabels("Summary")).toEqual(["<Picture 2>", "<Picture 2>", "<Subject 1>", "<Subject 1>"]);
-  });
+  }, LONG_AUTHORING_TIMEOUT_MS);
 
   it("refuses rearranging a list the panel is holding slots open in", async () => {
     const pkg = await loadPackage();
@@ -1979,7 +1981,7 @@ describe.skipIf(!packagePresent)("minimax ref2v: structured controls", () => {
     expect(
       session.panelInputs().find((input) => input.id === IMAGES)?.media?.map((entry) => entry.itemId),
     ).toEqual(["media-city", "media-hero"]);
-  }, COMPLETION_EXAMPLE_TIMEOUT_MS);
+  }, LONG_AUTHORING_TIMEOUT_MS);
 
   it("offers the shots' scope back after the parentheses were deleted in the panel, and audio only audio markers", async () => {
     const pkg = await loadPackage();
