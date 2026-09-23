@@ -4,6 +4,7 @@ import {
   CanvasSink,
   ALL_FORMATS,
   BlobSource,
+  InputDisposedError,
 } from "mediabunny";
 import type { WrappedCanvas } from "mediabunny";
 import {
@@ -18,6 +19,20 @@ import {
   createRenderRequestQueueState,
   enqueueRenderRequest,
 } from "./renderRequestQueue";
+
+/**
+ * Disposal cancels every pending read on an Input, so a clip disposed while it
+ * is still preparing or rendering surfaces here as a rejection. That is a
+ * cancellation the main thread asked for, not a decoder failure.
+ */
+function isInputDisposedError(err: unknown): boolean {
+  if (err instanceof InputDisposedError) return true;
+  const msg = String(err);
+  return (
+    msg.includes("InputDisposedError") ||
+    msg.includes("Input has been disposed")
+  );
+}
 
 // --- Types ---
 interface RenderOptions {
@@ -569,10 +584,7 @@ const processRender = async (request: RenderRequest) => {
     }
   } catch (err) {
     const msg = String(err);
-    if (
-      msg.includes("InputDisposedError") ||
-      msg.includes("Input has been disposed")
-    ) {
+    if (isInputDisposedError(err)) {
       // If disposed, we should still probably unlock the thread if it was waiting
       ctx.postMessage({
         type: "frame",
@@ -722,7 +734,14 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
             prepareReceivedAtMs,
             { error: String(err) },
           );
-          cleanupRenderer(clipId);
+          // A dispose followed by a fresh prepare may already have replaced
+          // this renderer; only clean up the one this prepare created.
+          if (renderers.get(clipId) === renderer) {
+            cleanupRenderer(clipId);
+          }
+          if (isInputDisposedError(err)) {
+            return;
+          }
           throw err;
         }
         break;
@@ -746,7 +765,13 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
             "worker:render:await-prepare:start",
             renderReceivedAtMs,
           );
-          await initPromise;
+          try {
+            await initPromise;
+          } catch {
+            // The prepare handler reports its own failure. A render queued
+            // behind it falls through to the missing-renderer reply below, so
+            // its requester is answered rather than left to stall.
+          }
           postDecoderDiagnostic(
             diagnostics,
             "worker:render:await-prepare:done",
@@ -811,6 +836,9 @@ self.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       }
     }
   } catch (err) {
+    // A prepare already waiting on a renderer that was disposed underneath it.
+    // Broadcasting this would fail every lease sharing the pooled worker.
+    if (isInputDisposedError(err)) return;
     console.error("Worker Error:", err);
     self.postMessage({ type: "error", message: String(err) });
   }
