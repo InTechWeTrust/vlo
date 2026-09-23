@@ -1,7 +1,8 @@
 {
   "version": 2,
   "hidden_workflows": [
-    "vlo_minimax_h3_masked_guide.json"
+    "vlo_minimax_h3_masked_guide.json",
+    "vlo_ltx2_5_ic_edit.json"
   ],
   "nodes": [
     {
