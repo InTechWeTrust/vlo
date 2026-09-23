@@ -580,6 +580,14 @@ function PlayerImpl({ chrome = "full" }: PlayerProps) {
                   },
                 },
               );
+            } catch (error) {
+              // A live frame can outlive what it references — e.g. a clip
+              // deletion drops a mask asset mid-render. Skip the frame, as the
+              // per-track path's allSettled does; the next one re-resolves.
+              if (!abortController.signal.aborted) {
+                console.warn("[Player] Live frame render failed", error);
+              }
+              continue;
             } finally {
               if (
                 activePlaybackRenderAbortRef.current === abortController
