@@ -102,4 +102,46 @@ describe("useIframeTimelineSelectionStore", () => {
 
     expect(getIframeTimelineSelectionCreationInputs()).toEqual([]);
   });
+
+  it("stores a captured frame as an image asset that binds like a selection", async () => {
+    const image = new File(["frame"], "frame.png", { type: "image/png" });
+    const timelineSelection = makeTimelineSelection({
+      start: 48_000,
+      end: 48_000,
+      clips: [],
+      tracks: [],
+      fps: 24,
+    });
+
+    const stored = await useIframeTimelineSelectionStore
+      .getState()
+      .storeProcessedFrame({ timelineSelection, image });
+
+    expect(projectTemporaryFileService.writeIframeSelectionFile).toHaveBeenCalledWith(
+      stored.selectionId,
+      "image",
+      image,
+    );
+    expect(stored.imageAsset.role).toBe("image");
+    expect(stored.imageAsset.asset).toMatchObject({
+      type: "image",
+      file: image,
+      name: expect.stringMatching(/\.png$/),
+    });
+    expect(stored.imageAsset.asset.duration).toBeUndefined();
+    expect(useIframeTimelineSelectionStore.getState().assets).toEqual([
+      stored.imageAsset,
+    ]);
+
+    useIframeTimelineSelectionStore
+      .getState()
+      .bindNodeToAsset("image-node", stored.imageAsset.asset.id);
+    expect(getIframeTimelineSelectionCreationInputs()).toEqual([
+      expect.objectContaining({
+        nodeId: "image-node",
+        kind: "timelineSelection",
+        timelineSelection: expect.objectContaining({ anchor: 48_000 }),
+      }),
+    ]);
+  });
 });

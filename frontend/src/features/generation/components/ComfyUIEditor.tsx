@@ -5,13 +5,20 @@ import {
   ButtonGroup,
   IconButton,
   Dialog,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Tooltip,
   Typography,
   CircularProgress,
 } from "@mui/material";
 import {
+  ArrowDropDown,
   Close,
+  Movie,
   OpenInNew,
+  PhotoCamera,
   PhotoLibrary,
   Settings,
   Timeline,
@@ -42,6 +49,7 @@ import { useExtractStore } from "../../../core/extract/useExtractStore";
 import { playbackClock } from "../../../core/playback/PlaybackClock";
 import { usePlayerStore } from "../../player";
 import {
+  createPointTimelineSelection,
   createTimelineSelection,
   getDefaultSelectionEnd,
   useTimelineSelectionStore,
@@ -49,6 +57,7 @@ import {
 import {
   createDefaultIframeTimelineSelectionSettings,
   getIframeTimelineSelectionGenerationMetadata,
+  processIframeTimelineFrame,
   processIframeTimelineSelection,
   useIframeTimelineSelectionStore,
   type IframeTimelineSelectionSettings,
@@ -237,6 +246,8 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   const [assetDockTab, setAssetDockTab] =
     useState<IframeAssetDockTab>("assets");
   const [selectionSettingsOpen, setSelectionSettingsOpen] = useState(false);
+  const [selectionMenuAnchor, setSelectionMenuAnchor] =
+    useState<HTMLElement | null>(null);
   const [selectionSettings, setSelectionSettings] =
     useState<IframeTimelineSelectionSettings>(() =>
       createDefaultIframeTimelineSelectionSettings(),
@@ -437,6 +448,63 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
       allowIncludeAll: true,
     });
   }, [selectionProcessing, selectionSettings, showTransientDropFeedback]);
+
+  const handleSelectFrameFromTimeline = useCallback(() => {
+    if (selectionProcessing) return;
+
+    const playerStore = usePlayerStore.getState();
+    if (playerStore.isPlaying) {
+      playerStore.setIsPlaying(false);
+    }
+
+    useTimelineSelectionStore.getState().clearSelectionRecommendations();
+    const extractStore = useExtractStore.getState();
+
+    // Same ordering contract as the range flow: confirm, then cancel.
+    extractStore.setOnConfirmSelection(() => {
+      void (async () => {
+        const selectedTick = playbackClock.time;
+        const currentExtractStore = useExtractStore.getState();
+        currentExtractStore.exitFrameSelectionMode();
+        currentExtractStore.setOnConfirmSelection(null);
+        currentExtractStore.setOnCancelSelection(null);
+        useGenerationStore.getState().setEditorOpen(true);
+
+        setSelectionProcessing(true);
+        setDropFeedback({
+          tone: "pending",
+          message: "Capturing timeline frame...",
+        });
+        try {
+          const processed = await processIframeTimelineFrame(
+            createPointTimelineSelection(selectedTick),
+          );
+          await useIframeTimelineSelectionStore
+            .getState()
+            .storeProcessedFrame(processed);
+          setAssetDockTab("temporary");
+          setAssetDockOpen(true);
+          showTransientDropFeedback("success", "Timeline frame is ready");
+        } catch (error) {
+          console.error("[ComfyUIEditor] Timeline frame capture failed", error);
+          showTransientDropFeedback(
+            "error",
+            error instanceof Error
+              ? error.message
+              : "Failed to capture timeline frame",
+          );
+        } finally {
+          setSelectionProcessing(false);
+        }
+      })();
+    });
+    extractStore.setOnCancelSelection(() => {
+      useGenerationStore.getState().setEditorOpen(true);
+    });
+
+    useGenerationStore.getState().setEditorOpen(false);
+    extractStore.enterFrameSelectionMode();
+  }, [selectionProcessing, showTransientDropFeedback]);
 
   const rememberWorkflowSignature = useCallback(
     (
@@ -1212,7 +1280,13 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
                   <Timeline fontSize="small" />
                 )
               }
-              onClick={handleSelectFromTimeline}
+              endIcon={<ArrowDropDown fontSize="small" />}
+              onClick={(event) => setSelectionMenuAnchor(event.currentTarget)}
+              aria-haspopup="menu"
+              aria-expanded={selectionMenuAnchor ? "true" : undefined}
+              aria-controls={
+                selectionMenuAnchor ? "comfyui-timeline-selection-menu" : undefined
+              }
               data-testid="comfyui-select-from-timeline"
               sx={{ color: "#aaa", textTransform: "none" }}
             >
@@ -1234,6 +1308,37 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
               </Button>
             </Tooltip>
           </ButtonGroup>
+          <Menu
+            id="comfyui-timeline-selection-menu"
+            anchorEl={selectionMenuAnchor}
+            open={Boolean(selectionMenuAnchor)}
+            onClose={() => setSelectionMenuAnchor(null)}
+          >
+            <MenuItem
+              onClick={() => {
+                setSelectionMenuAnchor(null);
+                handleSelectFromTimeline();
+              }}
+              data-testid="comfyui-select-from-timeline-video"
+            >
+              <ListItemIcon>
+                <Movie fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Video</ListItemText>
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                setSelectionMenuAnchor(null);
+                handleSelectFrameFromTimeline();
+              }}
+              data-testid="comfyui-select-from-timeline-frame"
+            >
+              <ListItemIcon>
+                <PhotoCamera fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Frame</ListItemText>
+            </MenuItem>
+          </Menu>
           {typeof comfyQueueRemaining === "number" && comfyQueueRemaining > 0 && (
             <Typography
               variant="caption"

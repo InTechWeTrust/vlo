@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useProjectStore } from "../../../project";
 import {
   createDefaultIframeTimelineSelectionSettings,
+  processIframeTimelineFrame,
   processIframeTimelineSelection,
   type ProcessIframeTimelineSelectionDeps,
 } from "../processIframeTimelineSelection";
@@ -115,8 +116,9 @@ describe("processIframeTimelineSelection", () => {
     // the crop must be taken from full-fidelity project pixels so the emitted
     // mask-crop metadata stays in project (== logical) space.
     const renderOptions = mocks.renderWithMask.mock.calls[0][2];
+    // Unmasked source + separate matte, the generation panel's default.
     expect(renderOptions).toMatchObject({
-      sourceVideoTreatment: "preserve_transparency",
+      sourceVideoTreatment: "remove_transparency",
     });
     expect(renderOptions).not.toHaveProperty("outputWidth");
     expect(renderOptions).not.toHaveProperty("outputHeight");
@@ -165,5 +167,46 @@ describe("processIframeTimelineSelection", () => {
       mode: "cropped",
       container_size: [1920, 1080],
     });
+  });
+});
+
+describe("processIframeTimelineSelection source treatment", () => {
+  it("renders the masked composite when transparency is kept", async () => {
+    const mocks = createDeps({ transparent: true });
+    const settings = createDefaultIframeTimelineSelectionSettings();
+    settings.sourceVideoTreatment = "preserve_transparency";
+
+    await processIframeTimelineSelection(selection, settings, {
+      deps: mocks.deps,
+    });
+
+    expect(mocks.renderWithMask.mock.calls[0][2]).toMatchObject({
+      sourceVideoTreatment: "preserve_transparency",
+    });
+  });
+});
+
+describe("processIframeTimelineFrame", () => {
+  it("captures the frame at the selection anchor exactly as the panel's image path does", async () => {
+    const frame = new File(["frame"], "frame.png", { type: "image/png" });
+    const captureFrame = vi.fn().mockResolvedValue(frame);
+    const pointSelection = makeTimelineSelection({
+      start: 48_000,
+      end: 48_000,
+      clips: [],
+      tracks: [],
+      fps: 24,
+    });
+
+    const result = await processIframeTimelineFrame(pointSelection, {
+      deps: { captureFrame },
+    });
+
+    // No selection is passed on: the generation panel's click-to-select image
+    // capture renders the whole project at the tick, and this must match it.
+    expect(captureFrame).toHaveBeenCalledWith(48_000, "iframe-timeline-frame");
+    expect(result.image).toBe(frame);
+    expect(result.timelineSelection).toEqual(pointSelection);
+    expect(result.timelineSelection).not.toBe(pointSelection);
   });
 });

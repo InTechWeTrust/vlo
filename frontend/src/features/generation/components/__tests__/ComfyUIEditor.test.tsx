@@ -377,11 +377,27 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
     expect(screen.getByText("Mask crop")).toBeInTheDocument();
   });
 
+  it("offers video and frame choices without starting a selection", () => {
+    render(<ComfyUIEditor open onClose={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("comfyui-select-from-timeline"));
+
+    expect(
+      screen.getByTestId("comfyui-select-from-timeline-video"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("comfyui-select-from-timeline-frame"),
+    ).toBeInTheDocument();
+    expect(useTimelineSelectionStore.getState().selectionMode).toBe(false);
+    expect(useExtractStore.getState().frameSelectionMode).toBe(false);
+  });
+
   it("temporarily closes the iframe and launches range then track selection", () => {
     useGenerationStore.setState({ editorOpen: true });
     render(<ComfyUIEditor open onClose={() => {}} />);
 
     fireEvent.click(screen.getByTestId("comfyui-select-from-timeline"));
+    fireEvent.click(screen.getByTestId("comfyui-select-from-timeline-video"));
 
     const selectionState = useTimelineSelectionStore.getState();
     expect(selectionState.selectionMode).toBe(true);
@@ -392,6 +408,24 @@ describe("ComfyUIEditor with a ComfyUI URL", () => {
 
     useExtractStore.getState().onCancelSelection?.();
     expect(useGenerationStore.getState().editorOpen).toBe(true);
+  });
+
+  it("temporarily closes the iframe and launches single-frame selection", () => {
+    useGenerationStore.setState({ editorOpen: true });
+    render(<ComfyUIEditor open onClose={() => {}} />);
+
+    fireEvent.click(screen.getByTestId("comfyui-select-from-timeline"));
+    fireEvent.click(screen.getByTestId("comfyui-select-from-timeline-frame"));
+
+    expect(useExtractStore.getState().frameSelectionMode).toBe(true);
+    expect(useExtractStore.getState().onConfirmSelection).not.toBeNull();
+    // A frame pick is not a range selection.
+    expect(useTimelineSelectionStore.getState().selectionMode).toBe(false);
+    expect(useGenerationStore.getState().editorOpen).toBe(false);
+
+    useExtractStore.getState().onCancelSelection?.();
+    expect(useGenerationStore.getState().editorOpen).toBe(true);
+    useExtractStore.getState().exitFrameSelectionMode();
   });
 
   it("invokes onClose when the close button is pressed", () => {

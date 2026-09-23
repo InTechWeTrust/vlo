@@ -7,7 +7,10 @@ import { projectTemporaryFileService } from "../../project/services/ProjectTempo
 import { tickToMediaSeconds } from "../../renderer/utils/mediaTime";
 import type {
   IframeTemporaryAsset,
+  IframeTemporaryAssetRole,
+  ProcessedIframeTimelineFrame,
   ProcessedIframeTimelineSelection,
+  StoredIframeTimelineFrame,
   StoredIframeTimelineSelection,
 } from "./types";
 
@@ -22,6 +25,9 @@ interface IframeTimelineSelectionState {
   storeProcessedSelection: (
     result: ProcessedIframeTimelineSelection,
   ) => Promise<StoredIframeTimelineSelection>;
+  storeProcessedFrame: (
+    result: ProcessedIframeTimelineFrame,
+  ) => Promise<StoredIframeTimelineFrame>;
   bindNodeToAsset: (nodeId: string, assetId: string) => void;
   /**
    * Drops node→asset bindings without touching the temporary selection assets
@@ -47,9 +53,15 @@ function clearAssetUrls(assets: readonly IframeTemporaryAsset[]): void {
   }
 }
 
+const TEMPORARY_ASSET_NAMES: Record<IframeTemporaryAssetRole, string> = {
+  video: "Timeline selection",
+  mask: "Timeline selection mask",
+  image: "Timeline frame",
+};
+
 function createTemporaryAsset(
   id: string,
-  role: "video" | "mask",
+  role: IframeTemporaryAssetRole,
   file: File,
   sourcePath: string,
   thumbnail: File,
@@ -59,6 +71,7 @@ function createTemporaryAsset(
     "maskCropMetadata" | "aspectRatioProcessing"
   >,
 ): IframeTemporaryAsset {
+  const isImage = role === "image";
   const durationTicks = Math.max(
     0,
     ((timelineSelection.anchor + timelineSelection.durationTicks)) - timelineSelection.anchor,
@@ -74,14 +87,18 @@ function createTemporaryAsset(
     asset: {
       id: `iframe-selection-${id}-${role}`,
       hash: `temporary-${id}-${role}`,
-      name: role === "video" ? `Timeline selection ${id}.mp4` : `Timeline selection mask ${id}.mp4`,
-      type: "video",
+      name: `${TEMPORARY_ASSET_NAMES[role]} ${id}${isImage ? ".png" : ".mp4"}`,
+      type: isImage ? "image" : "video",
       src: URL.createObjectURL(file),
       sourcePath,
       thumbnail: URL.createObjectURL(thumbnail),
       file,
-      duration: tickToMediaSeconds(durationTicks),
-      fps: timelineSelection.fps,
+      ...(isImage
+        ? {}
+        : {
+            duration: tickToMediaSeconds(durationTicks),
+            fps: timelineSelection.fps,
+          }),
       createdAt: Date.now(),
       creationMetadata: {
         source: "extracted",
@@ -91,13 +108,17 @@ function createTemporaryAsset(
   };
 }
 
+function createSelectionId(): string {
+  return `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
 export const useIframeTimelineSelectionStore =
   create<IframeTimelineSelectionState>((set, get) => ({
     assets: [],
     nodeBindings: [],
 
     storeProcessedSelection: async (result) => {
-      const selectionId = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+      const selectionId = createSelectionId();
       const videoPath = await projectTemporaryFileService.writeIframeSelectionFile(
         selectionId,
         "video",
@@ -141,6 +162,28 @@ export const useIframeTimelineSelectionStore =
         assets: [videoAsset, ...(maskAsset ? [maskAsset] : []), ...state.assets],
       }));
       return { selectionId, videoAsset, maskAsset };
+    },
+
+    storeProcessedFrame: async (result) => {
+      const selectionId = createSelectionId();
+      const imagePath =
+        await projectTemporaryFileService.writeIframeSelectionFile(
+          selectionId,
+          "image",
+          result.image,
+        );
+      // The frame is its own thumbnail; nothing is cropped or resized.
+      const imageAsset = createTemporaryAsset(
+        selectionId,
+        "image",
+        result.image,
+        imagePath,
+        result.image,
+        result.timelineSelection,
+        { maskCropMetadata: { mode: "full" }, aspectRatioProcessing: null },
+      );
+      set((state) => ({ assets: [imageAsset, ...state.assets] }));
+      return { selectionId, imageAsset };
     },
 
     bindNodeToAsset: (nodeId, assetId) => {

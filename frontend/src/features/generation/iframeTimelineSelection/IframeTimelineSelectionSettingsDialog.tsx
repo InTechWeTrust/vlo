@@ -16,6 +16,7 @@ import {
   Typography,
 } from "@mui/material";
 import { PROJECT_ASPECT_RATIOS } from "../../project";
+import type { DerivedMaskSourceVideoTreatment } from "../pipeline/types";
 import type { IframeTimelineSelectionSettings } from "./types";
 
 interface IframeTimelineSelectionSettingsDialogProps {
@@ -154,6 +155,38 @@ export function IframeTimelineSelectionSettingsDialog({
               inputProps={{ min: 0 }}
             />
           </Box>
+        </Box>
+
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+          <Typography variant="subtitle2">Source video</Typography>
+          <FormControl size="small">
+            <InputLabel id="iframe-selection-source-treatment-label">
+              Masks
+            </InputLabel>
+            <Select
+              labelId="iframe-selection-source-treatment-label"
+              label="Masks"
+              value={settings.sourceVideoTreatment}
+              onChange={(event) =>
+                onChange({
+                  ...settings,
+                  sourceVideoTreatment: event.target
+                    .value as DerivedMaskSourceVideoTreatment,
+                })
+              }
+              data-testid="iframe-selection-source-treatment"
+            >
+              <MenuItem value="remove_transparency">
+                Render unmasked (matches the Generate panel)
+              </MenuItem>
+              <MenuItem value="preserve_transparency">
+                Apply masks (transparent areas turn black)
+              </MenuItem>
+            </Select>
+          </FormControl>
+          <Typography variant="body2" color="text.secondary">
+            Either way, masks are also rendered as a separate matte.
+          </Typography>
         </Box>
 
         <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>

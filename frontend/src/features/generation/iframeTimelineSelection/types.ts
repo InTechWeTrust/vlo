@@ -1,6 +1,7 @@
 import type { Asset, MaskCropMetadata } from "../../../types/Asset";
 import type { TimelineSelection } from "../../../types/TimelineTypes";
 import type { AspectRatioProcessingMetadata } from "../types";
+import type { DerivedMaskSourceVideoTreatment } from "../pipeline/types";
 import type { ProcessingWarning } from "../processing";
 
 export interface IframeTimelineSelectionSettings {
@@ -15,9 +16,17 @@ export interface IframeTimelineSelectionSettings {
     mode: "full" | "crop";
     dilation: number;
   };
+  /**
+   * How masks treat the source video. `remove_transparency` matches the
+   * generation panel's default: the video is rendered without masks and the
+   * mask travels only as the separate matte. `preserve_transparency` renders
+   * the masked composite, which an MP4 flattens to black where it is
+   * transparent.
+   */
+  sourceVideoTreatment: DerivedMaskSourceVideoTreatment;
 }
 
-export type IframeTemporaryAssetRole = "video" | "mask";
+export type IframeTemporaryAssetRole = "video" | "mask" | "image";
 
 export interface IframeTemporaryAsset {
   asset: Asset;
@@ -43,6 +52,22 @@ export interface ProcessedIframeTimelineSelection {
   aspectRatioProcessing: AspectRatioProcessingMetadata | null;
   maskCropMetadata: MaskCropMetadata;
   warnings: ProcessingWarning[];
+}
+
+/**
+ * A single frame captured from the timeline. The PNG is the same composite the
+ * generation panel hands an image slot, transparency included, so it can stand
+ * in for that input when a workflow is run directly in the ComfyUI editor.
+ */
+export interface ProcessedIframeTimelineFrame {
+  /** Point selection at the captured tick. */
+  timelineSelection: TimelineSelection;
+  image: File;
+}
+
+export interface StoredIframeTimelineFrame {
+  selectionId: string;
+  imageAsset: IframeTemporaryAsset;
 }
 
 export interface StoredIframeTimelineSelection {

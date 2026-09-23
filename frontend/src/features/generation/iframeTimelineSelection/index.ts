@@ -1,6 +1,8 @@
 export {
   createDefaultIframeTimelineSelectionSettings,
+  processIframeTimelineFrame,
   processIframeTimelineSelection,
+  type ProcessIframeTimelineFrameDeps,
   type ProcessIframeTimelineSelectionDeps,
 } from "./processIframeTimelineSelection";
 export {
@@ -12,6 +14,8 @@ export type {
   IframeTemporaryAsset,
   IframeTemporaryAssetRole,
   IframeTimelineSelectionSettings,
+  ProcessedIframeTimelineFrame,
   ProcessedIframeTimelineSelection,
+  StoredIframeTimelineFrame,
   StoredIframeTimelineSelection,
 } from "./types";

@@ -9,11 +9,13 @@ import {
   type MaskCropProcessingResult,
 } from "../processing";
 import {
+  DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
   captureFramePngAtTick,
   renderTimelineSelectionToMp4WithMask,
 } from "../utils/inputSelection";
 import type {
   IframeTimelineSelectionSettings,
+  ProcessedIframeTimelineFrame,
   ProcessedIframeTimelineSelection,
 } from "./types";
 
@@ -64,6 +66,7 @@ export function createDefaultIframeTimelineSelectionSettings(): IframeTimelineSe
       mode: "crop",
       dilation: 0.1,
     },
+    sourceVideoTreatment: DEFAULT_DERIVED_MASK_SOURCE_VIDEO_TREATMENT,
   };
 }
 
@@ -103,7 +106,7 @@ export async function processIframeTimelineSelection(
   // timeline insertion maps it back to the project's logical stage.
   const rendered = await deps.renderWithMask(timelineSelection, "binary", {
     signal: options.signal,
-    sourceVideoTreatment: "preserve_transparency",
+    sourceVideoTreatment: settings.sourceVideoTreatment,
   });
 
   let cropResult: MaskCropProcessingResult = {
@@ -166,5 +169,34 @@ export async function processIframeTimelineSelection(
     aspectRatioProcessing: aspectPlan.metadata,
     maskCropMetadata: cropResult.metadata,
     warnings,
+  };
+}
+
+export interface ProcessIframeTimelineFrameDeps {
+  captureFrame: typeof captureFramePngAtTick;
+}
+
+const DEFAULT_FRAME_DEPS: ProcessIframeTimelineFrameDeps = {
+  captureFrame: captureFramePngAtTick,
+};
+
+/**
+ * Captures one frame for the ComfyUI editor. Deliberately untouched by the
+ * aspect-ratio and mask-crop settings: it is exactly what the generation
+ * panel's click-to-select image path uploads, so a workflow can be diagnosed
+ * in the editor against the same bytes the panel would send.
+ */
+export async function processIframeTimelineFrame(
+  timelineSelection: TimelineSelection,
+  options: { deps?: ProcessIframeTimelineFrameDeps } = {},
+): Promise<ProcessedIframeTimelineFrame> {
+  const deps = options.deps ?? DEFAULT_FRAME_DEPS;
+  const image = await deps.captureFrame(
+    timelineSelection.anchor,
+    "iframe-timeline-frame",
+  );
+  return {
+    timelineSelection: structuredClone(timelineSelection),
+    image,
   };
 }

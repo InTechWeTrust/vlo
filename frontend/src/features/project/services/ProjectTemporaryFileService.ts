@@ -20,7 +20,7 @@ class ProjectTemporaryFileService {
 
   async writeIframeSelectionFile(
     id: string,
-    role: "video" | "mask" | "thumbnail",
+    role: "video" | "mask" | "image" | "thumbnail",
     file: File,
   ): Promise<string> {
     const path = `${IFRAME_SELECTION_DIR}/${id}-${role}${fileExtension(file.name)}`;
