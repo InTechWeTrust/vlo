@@ -1,17 +1,9 @@
 # Keep the repo-root Docker context tiny.
-# The Runpod image builds app code from the local git ref plus the startup script.
+# The Runpod image builds app code, including its dependency manifests, from
+# the local git ref; only the git database and the deploy scripts are needed.
 *
 !.git
 !.git/**
-!package.json
-!package-lock.json
-!frontend
-!frontend/package.json
-!frontend/package-lock.json
-!backend
-!backend/pyproject.toml
-!backend/uv.lock
-!backend/requirements.txt
 !deploy
 !deploy/runpod
 !deploy/runpod/**
