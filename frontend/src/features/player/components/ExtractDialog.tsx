@@ -113,7 +113,8 @@ function ExportProgressPip({ progress }: ExportProgressProps) {
     <Box sx={{ p: 2, color: "#eee", bgcolor: "#1a1a1a", minHeight: "100vh" }}>
       <ExportProgress progress={progress} />
       <Typography variant="body2">
-        You can move this popup somewhere inoffensive, but don&apos;t close it!{" "}
+        For very long exports, leave this popup open (but you can shrink and
+        move it somewhere inoffensive).{" "}
         <Tooltip
           title="Browser limitations throttle background tabs and this could interrupt the file export. This popup keeps the export running smoothly."
           arrow

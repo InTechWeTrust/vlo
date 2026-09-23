@@ -98,14 +98,19 @@
       "order": 2
     },
     {
-      "workflow_id": "vlo_minimax_h3_inpaint.json",
+      "workflow_id": "vlo_ltx2_5_clean_plate.json",
       "parent_id": "video.edit",
       "order": 3
     },
     {
-      "workflow_id": "vlo_minimax_h3_inpaint_flf2va.json",
+      "workflow_id": "vlo_minimax_h3_inpaint.json",
       "parent_id": "video.edit",
       "order": 4
+    },
+    {
+      "workflow_id": "vlo_minimax_h3_inpaint_flf2va.json",
+      "parent_id": "video.edit",
+      "order": 5
     },
     {
       "workflow_id": "vlo_wan_ttm.json",

@@ -295,6 +295,7 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         "vlo_VACE_inpaint.json": "video.edit",
         "vlo_ltx2_5_inpaint.json": "video.edit",
         "vlo_ltx2_5_ic_edit.json": "video.edit",
+        "vlo_ltx2_5_clean_plate.json": "video.edit",
         "vlo_minimax_h3_inpaint.json": "video.edit",
         "vlo_minimax_h3_inpaint_flf2va.json": "video.edit",
         "vlo_wan_ttm.json": "video.control",

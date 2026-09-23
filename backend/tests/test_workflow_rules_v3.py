@@ -558,6 +558,23 @@ def test_ic_edit_rules_allow_frontend_control_prompt_enhancer_rewrites():
     assert missing_mask_rewrite.when.match == "all_missing"
     assert missing_mask_rewrite.bypass == ["689", "693", "694", "703", "708"]
 
+
+def test_clean_plate_rules_bypass_mask_chain_without_prompt_enhancer():
+    rules_model, warnings = load_rules_model_for_workflow(
+        DEFAULT_WORKFLOWS_DIR,
+        "vlo_ltx2_5_clean_plate.json",
+    )
+
+    assert warnings == []
+    assert rules_model.frontend_controls == {}
+    assert len(rules_model.rewrites) == 1
+
+    missing_mask_rewrite = rules_model.rewrites[0]
+    assert missing_mask_rewrite.when.kind == "input_presence"
+    assert missing_mask_rewrite.when.inputs == ["689"]
+    assert missing_mask_rewrite.when.match == "all_missing"
+    assert missing_mask_rewrite.bypass == ["689", "693", "694", "703", "708"]
+
 def test_ltx23_inpaint_rules_allow_prompt_enhancer_rewrites_and_retake_widget():
     rules_model, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,

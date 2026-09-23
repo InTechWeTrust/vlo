@@ -9,6 +9,7 @@ WORKFLOW_ROOT = Path(__file__).parents[1] / "assets" / ".config"
 WORKFLOW_NAMES = (
     "vlo_ltx2_5.json",
     "vlo_ltx2_5_ic_edit.json",
+    "vlo_ltx2_5_clean_plate.json",
     "vlo_ltx2_5_inpaint.json",
 )
 
