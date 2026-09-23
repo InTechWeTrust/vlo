@@ -28,3 +28,30 @@ def test_minimax_h3_inpaint_flf2va_workflow_is_packaged_in_both_modes():
     assert_profiles_agree_apart_from_weights(WORKFLOW_NAME)
     assert high_vram_rules == default_rules
     ResolvedWorkflowRules.model_validate(default_rules)
+
+
+def test_minimax_h3_inpaint_flf2va_lora_loader_ships_bypassed_between_unet_and_attention():
+    rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
+    workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
+    nodes = {node["id"]: node for node in workflow["nodes"]}
+    links = {link[0]: tuple(link[1:5]) for link in workflow["links"]}
+
+    # Same contract as the i2v/r2v loaders: the panel discovers the bypassed
+    # node, and bypassing it keeps ComfyUI's missing-model scan from flagging
+    # the placeholder LoRA for users who do not have that file.
+    lora = rules["nodes"]["99"]["widgets"]["lora_name"]
+    assert lora["discover_when_bypassed"] is True
+    assert lora["default_node_bypass"] is True
+    assert "options" not in lora
+    assert lora["section_id"] == "lora_loaders"
+
+    sections = {section["id"]: section for section in rules["sections"]}
+    assert sections["advanced_settings"]["order"] > sections["lora_loaders"]["order"]
+
+    loader = nodes[99]
+    assert loader["type"] == "LoraLoaderModelOnly"
+    assert loader["mode"] == 4
+
+    # UNETLoader -> LoRA -> attention; bypassing passes MODEL straight through.
+    assert links[loader["inputs"][0]["link"]][:2] == (44, 0)
+    assert [links[link_id][2] for link_id in loader["outputs"][0]["links"]] == [47]

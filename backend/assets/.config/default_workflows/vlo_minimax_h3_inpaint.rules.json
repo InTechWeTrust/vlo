@@ -2,8 +2,9 @@
   "version": 3,
   "name": "MiniMax H3 Inpaint (Reference)",
   "sections": [
-    { "id": "references", "title": "References", "order": 3, "default_open": true },
-    { "id": "advanced_settings", "title": "Advanced Settings", "order": 4, "default_open": false }
+    { "id": "lora_loaders", "title": "LoRA loaders", "order": 3, "default_open": true },
+    { "id": "references", "title": "References", "order": 4, "default_open": true },
+    { "id": "advanced_settings", "title": "Advanced Settings", "order": 5, "default_open": false }
   ],
 
   "nodes": {
@@ -147,6 +148,18 @@
           "group_id": "sampling",
           "group_title": "Sampling",
           "group_order": 0
+        }
+      }
+    },
+    "99": {
+      "widgets": {
+        "lora_name": {
+          "label": "Model",
+          "discover_when_bypassed": true,
+          "default_node_bypass": true,
+          "section_id": "lora_loaders",
+          "group_id": "lora_model",
+          "group_title": "Model LoRA"
         }
       }
     },

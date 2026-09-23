@@ -162,8 +162,47 @@ describe("shipped MiniMax workflow section order", () => {
     ]);
   });
 
+  it.each(MODES)("orders the inpaint (base) panel in %s", (dir) => {
+    renderPanel(loadSections(dir, "vlo_minimax_h3_inpaint_flf2va"), [
+      widget("47", "attention", "Attention backend", "advanced_settings"),
+      widget("99", "lora_name", "Model", "lora_loaders"),
+      widget("37", "steps", "Steps"),
+    ]);
+
+    expectOrder([
+      "Image inputs",
+      "Prompt",
+      "Settings",
+      "LoRA loaders",
+      "Advanced Settings",
+    ]);
+  });
+
+  it.each(MODES)("orders the inpaint (reference) panel in %s", (dir) => {
+    renderPanel(loadSections(dir, "vlo_minimax_h3_inpaint"), [
+      widget("81", "ref_image_size", "Reference image size", "references"),
+      widget("47", "attention", "Attention backend", "advanced_settings"),
+      widget("99", "lora_name", "Model", "lora_loaders"),
+      widget("37", "steps", "Steps"),
+    ]);
+
+    expectOrder([
+      "Image inputs",
+      "Prompt",
+      "Settings",
+      "LoRA loaders",
+      "References",
+      "Advanced Settings",
+    ]);
+  });
+
   it.each(MODES)("keeps advanced settings last and collapsed in %s", (dir) => {
-    for (const workflow of ["vlo_minimax_h3_i2v", "vlo_minimax_h3_r2v"]) {
+    for (const workflow of [
+      "vlo_minimax_h3_i2v",
+      "vlo_minimax_h3_r2v",
+      "vlo_minimax_h3_inpaint",
+      "vlo_minimax_h3_inpaint_flf2va",
+    ]) {
       const sections = loadSections(dir, workflow);
       const advanced = sections.find((s) => s.id === "advanced_settings");
       expect(advanced?.default_open).toBe(false);
