@@ -204,7 +204,12 @@ describe("processIframeTimelineFrame", () => {
 
     // No selection is passed on: the generation panel's click-to-select image
     // capture renders the whole project at the tick, and this must match it.
-    expect(captureFrame).toHaveBeenCalledWith(48_000, "iframe-timeline-frame");
+    expect(captureFrame).toHaveBeenCalledWith(
+      48_000,
+      "iframe-timeline-frame",
+      undefined,
+      { preserveMaskedPixels: true },
+    );
     expect(result.image).toBe(frame);
     expect(result.timelineSelection).toEqual(pointSelection);
     expect(result.timelineSelection).not.toBe(pointSelection);

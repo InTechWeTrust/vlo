@@ -1708,6 +1708,8 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
               const frameFile = await captureFramePngAtTick(
                 selectedTick,
                 "generation-frame",
+                undefined,
+                { preserveMaskedPixels: true },
               );
               if (destination) {
                 if (destination.active()) await destination.complete({ kind: "frame", file: frameFile, timelineSelection: createPointTimelineSelection(selectedTick) });

@@ -8,3 +8,4 @@ export type {
 } from "./browserVideo";
 export { extractAudioTrackToWav } from "./audioTrack";
 export type { ExtractAudioTrackOptions } from "./audioTrack";
+export { encodeRgbaPng } from "./png";

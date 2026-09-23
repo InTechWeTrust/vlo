@@ -380,6 +380,7 @@ export async function restoreMediaInputsFromMetadata(
         timelineSelection.anchor,
         "generation-frame",
         timelineSelection,
+        { preserveMaskedPixels: true },
       );
       actions.setMediaInputFrameWithSelection(
         inputId,

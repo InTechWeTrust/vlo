@@ -194,6 +194,8 @@ export async function processIframeTimelineFrame(
   const image = await deps.captureFrame(
     timelineSelection.anchor,
     "iframe-timeline-frame",
+    undefined,
+    { preserveMaskedPixels: true },
   );
   return {
     timelineSelection: structuredClone(timelineSelection),

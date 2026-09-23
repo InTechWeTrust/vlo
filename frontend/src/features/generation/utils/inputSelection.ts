@@ -78,15 +78,26 @@ function assertSelectionRenderUsable(
   }
 }
 
+export interface CaptureFramePngOptions {
+  /**
+   * For frames used as image inputs: pixels hidden by masks keep their colour
+   * under zero alpha, so a loader that ignores alpha sees the whole frame
+   * while the alpha still carries the mask. Thumbnails leave it off.
+   */
+  preserveMaskedPixels?: boolean;
+}
+
 export async function captureFramePngAtTick(
   tick: number,
   filenamePrefix: string,
   timelineSelection?: TimelineSelection,
+  options: CaptureFramePngOptions = {},
 ): Promise<File> {
   return renderProjectFrameFileAtTick(tick, {
     filenamePrefix,
     mimeType: "image/png",
     timelineSelection,
+    ...(options.preserveMaskedPixels ? { preserveMaskedPixels: true } : {}),
   });
 }
 
@@ -1102,6 +1113,7 @@ export async function renderTimelineSelectionToFrameBatch(
       tick,
       `generation-selection-frame-${frameIndex}`,
       timelineSelection,
+      { preserveMaskedPixels: true },
     );
     frames.push(frame);
   }
@@ -1112,6 +1124,7 @@ export async function renderTimelineSelectionToFrameBatch(
         startTick,
         "generation-selection-frame-0",
         timelineSelection,
+        { preserveMaskedPixels: true },
       ),
     );
   }
