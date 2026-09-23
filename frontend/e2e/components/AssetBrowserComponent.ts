@@ -57,16 +57,10 @@ export class AssetBrowserComponent {
     }
 
     /**
-     * Returns the text content of all visible asset card names, in display order.
+     * Asset card name labels, in display order. Assert on this with
+     * `toHaveText([...])` so the check retries until the cards have rendered.
      */
-    async getCardNames(): Promise<string[]> {
-        const nameLocators = this.root.getByTestId('asset-card-name');
-        const count = await nameLocators.count();
-        const names: string[] = [];
-        for (let i = 0; i < count; i++) {
-            const text = await nameLocators.nth(i).innerText();
-            names.push(text.trim());
-        }
-        return names;
+    get cardNames() {
+        return this.root.getByTestId('asset-card-name');
     }
 }

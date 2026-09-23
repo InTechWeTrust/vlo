@@ -109,7 +109,11 @@ test.describe('Critical editor journeys', () => {
         await expect(rightSidebar.getTab('Mask')).toHaveCount(0);
         await expect(transformationPanel.adjustmentDepthSection).toBeVisible();
 
-        await page.getByLabel('Ripple timeline timing').click();
+        // New adjustment clips default to ripple retiming, so toggling the
+        // switch opts this one out.
+        const rippleSwitch = page.getByLabel('Ripple timeline timing');
+        await expect(rippleSwitch).toBeChecked();
+        await rippleSwitch.click();
         await page.getByLabel('All tracks below').click();
 
         await expect.poll(() => {
@@ -123,7 +127,7 @@ test.describe('Critical editor journeys', () => {
                 depth: adjustment?.depth,
                 retimingMode: adjustment?.retimingMode,
             };
-        }).toEqual({ depth: 3, retimingMode: 'ripple' });
+        }).toEqual({ depth: 3, retimingMode: 'static' });
     });
 
     test('filter can be scoped to a clip mask and the effect mask persists', async ({

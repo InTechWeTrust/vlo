@@ -16,6 +16,10 @@ const ALLOWED_CONSOLE_ERRORS = [
     // returns a status code — so this stays scoped to the abort, not a genuine
     // listing failure.
     /Failed to list directory .*Failed to fetch/i,
+    // Same abort, one step later: loading the composite library can write
+    // normalized records back, and a reload during that write rejects the
+    // startup load chain in useEditorAssetLibrary.
+    /\[AssetLibrary\] Skipping disk scan because asset index load failed TypeError: Failed to fetch/i,
 ];
 
 async function setupEditor(

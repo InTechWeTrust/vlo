@@ -6,6 +6,7 @@ import {
     BRIDGE_VERSION,
     REQUIRED_BRIDGE_CAPABILITIES,
 } from '../../src/features/generation/services/iframeBridgeClient';
+import { DEFAULT_GENERATION_WORKFLOW_MENU } from '../../src/features/generation/workflowMenu';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -414,6 +415,129 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
         });
     });
 
+    // ── Runtime capabilities ──
+    // Feature surfaces gate on these rather than /app/status. SAM2 is derived
+    // from the same `runtimeStatus.sam2` override so specs set it in one place.
+    const checkedAt = new Date(0).toISOString();
+    const sam2Available = defaultRuntimeStatus.sam2.status === 'available';
+    const sam2Capability = {
+        id: 'sam2',
+        label: 'SAM2',
+        state: sam2Available ? 'ready' : 'unavailable',
+        canAttempt: sam2Available,
+        verifiedThrough: sam2Available ? 'loaded' : null,
+        checkedAt,
+        selectedModel: null,
+        device: null,
+        models: [],
+        checks: sam2Available
+            ? []
+            : [
+                  {
+                      id: 'sam2.runtime',
+                      status: 'fail',
+                      stage: 'discovered',
+                      summary:
+                          defaultRuntimeStatus.sam2.error ?? 'SAM2 is unavailable',
+                  },
+              ],
+        lastFailure: null,
+    };
+    const runtimeEnvironment = {
+        checkedAt,
+        python: {
+            executable: '/mock/python',
+            version: '3.12.0',
+            implementation: 'CPython',
+            prefix: '/mock',
+            virtualEnv: true,
+        },
+        platform: { system: 'Linux', release: 'mock', machine: 'x86_64' },
+        torch: null,
+        probe: { ok: true, timedOut: false, error: null },
+        packages: {},
+    };
+
+    await page.route(
+        (url) => /\/app\/runtime-capabilities(?:\/|$)/.test(url.pathname),
+        async (route) => {
+            const { pathname } = new URL(route.request().url());
+            const [, capabilityPath = ''] = pathname.split('/app/runtime-capabilities');
+            if (capabilityPath === '' || capabilityPath === '/') {
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        capabilities: [sam2Capability],
+                        environment: runtimeEnvironment,
+                    }),
+                });
+                return;
+            }
+            if (capabilityPath === '/sam2') {
+                await route.fulfill({
+                    status: 200,
+                    contentType: 'application/json',
+                    body: JSON.stringify({
+                        capability: sam2Capability,
+                        environment: runtimeEnvironment,
+                    }),
+                });
+                return;
+            }
+            await route.fulfill({
+                status: 404,
+                contentType: 'application/json',
+                body: JSON.stringify({ detail: 'Unknown runtime capability' }),
+            });
+        },
+    );
+
+    // ── Backend-owned editor state ──
+    // Loaded on every editor open. Unrouted, these reach the dev-server proxy,
+    // whose connect timeout to the absent backend can land mid-test as a 500.
+    await page.route('**/app/model-work', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ revision: 0, ready: true, entries: [], resources: [] }),
+        });
+    });
+
+    await page.route('**/app/settings', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                settings: {
+                    workflowMode: 'default',
+                    comfyuiUrl: defaultRuntimeStatus.comfyui.url,
+                    comfyuiInstallDir: null,
+                    comfyuiInstallVerification: null,
+                    highVramPromptStatus: null,
+                    comfyuiInstallDirPromptStatus: null,
+                },
+                hardware: {
+                    vram: { totalMb: null, source: null, meetsHighVramThreshold: false },
+                    highVramThresholdMb: 24576,
+                },
+                recommendations: {
+                    shouldPromptForHighVram: false,
+                    shouldPromptForComfyuiInstallDir: false,
+                },
+            }),
+        });
+    });
+
+    await page.route('**/comfy/workflow/menu', async (route) => {
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            // The backend serves the packaged tree unless the user customised it.
+            body: JSON.stringify(DEFAULT_GENERATION_WORKFLOW_MENU),
+        });
+    });
+
     // ── Extension inventory ──
     // FrontendExtensionRuntime loads this during bootstrap on every page. Without
     // a route the fetch reaches the network, fails, and the runtime logs a
@@ -636,6 +760,21 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
 
     await page.route('**/comfy/api/interrupt', async (route) => {
         await route.fulfill({ status: 200 });
+    });
+
+    // Prompt-scoped cancel: every requested prompt is reported as cancelled.
+    await page.route('**/comfy/generations/cancel', async (route) => {
+        const { prompt_ids: promptIds = [] } = (route.request().postDataJSON() ??
+            {}) as { prompt_ids?: string[] };
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                requested: promptIds,
+                cancelled: promptIds,
+                uncancelled: [],
+            }),
+        });
     });
 
     // ── SAM2 endpoints ──

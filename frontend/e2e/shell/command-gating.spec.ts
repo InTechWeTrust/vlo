@@ -8,12 +8,12 @@ import { test, expect } from '../fixtures';
  *
  * - `AppMenu` renders a command item **disabled** when its `when` clause fails
  *   (`hostCommandTable.isEnabled`, AppMenu.tsx:133).
- * - The clip context menu gates by **presence**: `canExtractAudio`,
- *   `canReverseClip` and `canMute` decide whether the descriptor is emitted at
- *   all (TimelineClip.tsx:550-585).
+ * - The clip context menu gates by **presence**: `canExtractAudio` and
+ *   `canReverseClip` decide whether the descriptor is emitted at all.
  *
  * These specs cover the presence form, which is what the clip menu actually
- * uses, plus the menu label projecting live command state.
+ * uses, plus the clip mute toggle projecting live state. Mute moved out of the
+ * menu into a clip overlay badge, which is now where its label is live.
  */
 test.describe('Shell command gating', () => {
     test('@smoke clip capabilities decide which commands the menu offers', async ({
@@ -39,26 +39,23 @@ test.describe('Shell command gating', () => {
         await expect(shell.getItem('Extract Audio')).toHaveCount(0);
         await expect(shell.getItem('Reverse Clip')).toHaveCount(0);
         await expect(shell.getItem('Delete')).toBeVisible();
-        await expect(shell.getItem('Mute')).toBeVisible();
 
         await page.keyboard.press('Escape');
     });
 
-    test('menu labels project live command state', async ({
+    test('clip mute toggle projects live mute state', async ({
         editorWithClips,
     }) => {
-        const { shell, timeline } = editorWithClips;
+        const { timeline } = editorWithClips;
+        const muteToggle = timeline.clips
+            .first()
+            .locator('[data-overlay-item-id="clip-mute-toggle"]');
 
-        await shell.openContextMenu(timeline.clips.first());
-        await expect(shell.getItem('Mute')).toBeVisible();
-        await expect(shell.getItem('Unmute')).toHaveCount(0);
+        await expect(muteToggle.getByTitle('Mute', { exact: true })).toBeVisible();
+        await muteToggle.click();
 
-        await shell.getItem('Mute').click();
-        await expect(shell.menu).toHaveCount(0);
-
-        // Re-opening must reflect the new clip state, not a stale descriptor.
-        await shell.openContextMenu(timeline.clips.first());
-        await expect(shell.getItem('Unmute')).toBeVisible();
-        await expect(shell.getItem('Mute')).toHaveCount(0);
+        // The badge must reflect the new clip state, not a stale item.
+        await expect(muteToggle.getByTitle('Unmute', { exact: true })).toBeVisible();
+        await expect(muteToggle.getByTitle('Mute', { exact: true })).toHaveCount(0);
     });
 });

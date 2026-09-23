@@ -206,8 +206,8 @@
       "revision": 1,
       "bake": {
         "status": "ready",
-        "requestedKey": "v4:4f6a0ed8:16fps:1920x1080:transparent:1s-gop:4b7d53b8",
-        "readyKey": "v4:4f6a0ed8:16fps:1920x1080:transparent:1s-gop:4b7d53b8",
+        "requestedKey": "v4:3f36875:16fps:1920x1080:transparent:1s-gop:4b7d53b8",
+        "readyKey": "v4:3f36875:16fps:1920x1080:transparent:1s-gop:4b7d53b8",
         "readyRevision": 1,
         "assetId": "f9c53892-1f4a-412e-acfd-4fa3f1b33212",
         "updatedAt": 1784584073163

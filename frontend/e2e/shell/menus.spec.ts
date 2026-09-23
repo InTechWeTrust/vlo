@@ -17,7 +17,7 @@ test.describe('Shell host menus', () => {
         await shell.openContextMenu(timeline.clips.first());
 
         // Subject-scoped items for `timeline.clip.context`.
-        for (const label of ['Delete', 'Copy', 'Extract Audio', 'Reverse Clip', 'Mute']) {
+        for (const label of ['Delete', 'Copy', 'Extract Audio', 'Reverse Clip']) {
             await expect(shell.getItem(label)).toBeVisible();
         }
 

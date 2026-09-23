@@ -221,7 +221,7 @@ test.describe('Current-project masks and composites', () => {
         await timeline.getClipById(MASK_PARENT_CLIP_ID).click({ force: true });
         await rightSidebar.switchToTab('Mask');
         const inverseMasking = maskPanel.panel.getByRole('checkbox', {
-            name: 'Inverse Masking',
+            name: 'Inverse Mask Algebra',
         });
         await expect(inverseMasking).not.toBeChecked();
         const compositionSaved = waitForTimelineSave(editor);
@@ -234,7 +234,7 @@ test.describe('Current-project masks and composites', () => {
         await rightSidebar.switchToTab('Mask');
         await expect(
             maskPanel.panel.getByRole('checkbox', {
-                name: 'Inverse Masking',
+                name: 'Inverse Mask Algebra',
             }),
         ).toBeChecked();
         expect(

@@ -124,6 +124,19 @@ export async function installWebSocketMock(page: Page) {
                             else h.handleEvent(messageEvent);
                         });
                     }
+                } else if (url.includes('/app/model-work/ws')) {
+                    // An idle model-work ledger: nothing running, nothing held.
+                    const snapshotEvent = new MessageEvent('message', {
+                        data: JSON.stringify({
+                            type: 'snapshot',
+                            data: { revision: 0, ready: true, entries: [], resources: [] },
+                        }),
+                    });
+                    if (instance.onmessage) instance.onmessage(snapshotEvent);
+                    listeners.message.forEach((h) => {
+                        if (typeof h === 'function') h(snapshotEvent);
+                        else h.handleEvent(snapshotEvent);
+                    });
                 }
             }, 0);
 
@@ -134,7 +147,11 @@ export async function installWebSocketMock(page: Page) {
         // @ts-expect-error - Override native WebSocket
         window.WebSocket = function MockWebSocket(url: string, protocols?: string | string[]) {
             // Only intercept backend-owned WebSocket connections used by e2e.
-            if (url.includes('/comfy/ws') || url.includes('/app/generation-delivery/ws')) {
+            if (
+                url.includes('/comfy/ws') ||
+                url.includes('/app/generation-delivery/ws') ||
+                url.includes('/app/model-work/ws')
+            ) {
                 return createMockWs(url);
             }
             // Pass through non-ComfyUI connections to the real WebSocket

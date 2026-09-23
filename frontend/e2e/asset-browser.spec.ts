@@ -33,10 +33,11 @@ test.describe('Asset Browser', () => {
         //   1. A_woman_in_202601222322_bssr2mp4        (createdAt: 1769553611587)
         //   2. hf_20260122_232943_...                   (createdAt: 1769553568646)
         //   3. Professional_Mode_...                    (createdAt: 1769553528060)
-        const names = await assetBrowser.getCardNames();
-        expect(names[0]).toContain('A_woman_in');
-        expect(names[1]).toContain('hf_20260122');
-        expect(names[2]).toContain('Professional_Mode');
+        await expect(assetBrowser.cardNames).toHaveText([
+            /A_woman_in/,
+            /hf_20260122/,
+            /Professional_Mode/,
+        ]);
     });
 
     test('Sort by Name A-Z', async ({ editor }) => {
@@ -45,10 +46,11 @@ test.describe('Asset Browser', () => {
         await assetBrowser.sortBy('Name (A-Z)');
 
         // Alphabetical: A_woman_in, hf_20260122, Professional_Mode
-        const names = await assetBrowser.getCardNames();
-        expect(names[0]).toContain('A_woman_in');
-        expect(names[1]).toContain('hf_20260122');
-        expect(names[2]).toContain('Professional_Mode');
+        await expect(assetBrowser.cardNames).toHaveText([
+            /A_woman_in/,
+            /hf_20260122/,
+            /Professional_Mode/,
+        ]);
     });
 
     test('Sort by Oldest First', async ({ editor }) => {
@@ -57,10 +59,11 @@ test.describe('Asset Browser', () => {
         await assetBrowser.sortBy('Oldest First');
 
         // createdAt ascending: Professional_Mode (oldest), hf_20260122, A_woman_in (newest)
-        const names = await assetBrowser.getCardNames();
-        expect(names[0]).toContain('Professional_Mode');
-        expect(names[1]).toContain('hf_20260122');
-        expect(names[2]).toContain('A_woman_in');
+        await expect(assetBrowser.cardNames).toHaveText([
+            /Professional_Mode/,
+            /hf_20260122/,
+            /A_woman_in/,
+        ]);
     });
 
     test('Video card shows duration badge and thumbnail', async ({ editor }) => {
