@@ -1,9 +1,134 @@
 {
   "id": "e2c3e7f6-e19d-4eb7-b9a5-dbc31fc43988",
   "revision": 0,
-  "last_node_id": 105,
-  "last_link_id": 126,
+  "last_node_id": 107,
+  "last_link_id": 136,
   "nodes": [
+    {
+      "id": 78,
+      "type": "MarkdownNote",
+      "pos": [
+        -1070,
+        -40
+      ],
+      "size": [
+        500,
+        730
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "Note: Model Links",
+      "properties": {},
+      "widgets_values": [
+        "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Model Links\n\n**vae**\n\n- [seedvr2_ema_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/vae/seedvr2_ema_vae_fp16.safetensors)\n\n**diffusion_models**\n\n- [seedvr2_7b_fp16.safetensors](https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/diffusion_models/seedvr2_7b_fp16.safetensors)\n\n\n## Model Storage Location\n\n```\n\ud83d\udcc2 ComfyUI/\n\u251c\u2500\u2500 \ud83d\udcc2 models/\n\u2502   \u251c\u2500\u2500 \ud83d\udcc2 vae/\n\u2502   \u2502   \u2514\u2500\u2500 seedvr2_ema_vae_fp16.safetensors\n\u2502   \u2514\u2500\u2500 \ud83d\udcc2 diffusion_models/\n\u2502       \u2514\u2500\u2500 seedvr2_7b_fp16.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+      ],
+      "widgets_values_named": {
+        "text": "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Model Links\n\n**vae**\n\n- [seedvr2_ema_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/vae/seedvr2_ema_vae_fp16.safetensors)\n\n**diffusion_models**\n\n- [seedvr2_7b_fp16.safetensors](https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/diffusion_models/seedvr2_7b_fp16.safetensors)\n\n\n## Model Storage Location\n\n```\n\ud83d\udcc2 ComfyUI/\n\u251c\u2500\u2500 \ud83d\udcc2 models/\n\u2502   \u251c\u2500\u2500 \ud83d\udcc2 vae/\n\u2502   \u2502   \u2514\u2500\u2500 seedvr2_ema_vae_fp16.safetensors\n\u2502   \u2514\u2500\u2500 \ud83d\udcc2 diffusion_models/\n\u2502       \u2514\u2500\u2500 seedvr2_7b_fp16.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
+      },
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 82,
+      "type": "MarkdownNote",
+      "pos": [
+        -520,
+        -40
+      ],
+      "size": [
+        500,
+        730
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "Note: SeedVR2",
+      "properties": {},
+      "widgets_values": [
+        "## SeedVR2\n\nOne-step video restoration / upscale (ICLR 2026). This workflow uses the **7B FP16** model for video upscaling.\n\n- Project: [SeedVR2](https://iceclear.github.io/projects/seedvr2/)\n- ComfyUI native support: [PR #14424](https://github.com/Comfy-Org/ComfyUI/pull/14424)\n\n### Subgraph parameters\n\n- **trim_video**: enable to cut a segment before upscaling\n- **trim_start_time / duration**: trim start (seconds) and length\n- **scale_multiplier**: upscale factor (default `2`)\n- **seed / sampler / scheduler / denoise**: sampling controls; `denoise=1` means full restore\n- **color_correction_method**: optional color match to original (default `none`)\n- **unet_name / vae_name**: model files to load\n\n### Tip: long videos\n\nIf the input is too long, turn on **trim_video**, upscale in shorter segments, then merge them. This helps avoid OOM / slowdowns on long clips.\n"
+      ],
+      "widgets_values_named": {
+        "text": "## SeedVR2\n\nOne-step video restoration / upscale (ICLR 2026). This workflow uses the **7B FP16** model for video upscaling.\n\n- Project: [SeedVR2](https://iceclear.github.io/projects/seedvr2/)\n- ComfyUI native support: [PR #14424](https://github.com/Comfy-Org/ComfyUI/pull/14424)\n\n### Subgraph parameters\n\n- **trim_video**: enable to cut a segment before upscaling\n- **trim_start_time / duration**: trim start (seconds) and length\n- **scale_multiplier**: upscale factor (default `2`)\n- **seed / sampler / scheduler / denoise**: sampling controls; `denoise=1` means full restore\n- **color_correction_method**: optional color match to original (default `none`)\n- **unet_name / vae_name**: model files to load\n\n### Tip: long videos\n\nIf the input is too long, turn on **trim_video**, upscale in shorter segments, then merge them. This helps avoid OOM / slowdowns on long clips.\n"
+      },
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 106,
+      "type": "vloMemoryLoadVideo",
+      "pos": [
+        32.02805435323018,
+        -44.6762094298437
+      ],
+      "size": [
+        272.990234375,
+        299.5570068359375
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "file",
+          "name": "file",
+          "type": "COMBO",
+          "widget": {
+            "name": "file"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "disable_in_memory",
+          "name": "disable_in_memory",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "disable_in_memory"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "upload",
+          "name": "upload",
+          "type": "IMAGEUPLOAD",
+          "widget": {
+            "name": "upload"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "VIDEO",
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            127
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "vloMemoryLoadVideo"
+      },
+      "widgets_values": [
+        "generation-selection-1783940010586.mp4",
+        false,
+        "refresh",
+        false,
+        "image"
+      ],
+      "widgets_values_named": {
+        "file": "generation-selection-1783940010586.mp4",
+        "Auto-refresh after generation": false,
+        "refresh": "refresh",
+        "disable_in_memory": false,
+        "upload": "image"
+      }
+    },
     {
       "id": 66,
       "type": "1970dcb4-982a-4c01-a373-4d239a3041e4",
@@ -22,7 +147,7 @@
         {
           "name": "video",
           "type": "VIDEO",
-          "link": 72
+          "link": 127
         },
         {
           "label": "trim_video",
@@ -39,6 +164,14 @@
           "type": "FLOAT",
           "widget": {
             "name": "start_time"
+          },
+          "link": null
+        },
+        {
+          "name": "duration",
+          "type": "FLOAT",
+          "widget": {
+            "name": "duration"
           },
           "link": null
         },
@@ -61,6 +194,38 @@
           "link": null
         },
         {
+          "name": "sampler_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "sampler_name"
+          },
+          "link": null
+        },
+        {
+          "name": "scheduler",
+          "type": "COMBO",
+          "widget": {
+            "name": "scheduler"
+          },
+          "link": null
+        },
+        {
+          "name": "denoise",
+          "type": "FLOAT",
+          "widget": {
+            "name": "denoise"
+          },
+          "link": null
+        },
+        {
+          "name": "color_correction_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "color_correction_method"
+          },
+          "link": null
+        },
+        {
           "label": "split_latent",
           "name": "value",
           "type": "BOOLEAN",
@@ -77,14 +242,56 @@
             "name": "temporal_overlap_1"
           },
           "link": null
+        },
+        {
+          "name": "unet_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "unet_name"
+          },
+          "link": null
+        },
+        {
+          "name": "vae_name",
+          "type": "COMBO",
+          "widget": {
+            "name": "vae_name"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
           "name": "VIDEO",
           "type": "VIDEO",
+          "links": []
+        },
+        {
+          "name": "images",
+          "type": "IMAGE",
           "links": [
-            73
+            132
+          ]
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "links": [
+            135
+          ]
+        },
+        {
+          "name": "bit_depth",
+          "type": "COMBO",
+          "links": [
+            136
+          ]
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            134
           ]
         }
       ],
@@ -131,160 +338,225 @@
       }
     },
     {
-      "id": 73,
-      "type": "LoadVideo",
+      "id": 107,
+      "type": "vloSaveVideo",
       "pos": [
-        20,
-        -30
+        947.6334315080337,
+        -4.49309622478385
       ],
       "size": [
-        340,
-        550
-      ],
-      "flags": {},
-      "order": 0,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "VIDEO",
-          "type": "VIDEO",
-          "links": [
-            72
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "LoadVideo",
-        "cnr_id": "comfy-core",
-        "ver": "0.28.0"
-      },
-      "widgets_values": [
-        "grainy_perfume_shot_crf32.mp4",
-        "image"
-      ],
-      "widgets_values_named": {
-        "file": "grainy_perfume_shot_crf32.mp4",
-        "upload": "image"
-      }
-    },
-    {
-      "id": 76,
-      "type": "SaveVideo",
-      "pos": [
-        930,
-        -30
-      ],
-      "size": [
-        390,
-        106
+        270,
+        342
       ],
       "flags": {},
       "order": 4,
       "mode": 0,
       "inputs": [
         {
-          "name": "video",
-          "type": "VIDEO",
-          "link": 73
+          "localized_name": "images",
+          "name": "images",
+          "type": "IMAGE",
+          "link": 132
+        },
+        {
+          "localized_name": "audio",
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": 134
+        },
+        {
+          "localized_name": "fps",
+          "name": "fps",
+          "type": "FLOAT",
+          "widget": {
+            "name": "fps"
+          },
+          "link": 135
+        },
+        {
+          "localized_name": "filename_prefix",
+          "name": "filename_prefix",
+          "type": "STRING",
+          "widget": {
+            "name": "filename_prefix"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "save_output",
+          "name": "save_output",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "save_output"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "width",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "height",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "upscale_method",
+          "name": "upscale_method",
+          "type": "COMBO",
+          "widget": {
+            "name": "upscale_method"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crop",
+          "name": "crop",
+          "type": "COMBO",
+          "widget": {
+            "name": "crop"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "format",
+          "name": "format",
+          "type": "COMBO",
+          "widget": {
+            "name": "format"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "codec",
+          "name": "codec",
+          "type": "COMBO",
+          "widget": {
+            "name": "codec"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "crf",
+          "name": "crf",
+          "type": "FLOAT",
+          "widget": {
+            "name": "crf"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "bit_depth",
+          "name": "bit_depth",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "bit_depth"
+          },
+          "link": 136
+        },
+        {
+          "localized_name": "color_space",
+          "name": "color_space",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "color_space"
+          },
+          "link": null
         }
       ],
       "outputs": [
         {
+          "localized_name": "video",
           "name": "video",
           "type": "VIDEO",
           "links": null
         }
       ],
       "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.28.0",
-        "Node name for S&R": "SaveVideo"
+        "Node name for S&R": "vloSaveVideo"
       },
       "widgets_values": [
+        30,
         "video/Upscaled_seedVR2",
+        false,
+        0,
+        0,
+        "bicubic",
+        "disabled",
         "auto",
         "auto",
-        "auto"
+        23,
+        "auto",
+        "sRGB"
       ],
       "widgets_values_named": {
+        "fps": 30,
         "filename_prefix": "video/Upscaled_seedVR2",
+        "save_output": false,
+        "width": 0,
+        "height": 0,
+        "upscale_method": "bicubic",
+        "crop": "disabled",
         "format": "auto",
-        "format.codec": "auto",
-        "codec": "auto"
+        "codec": "auto",
+        "crf": 23,
+        "bit_depth": "auto",
+        "color_space": "sRGB"
       }
-    },
-    {
-      "id": 78,
-      "type": "MarkdownNote",
-      "pos": [
-        -1070,
-        -40
-      ],
-      "size": [
-        500,
-        730
-      ],
-      "flags": {},
-      "order": 1,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "title": "Note: Model Links",
-      "properties": {},
-      "widgets_values": [
-        "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Model Links\n\n**vae**\n\n- [seedvr2_ema_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/vae/seedvr2_ema_vae_fp16.safetensors)\n\n**diffusion_models**\n\n- [seedvr2_7b_fp16.safetensors](https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/diffusion_models/seedvr2_7b_fp16.safetensors)\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 vae/\n│   │   └── seedvr2_ema_vae_fp16.safetensors\n│   └── 📂 diffusion_models/\n│       └── seedvr2_7b_fp16.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
-      ],
-      "widgets_values_named": {
-        "text": "Guide: [Subgraph](https://docs.comfy.org/interface/features/subgraph)\n\n## Model Links\n\n**vae**\n\n- [seedvr2_ema_vae_fp16.safetensors](https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/vae/seedvr2_ema_vae_fp16.safetensors)\n\n**diffusion_models**\n\n- [seedvr2_7b_fp16.safetensors](https://huggingface.co/Comfy-Org/SeedVR2/resolve/main/diffusion_models/seedvr2_7b_fp16.safetensors)\n\n\n## Model Storage Location\n\n```\n📂 ComfyUI/\n├── 📂 models/\n│   ├── 📂 vae/\n│   │   └── seedvr2_ema_vae_fp16.safetensors\n│   └── 📂 diffusion_models/\n│       └── seedvr2_7b_fp16.safetensors\n```\n\n## Report Issue\n\nNote: Please update ComfyUI first ([guide](https://docs.comfy.org/installation/update_comfyui)) and prepare required models. Desktop/Cloud updates follow stable releases, so some nightly-supported models may not be available yet.\n\n- Cannot run / runtime errors: [ComfyUI/issues](https://github.com/comfyanonymous/ComfyUI/issues)\n- UI / frontend issues: [ComfyUI_frontend/issues](https://github.com/Comfy-Org/ComfyUI_frontend/issues)\n- Workflow issues: [workflow_templates/issues](https://github.com/Comfy-Org/workflow_templates/issues)\n"
-      },
-      "color": "#222",
-      "bgcolor": "#000"
-    },
-    {
-      "id": 82,
-      "type": "MarkdownNote",
-      "pos": [
-        -520,
-        -40
-      ],
-      "size": [
-        500,
-        730
-      ],
-      "flags": {},
-      "order": 2,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "title": "Note: SeedVR2",
-      "properties": {},
-      "widgets_values": [
-        "## SeedVR2\n\nOne-step video restoration / upscale (ICLR 2026). This workflow uses the **7B FP16** model for video upscaling.\n\n- Project: [SeedVR2](https://iceclear.github.io/projects/seedvr2/)\n- ComfyUI native support: [PR #14424](https://github.com/Comfy-Org/ComfyUI/pull/14424)\n\n### Subgraph parameters\n\n- **trim_video**: enable to cut a segment before upscaling\n- **trim_start_time / duration**: trim start (seconds) and length\n- **scale_multiplier**: upscale factor (default `2`)\n- **seed / sampler / scheduler / denoise**: sampling controls; `denoise=1` means full restore\n- **color_correction_method**: optional color match to original (default `none`)\n- **unet_name / vae_name**: model files to load\n\n### Tip: long videos\n\nIf the input is too long, turn on **trim_video**, upscale in shorter segments, then merge them. This helps avoid OOM / slowdowns on long clips.\n"
-      ],
-      "widgets_values_named": {
-        "text": "## SeedVR2\n\nOne-step video restoration / upscale (ICLR 2026). This workflow uses the **7B FP16** model for video upscaling.\n\n- Project: [SeedVR2](https://iceclear.github.io/projects/seedvr2/)\n- ComfyUI native support: [PR #14424](https://github.com/Comfy-Org/ComfyUI/pull/14424)\n\n### Subgraph parameters\n\n- **trim_video**: enable to cut a segment before upscaling\n- **trim_start_time / duration**: trim start (seconds) and length\n- **scale_multiplier**: upscale factor (default `2`)\n- **seed / sampler / scheduler / denoise**: sampling controls; `denoise=1` means full restore\n- **color_correction_method**: optional color match to original (default `none`)\n- **unet_name / vae_name**: model files to load\n\n### Tip: long videos\n\nIf the input is too long, turn on **trim_video**, upscale in shorter segments, then merge them. This helps avoid OOM / slowdowns on long clips.\n"
-      },
-      "color": "#222",
-      "bgcolor": "#000"
     }
   ],
   "links": [
     [
-      72,
-      73,
+      127,
+      106,
       0,
       66,
       0,
       "VIDEO"
     ],
     [
-      73,
+      132,
       66,
+      1,
+      107,
       0,
-      76,
-      0,
-      "VIDEO"
+      "IMAGE"
+    ],
+    [
+      134,
+      66,
+      4,
+      107,
+      1,
+      "AUDIO"
+    ],
+    [
+      135,
+      66,
+      2,
+      107,
+      2,
+      "FLOAT"
+    ],
+    [
+      136,
+      66,
+      3,
+      107,
+      12,
+      "COMBO"
     ]
   ],
   "groups": [],
@@ -295,8 +567,8 @@
         "version": 1,
         "state": {
           "lastGroupId": 1,
-          "lastNodeId": 105,
-          "lastLinkId": 126,
+          "lastNodeId": 107,
+          "lastLinkId": 136,
           "lastRerouteId": 0
         },
         "revision": 0,
@@ -314,10 +586,10 @@
         "outputNode": {
           "id": -20,
           "bounding": [
-            3780,
-            690,
+            3201.8108954037293,
+            168.21965446738778,
             128,
-            68
+            148
           ]
         },
         "inputs": [
@@ -502,12 +774,58 @@
             "id": "af922150-c9db-45c2-8774-113369ce3254",
             "name": "VIDEO",
             "type": "VIDEO",
+            "linkIds": [],
+            "pos": [
+              3225.8108954037293,
+              192.21965446738778
+            ]
+          },
+          {
+            "id": "6c5cfba7-de5f-4ed4-9178-cc8ccebf8457",
+            "name": "images",
+            "type": "IMAGE",
             "linkIds": [
-              71
+              128
             ],
             "pos": [
-              3804,
-              714
+              3225.8108954037293,
+              212.21965446738778
+            ]
+          },
+          {
+            "id": "fc8756c5-b3b4-4f78-addf-3f89eb386467",
+            "name": "fps",
+            "type": "FLOAT",
+            "linkIds": [
+              129
+            ],
+            "pos": [
+              3225.8108954037293,
+              232.21965446738778
+            ]
+          },
+          {
+            "id": "16971a6f-570d-4d6d-bce1-76d62bf206a5",
+            "name": "bit_depth",
+            "type": "COMBO",
+            "linkIds": [
+              130
+            ],
+            "pos": [
+              3225.8108954037293,
+              252.21965446738778
+            ]
+          },
+          {
+            "id": "08fe0300-58ce-43f2-a0c9-683fd45a3bca",
+            "name": "audio",
+            "type": "AUDIO",
+            "linkIds": [
+              131
+            ],
+            "pos": [
+              3225.8108954037293,
+              272.2196544673878
             ]
           }
         ],
@@ -540,6 +858,42 @@
                 "name": "vae",
                 "type": "VAE",
                 "link": 17
+              },
+              {
+                "localized_name": "tile_size",
+                "name": "tile_size",
+                "type": "INT",
+                "widget": {
+                  "name": "tile_size"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "overlap",
+                "name": "overlap",
+                "type": "INT",
+                "widget": {
+                  "name": "overlap"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "temporal_size",
+                "name": "temporal_size",
+                "type": "INT",
+                "widget": {
+                  "name": "temporal_size"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "temporal_overlap",
+                "name": "temporal_overlap",
+                "type": "INT",
+                "widget": {
+                  "name": "temporal_overlap"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -650,6 +1004,15 @@
                   "name": "unet_name"
                 },
                 "link": 125
+              },
+              {
+                "localized_name": "weight_dtype",
+                "name": "weight_dtype",
+                "type": "COMBO",
+                "widget": {
+                  "name": "weight_dtype"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -731,6 +1094,24 @@
                   "name": "seed"
                 },
                 "link": 87
+              },
+              {
+                "localized_name": "steps",
+                "name": "steps",
+                "type": "INT",
+                "widget": {
+                  "name": "steps"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "cfg",
+                "name": "cfg",
+                "type": "FLOAT",
+                "widget": {
+                  "name": "cfg"
+                },
+                "link": null
               },
               {
                 "localized_name": "sampler_name",
@@ -822,6 +1203,42 @@
                 "name": "vae",
                 "type": "VAE",
                 "link": 22
+              },
+              {
+                "localized_name": "tile_size",
+                "name": "tile_size",
+                "type": "INT",
+                "widget": {
+                  "name": "tile_size"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "overlap",
+                "name": "overlap",
+                "type": "INT",
+                "widget": {
+                  "name": "overlap"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "temporal_size",
+                "name": "temporal_size",
+                "type": "INT",
+                "widget": {
+                  "name": "temporal_size"
+                },
+                "link": null
+              },
+              {
+                "localized_name": "temporal_overlap",
+                "name": "temporal_overlap",
+                "type": "INT",
+                "widget": {
+                  "name": "temporal_overlap"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -874,6 +1291,15 @@
                 "link": 66
               },
               {
+                "localized_name": "resize_type",
+                "name": "resize_type",
+                "type": "COMFY_DYNAMICCOMBO_V3",
+                "widget": {
+                  "name": "resize_type"
+                },
+                "link": null
+              },
+              {
                 "localized_name": "resize_type.multiplier",
                 "name": "resize_type.multiplier",
                 "type": "FLOAT",
@@ -881,6 +1307,15 @@
                   "name": "resize_type.multiplier"
                 },
                 "link": 86
+              },
+              {
+                "localized_name": "scale_method",
+                "name": "scale_method",
+                "type": "COMBO",
+                "widget": {
+                  "name": "scale_method"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -946,65 +1381,6 @@
               "Node name for S&R": "SeedVR2Preprocess",
               "cnr_id": "comfy-core",
               "ver": "0.27.0"
-            }
-          },
-          {
-            "id": 59,
-            "type": "SeedVR2PostProcessing",
-            "pos": [
-              2600,
-              350
-            ],
-            "size": [
-              310,
-              110
-            ],
-            "flags": {},
-            "order": 7,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "images",
-                "name": "images",
-                "type": "IMAGE",
-                "link": 25
-              },
-              {
-                "localized_name": "original_resized_images",
-                "name": "original_resized_images",
-                "type": "IMAGE",
-                "link": 26
-              },
-              {
-                "localized_name": "color_correction_method",
-                "name": "color_correction_method",
-                "type": "COMBO",
-                "widget": {
-                  "name": "color_correction_method"
-                },
-                "link": 108
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "images",
-                "name": "images",
-                "type": "IMAGE",
-                "links": [
-                  67
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "SeedVR2PostProcessing",
-              "cnr_id": "comfy-core",
-              "ver": "0.27.0"
-            },
-            "widgets_values": [
-              "none"
-            ],
-            "widgets_values_named": {
-              "color_correction_method": "none"
             }
           },
           {
@@ -1096,7 +1472,7 @@
                 "name": "audio",
                 "type": "AUDIO",
                 "links": [
-                  68
+                  131
                 ]
               },
               {
@@ -1104,7 +1480,7 @@
                 "name": "fps",
                 "type": "FLOAT",
                 "links": [
-                  69
+                  129
                 ]
               },
               {
@@ -1112,7 +1488,7 @@
                 "name": "bit_depth",
                 "type": "COMBO",
                 "links": [
-                  70
+                  130
                 ]
               },
               {
@@ -1129,80 +1505,6 @@
             }
           },
           {
-            "id": 75,
-            "type": "CreateVideo",
-            "pos": [
-              3030,
-              680
-            ],
-            "size": [
-              270,
-              140
-            ],
-            "flags": {},
-            "order": 10,
-            "mode": 0,
-            "inputs": [
-              {
-                "localized_name": "images",
-                "name": "images",
-                "type": "IMAGE",
-                "link": 67
-              },
-              {
-                "localized_name": "audio",
-                "name": "audio",
-                "shape": 7,
-                "type": "AUDIO",
-                "link": 68
-              },
-              {
-                "localized_name": "fps",
-                "name": "fps",
-                "type": "FLOAT",
-                "widget": {
-                  "name": "fps"
-                },
-                "link": 69
-              },
-              {
-                "localized_name": "bit_depth",
-                "name": "bit_depth",
-                "shape": 7,
-                "type": "COMBO",
-                "widget": {
-                  "name": "bit_depth"
-                },
-                "link": 70
-              }
-            ],
-            "outputs": [
-              {
-                "localized_name": "VIDEO",
-                "name": "VIDEO",
-                "type": "VIDEO",
-                "links": [
-                  71
-                ]
-              }
-            ],
-            "properties": {
-              "Node name for S&R": "CreateVideo",
-              "cnr_id": "comfy-core",
-              "ver": "0.28.0"
-            },
-            "widgets_values": [
-              30,
-              8,
-              "sRGB"
-            ],
-            "widgets_values_named": {
-              "fps": 30,
-              "bit_depth": 8,
-              "color_space": "sRGB"
-            }
-          },
-          {
             "id": 79,
             "type": "Video Slice",
             "pos": [
@@ -1214,7 +1516,7 @@
               150
             ],
             "flags": {},
-            "order": 11,
+            "order": 10,
             "mode": 0,
             "inputs": [
               {
@@ -1240,6 +1542,15 @@
                   "name": "duration"
                 },
                 "link": 82
+              },
+              {
+                "localized_name": "strict_duration",
+                "name": "strict_duration",
+                "type": "BOOLEAN",
+                "widget": {
+                  "name": "strict_duration"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -1281,7 +1592,7 @@
               130
             ],
             "flags": {},
-            "order": 12,
+            "order": 11,
             "mode": 0,
             "inputs": [
               {
@@ -1340,7 +1651,7 @@
               102
             ],
             "flags": {},
-            "order": 13,
+            "order": 12,
             "mode": 0,
             "inputs": [
               {
@@ -1357,6 +1668,15 @@
                   "name": "temporal_overlap"
                 },
                 "link": 124
+              },
+              {
+                "localized_name": "chunking_mode",
+                "name": "chunking_mode",
+                "type": "COMFY_DYNAMICCOMBO_V3",
+                "widget": {
+                  "name": "chunking_mode"
+                },
+                "link": null
               }
             ],
             "outputs": [
@@ -1404,7 +1724,7 @@
               80
             ],
             "flags": {},
-            "order": 14,
+            "order": 13,
             "mode": 0,
             "inputs": [
               {
@@ -1448,7 +1768,7 @@
               124
             ],
             "flags": {},
-            "order": 15,
+            "order": 14,
             "mode": 0,
             "inputs": [
               {
@@ -1506,7 +1826,7 @@
               124
             ],
             "flags": {},
-            "order": 16,
+            "order": 15,
             "mode": 0,
             "inputs": [
               {
@@ -1563,7 +1883,7 @@
               76
             ],
             "flags": {},
-            "order": 17,
+            "order": 16,
             "mode": 0,
             "inputs": [
               {
@@ -1596,6 +1916,65 @@
             ],
             "widgets_values_named": {
               "value": false
+            }
+          },
+          {
+            "id": 59,
+            "type": "SeedVR2PostProcessing",
+            "pos": [
+              2600,
+              350
+            ],
+            "size": [
+              310,
+              110
+            ],
+            "flags": {},
+            "order": 7,
+            "mode": 0,
+            "inputs": [
+              {
+                "localized_name": "images",
+                "name": "images",
+                "type": "IMAGE",
+                "link": 25
+              },
+              {
+                "localized_name": "original_resized_images",
+                "name": "original_resized_images",
+                "type": "IMAGE",
+                "link": 26
+              },
+              {
+                "localized_name": "color_correction_method",
+                "name": "color_correction_method",
+                "type": "COMBO",
+                "widget": {
+                  "name": "color_correction_method"
+                },
+                "link": 108
+              }
+            ],
+            "outputs": [
+              {
+                "localized_name": "images",
+                "name": "images",
+                "type": "IMAGE",
+                "links": [
+                  128
+                ]
+              }
+            ],
+            "properties": {
+              "Node name for S&R": "SeedVR2PostProcessing",
+              "cnr_id": "comfy-core",
+              "ver": "0.27.0"
+            },
+            "widgets_values": [
+              "none"
+            ],
+            "widgets_values_named": {
+              "color_correction_method": "none"
             }
           }
         ],
@@ -1703,46 +2082,6 @@
             "type": "IMAGE"
           },
           {
-            "id": 67,
-            "origin_id": 59,
-            "origin_slot": 0,
-            "target_id": 75,
-            "target_slot": 0,
-            "type": "IMAGE"
-          },
-          {
-            "id": 68,
-            "origin_id": 74,
-            "origin_slot": 1,
-            "target_id": 75,
-            "target_slot": 1,
-            "type": "AUDIO"
-          },
-          {
-            "id": 69,
-            "origin_id": 74,
-            "origin_slot": 2,
-            "target_id": 75,
-            "target_slot": 2,
-            "type": "FLOAT"
-          },
-          {
-            "id": 70,
-            "origin_id": 74,
-            "origin_slot": 3,
-            "target_id": 75,
-            "target_slot": 3,
-            "type": "INT"
-          },
-          {
-            "id": 71,
-            "origin_id": 75,
-            "origin_slot": 0,
-            "target_id": -20,
-            "target_slot": 0,
-            "type": "VIDEO"
-          },
-          {
             "id": 74,
             "origin_id": -10,
             "origin_slot": 0,
@@ -1803,7 +2142,7 @@
             "origin_id": -10,
             "origin_slot": 4,
             "target_id": 57,
-            "target_slot": 1,
+            "target_slot": 2,
             "type": "FLOAT"
           },
           {
@@ -1819,7 +2158,7 @@
             "origin_id": -10,
             "origin_slot": 6,
             "target_id": 54,
-            "target_slot": 5,
+            "target_slot": 7,
             "type": "COMBO"
           },
           {
@@ -1827,7 +2166,7 @@
             "origin_id": -10,
             "origin_slot": 7,
             "target_id": 54,
-            "target_slot": 6,
+            "target_slot": 8,
             "type": "COMBO"
           },
           {
@@ -1835,7 +2174,7 @@
             "origin_id": -10,
             "origin_slot": 8,
             "target_id": 54,
-            "target_slot": 7,
+            "target_slot": 9,
             "type": "FLOAT"
           },
           {
@@ -1973,6 +2312,38 @@
             "target_id": 51,
             "target_slot": 0,
             "type": "COMBO"
+          },
+          {
+            "id": 128,
+            "origin_id": 59,
+            "origin_slot": 0,
+            "target_id": -20,
+            "target_slot": 1,
+            "type": "IMAGE"
+          },
+          {
+            "id": 129,
+            "origin_id": 74,
+            "origin_slot": 2,
+            "target_id": -20,
+            "target_slot": 2,
+            "type": "FLOAT"
+          },
+          {
+            "id": 130,
+            "origin_id": 74,
+            "origin_slot": 3,
+            "target_id": -20,
+            "target_slot": 3,
+            "type": "COMBO"
+          },
+          {
+            "id": 131,
+            "origin_id": 74,
+            "origin_slot": 1,
+            "target_id": -20,
+            "target_slot": 4,
+            "type": "AUDIO"
           }
         ],
         "extra": {}
@@ -1983,10 +2354,10 @@
   "extra": {
     "frontendVersion": "1.49.6",
     "ds": {
-      "scale": 0.6991345417452738,
+      "scale": 0.7277505693878722,
       "offset": [
-        1062.5226993697581,
-        410.35410463117694
+        -306.8665647694634,
+        322.5580009508199
       ]
     },
     "VHS_latentpreview": true,
