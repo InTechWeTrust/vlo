@@ -1,6 +1,6 @@
 # Exposure report composition conformance fixture
 
-This fixture targets VLO SDK `>=1.13.0`. It is the *consumer* half of the Phase
+This fixture targets VLO SDK `>=1.0.0`. It is the *consumer* half of the Phase
 K composition pair; [`false-color`](../false-color/README.md) is the provider.
 
 Together they are Phase K's acceptance case: two packages by the same author

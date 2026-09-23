@@ -161,7 +161,7 @@ function activateFixture(harness: Harness) {
   const disposers: ExtensionResource[] = [];
   activate({
     extension: { id: "example.navigation", version: "1.0.0" },
-    sdkVersion: "1.10.0",
+    sdkVersion: "1.0.0",
     signal: harness.scope.signal,
     api: harness.api,
     logger: {

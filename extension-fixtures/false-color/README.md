@@ -1,6 +1,6 @@
 # False colour scope conformance fixture
 
-This fixture targets VLO SDK `>=1.13.0`. It is the *provider* half of the Phase
+This fixture targets VLO SDK `>=1.0.0`. It is the *provider* half of the Phase
 K composition pair; [`exposure-report`](../exposure-report/README.md) is the
 consumer.
 

@@ -95,7 +95,7 @@ describe("trusted host access conformance fixture", () => {
     } as unknown as VloExtensionApi;
     const context = {
       extension: scope.extension,
-      sdkVersion: "1.3.0",
+      sdkVersion: "1.0.0",
       signal: scope.signal,
       api,
       logger: {
@@ -159,7 +159,7 @@ describe("trusted host access conformance fixture", () => {
     expect(() =>
       activate({
         extension: scope.extension,
-        sdkVersion: "1.3.0",
+        sdkVersion: "1.0.0",
         signal: scope.signal,
         api: { trusted: { host } },
         logger: {

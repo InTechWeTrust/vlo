@@ -1,6 +1,6 @@
 # LoRA loader policy conformance fixture
 
-This fixture targets VLO SDK `>=1.15.0`. It is the committed first consumer of
+This fixture targets VLO SDK `>=1.0.0`. It is the committed first consumer of
 the generation extension surface
 (`docs/generation-extension-surface-plan.md`), and it exists to prove that a
 trusted policy extension can be written entirely out of tree: no host store, no

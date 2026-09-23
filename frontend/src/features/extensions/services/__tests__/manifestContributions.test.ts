@@ -29,7 +29,7 @@ function inventoryItem(
       id,
       name: id,
       version: "1.0.0",
-      sdk: options.sdk ?? ">=1.5.0 <2.0.0",
+      sdk: options.sdk ?? ">=1.0.0 <2.0.0",
       ...(options.vlo ? { vlo: options.vlo } : {}),
       ...(options.frontend
         ? { frontend: { entry: "frontend/dist/index.js" } }
@@ -74,7 +74,7 @@ describe("projectManifestContributions", () => {
 
     const diagnostics = projectManifestContributions([item], {
       registry,
-      sdkVersion: "1.5.0",
+      sdkVersion: "1.0.0",
       hostVersion: "0.2.0",
     });
 
@@ -88,7 +88,7 @@ describe("projectManifestContributions", () => {
     const registry = new ExtensionLutRegistry();
     const item = inventoryItem("example.broken-mixed", { frontend: true });
     const host = new ExtensionHost<Record<string, never>>({
-      sdkVersion: "1.5.0",
+      sdkVersion: "1.0.0",
       hostVersion: "0.2.0",
       createApi: () => ({}),
     });
@@ -97,7 +97,7 @@ describe("projectManifestContributions", () => {
       loadInventory: async () => {
         projectManifestContributions([item], {
           registry,
-          sdkVersion: "1.5.0",
+          sdkVersion: "1.0.0",
           hostVersion: "0.2.0",
         });
         return [item];
@@ -125,7 +125,7 @@ describe("projectManifestContributions", () => {
     const registry = new ExtensionLutRegistry();
     projectManifestContributions([inventoryItem("example.looks")], {
       registry,
-      sdkVersion: "1.5.0",
+      sdkVersion: "1.0.0",
       hostVersion: "0.2.0",
     });
 
@@ -133,7 +133,7 @@ describe("projectManifestContributions", () => {
       [inventoryItem("example.looks", { status: "disabled" })],
       {
         registry,
-        sdkVersion: "1.5.0",
+        sdkVersion: "1.0.0",
         hostVersion: "0.2.0",
       },
     );
@@ -150,7 +150,7 @@ describe("projectManifestContributions", () => {
       ],
       {
         registry,
-        sdkVersion: "1.5.0",
+        sdkVersion: "1.0.0",
         hostVersion: "0.2.0",
       },
     );
@@ -172,7 +172,7 @@ describe("projectManifestContributions", () => {
       [inventoryItem("example.unknown-vlo", { vlo: ">=0.2.0 <0.3.0" })],
       {
         registry,
-        sdkVersion: "1.5.0",
+        sdkVersion: "1.0.0",
         hostVersion: null,
       },
     );

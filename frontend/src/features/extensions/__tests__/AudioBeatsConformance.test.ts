@@ -191,7 +191,7 @@ describe("audio beats conformance fixture", () => {
     const disposers: ExtensionResource[] = [];
     activate({
       extension: { id: "example.audio-beats", version: "1.0.0" },
-      sdkVersion: "1.12.0",
+      sdkVersion: "1.0.0",
       signal: harness.scope.signal,
       api: harness.api,
       logger: {

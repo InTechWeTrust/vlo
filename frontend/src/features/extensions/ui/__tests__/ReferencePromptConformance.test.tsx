@@ -86,7 +86,7 @@ async function mountFixture() {
   const api = createVloExtensionApi(scope);
   await activate({
     extension: scope.extension,
-    sdkVersion: "1.26.0",
+    sdkVersion: "1.0.0",
     signal: scope.signal,
     api,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },

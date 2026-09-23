@@ -2612,7 +2612,7 @@ export type ExtensionGenerationDraftOp =
   | {
       /**
        * Hold a text input you will write yourself in `commit`'s
-       * `additionalWrites`, without staging a value. Since SDK 1.26.0.
+       * `additionalWrites`, without staging a value.
        *
        * For text that can only be resolved at commit — a prompt that numbers
        * references against the arrangement being committed. Staging this
@@ -2677,7 +2677,7 @@ export interface ExtensionGenerationInputsDraftRequest {
    */
   readonly widgetTargets?: readonly ExtensionGenerationWidgetTarget[];
   /**
-   * Text inputs to hold for conflict detection only (SDK 1.26.0). `holdText`
+   * Text inputs to hold for conflict detection only. `holdText`
    * may name them and a panel edit to them becomes a conflict, but the draft
    * never lists them in `getState().inputs`, `InputsDraftFields` never renders
    * them, and the draft never writes them. Use this for the prompt you write
@@ -2731,7 +2731,6 @@ export interface ExtensionGenerationInputsDraftState {
 
 /**
  * The arrangement one draft commit writes, passed to `additionalWrites`.
- * Since SDK 1.26.0.
  *
  * Resolve anything that depends on the media — reference tag numbers above
  * all — against this rather than against the last `getState` you rendered.
@@ -3631,8 +3630,7 @@ export interface ExtensionGenerationMediaItem {
    */
   readonly slotId: string;
   /**
-   * The attachment's identity — **stable, and never an address**. Since SDK
-   * 1.26.0.
+   * The attachment's identity — **stable, and never an address**.
    *
    * Minted when the media is attached and kept while it is reordered,
    * compacted, toggled or prepared, so anything you author that refers to

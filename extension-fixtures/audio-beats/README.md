@@ -1,6 +1,6 @@
 # Audio analysis conformance fixture
 
-This fixture targets VLO SDK `>=1.12.0` and proves the Phase J audio surface:
+This fixture targets VLO SDK `>=1.0.0` and proves the Phase J audio surface:
 
 - `audio.listClips()` discovers audio-bearing placements without guessing from
   track labels;

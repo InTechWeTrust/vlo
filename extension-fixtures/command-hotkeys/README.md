@@ -1,6 +1,6 @@
 # Command and keybinding conformance fixture
 
-This fixture targets VLO SDK `>=1.7.0`. It proves the `api.ui.commands`
+This fixture targets VLO SDK `>=1.0.0`. It proves the `api.ui.commands`
 surface end to end:
 
 - a declarative command (`bump-counter`) gated on the `project.open` context

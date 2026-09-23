@@ -1,6 +1,6 @@
 # Export and render conformance fixture
 
-This fixture targets VLO SDK `>=1.11.0`. It proves the Phase I surface —
+This fixture targets VLO SDK `>=1.0.0`. It proves the Phase I surface —
 `api.export` — behaves as an extension author would expect:
 
 - a single `export.subscribe` listener builds a post-export report. The signal

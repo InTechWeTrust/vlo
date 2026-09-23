@@ -499,7 +499,7 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     const commandId = `${EXTENSION_ID}/${COMPOSER_COMMAND_ID}`;
 
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.21.0",
+      sdkVersion: "1.0.0",
       createApi: createVloExtensionApi,
     });
     activeHost = host;
@@ -545,7 +545,7 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
     const { activate, COMPOSER_ANCHOR_SLOT, WORKFLOW_SUPPORTED_CONTEXT_KEY } =
       await loadPackage();
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.21.0",
+      sdkVersion: "1.0.0",
       createApi: createVloExtensionApi,
     });
     activeHost = host;
@@ -583,7 +583,7 @@ describe.skipIf(!packagePresent)("minimax composer conformance fixture", () => {
       COMPOSER_COMMAND_ID,
     } = await loadPackage();
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.24.0",
+      sdkVersion: "1.0.0",
       createApi: createVloExtensionApi,
     });
     activeHost = host;

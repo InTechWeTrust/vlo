@@ -76,7 +76,7 @@ type InventoryStatus = 'pending_approval' | 'approved' | 'disabled';
 
 function inventoryItem(
     status: InventoryStatus,
-    sdk = '>=1.7.0 <2.0.0',
+    sdk = '>=1.0.0 <2.0.0',
 ): Record<string, unknown> {
     return {
         id: EXTENSION_ID,

@@ -252,7 +252,7 @@ function activateFixture(
   const exported: { value?: object } = {};
   const result = activateModule({
     extension: harness.scope.extension,
-    sdkVersion: "1.13.0",
+    sdkVersion: "1.0.0",
     signal: harness.scope.signal,
     api: harness.api,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },

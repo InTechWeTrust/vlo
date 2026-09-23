@@ -149,7 +149,7 @@ depends on its own quality setting.
 ## The generic contract it leans on
 
 Matrix Rain does not get special treatment. It relies only on additions that are
-useful to **any** temporal filter author, introduced in SDK `1.6.0`:
+useful to **any** temporal filter author:
 
 - `ExtensionTrustedFilterRenderingDefinition` — declare `none` / `sample` /
   `history` time dependency plus bounded replay/step limits.

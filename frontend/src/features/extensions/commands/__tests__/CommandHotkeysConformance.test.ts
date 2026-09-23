@@ -86,7 +86,7 @@ describe("command-hotkeys conformance fixture", () => {
     } as unknown as VloExtensionApi;
     const context = {
       extension: scope.extension,
-      sdkVersion: "1.7.0",
+      sdkVersion: "1.0.0",
       signal: scope.signal,
       api,
       logger: { debug() {}, info() {}, warn() {}, error() {} },

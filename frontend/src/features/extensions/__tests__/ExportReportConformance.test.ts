@@ -198,7 +198,7 @@ function activateFixture(harness: Harness) {
   const disposers: ExtensionResource[] = [];
   activate({
     extension: { id: OWNER_ID, version: "1.0.0" },
-    sdkVersion: "1.11.0",
+    sdkVersion: "1.0.0",
     signal: harness.scope.signal,
     api: harness.api,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },

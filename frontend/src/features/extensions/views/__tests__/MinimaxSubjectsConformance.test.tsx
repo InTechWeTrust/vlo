@@ -230,7 +230,7 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     const editorId = `${EXTENSION_ID}/${SUBJECT_EDITOR_VIEW_ID}`;
 
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.21.0",
+      sdkVersion: "1.0.0",
       createApi: createVloExtensionApi,
     });
     activeHost = host;
@@ -266,7 +266,7 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
   it("does not put the editor in the region that holds the asset browser", async () => {
     const { activate, SUBJECT_EDITOR_VIEW_ID } = await loadPackage();
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.21.0",
+      sdkVersion: "1.0.0",
       createApi: createVloExtensionApi,
     });
     activeHost = host;
@@ -293,7 +293,7 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     // rather than forging the context key.
     let api: VloExtensionApi | undefined;
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.22.0",
+      sdkVersion: "1.0.0",
       createApi: (scope) => {
         api = createVloExtensionApi(scope);
         return api;
@@ -375,10 +375,7 @@ describe.skipIf(!packagePresent)("minimax subjects conformance fixture", () => {
     expect(manifest.manifestVersion).toBe(1);
     expect(manifest.id).toBe(EXTENSION_ID);
     expect(manifest.capabilities).toContain("ui.custom");
-    // The full-reference composer binds prose to media `itemId`s, resolves in
-    // the draft commit reading and holds its prompt with `holdInputIds` — all
-    // SDK 1.26.0.
-    expect(manifest.sdk).toBe(">=1.26.0 <2.0.0");
+    expect(manifest.sdk).toBe(">=1.0.0 <2.0.0");
 
     const entry = (manifest.frontend as { entry: string }).entry;
     expect(

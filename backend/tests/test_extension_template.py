@@ -126,7 +126,7 @@ const api = {
 const controller = new AbortController();
 await extension.activate({
   extension: { id: "example.lora-policy", version: "1.0.0" },
-  sdkVersion: "1.15.0",
+  sdkVersion: "1.0.0",
   signal: controller.signal,
   api,
   logger: { debug() {}, info() {}, warn() {}, error() {} },
@@ -622,7 +622,7 @@ def test_matrix_rain_fixture_activates_with_matching_gl_and_wgsl_programs(
         "};"
         "await extension.activate({"
         "  extension: { id: 'example.matrix-rain', version: '1.0.0' },"
-        "  sdkVersion: '1.7.0', signal: new AbortController().signal, api,"
+        "  sdkVersion: '1.0.0', signal: new AbortController().signal, api,"
         "  logger: { debug() {}, info() {}, warn() {}, error() {} },"
         "  onDispose() {} });"
         "if (!def || def.kind !== 'trusted-filter') throw new Error('registration');"

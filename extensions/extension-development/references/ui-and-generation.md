@@ -623,14 +623,13 @@ return h(
   `setWidget` — so you can preview a preset without a rendered field.
   `attachAsset` appends; `replaceMedia` overwrites the position `at`. A staged
   attach carries its `itemId` from the moment it is staged and keeps it once
-  committed (SDK 1.26.0).
+  committed.
 
 ### Resolve text against what the commit writes
 
 Text that depends on the media — a prompt numbering its reference tags — must
 not be built while rendering and committed later: the user can reorder between
-the two, and the panel can move underneath. Since SDK 1.26.0 `additionalWrites`
-receives a second argument, the **commit reading**, which is the addressed
+the two, and the panel can move underneath. `additionalWrites` receives a second argument, the **commit reading**, which is the addressed
 inputs exactly as that commit leaves them. Resolve there:
 
 ```ts
@@ -709,7 +708,7 @@ ids it offers; each item's `options` tells you which of them apply to *that*
 item, with their current state.
 
 **Hold `itemId`, not `slotId` or `ordinal`, for anything you author about an
-item** (SDK 1.26.0). `slotId` is a write address that changes whenever the batch
+item**. `slotId` is a write address that changes whenever the batch
 repacks, and `ordinal` is a position. `itemId` names the attachment: it survives
 reorders, compaction, option changes, preparation, and a project reload. The
 same asset attached twice has two ids, and replacing or removing an item ends

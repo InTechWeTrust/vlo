@@ -187,7 +187,7 @@ describe("FrontendExtensionRuntime", () => {
   it("rolls trusted patches back on activation failure and deactivation", async () => {
     const target = { value: "original" };
     const host = new ExtensionHost<VloExtensionApi>({
-      sdkVersion: "1.3.0",
+      sdkVersion: "1.0.0",
       createApi: createVloExtensionApi,
     });
     const install = (context: { api: VloExtensionApi }) => {
