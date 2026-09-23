@@ -531,41 +531,18 @@ def test_aspect_ratio_postprocess_partial_application_does_not_claim_coverage():
     assert "aspect_ratio_processing_postprocess_nodes_not_applied" in codes
 
 
-def test_ic_edit_rules_allow_frontend_control_prompt_enhancer_rewrites():
+@pytest.mark.parametrize(
+    "workflow_name",
+    ["vlo_ltx2_5_ic_edit.json", "vlo_ltx2_5_clean_plate.json"],
+)
+def test_ic_lora_rules_bypass_mask_chain_when_mask_missing(workflow_name):
     rules_model, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "vlo_ltx2_5_ic_edit.json",
+        workflow_name,
     )
 
     assert warnings == []
     assert rules_model.media_fallbacks == []
-    assert "prompt_enhancer_enabled" in rules_model.frontend_controls
-    assert len(rules_model.rewrites) == 2
-
-    off_rewrite = rules_model.rewrites[0]
-
-    assert off_rewrite.when.kind == "compare"
-    assert off_rewrite.when.ref.kind == "frontend_control"
-    assert off_rewrite.when.ref.control_id == "prompt_enhancer_enabled"
-    assert off_rewrite.when.operator == "eq"
-    assert off_rewrite.when.value is False
-    assert off_rewrite.bypass == ["599"]
-    assert off_rewrite.set_widgets == []
-
-    missing_mask_rewrite = rules_model.rewrites[1]
-    assert missing_mask_rewrite.when.kind == "input_presence"
-    assert missing_mask_rewrite.when.inputs == ["689"]
-    assert missing_mask_rewrite.when.match == "all_missing"
-    assert missing_mask_rewrite.bypass == ["689", "693", "694", "703", "708"]
-
-
-def test_clean_plate_rules_bypass_mask_chain_without_prompt_enhancer():
-    rules_model, warnings = load_rules_model_for_workflow(
-        DEFAULT_WORKFLOWS_DIR,
-        "vlo_ltx2_5_clean_plate.json",
-    )
-
-    assert warnings == []
     assert rules_model.frontend_controls == {}
     assert len(rules_model.rewrites) == 1
 
@@ -575,27 +552,18 @@ def test_clean_plate_rules_bypass_mask_chain_without_prompt_enhancer():
     assert missing_mask_rewrite.when.match == "all_missing"
     assert missing_mask_rewrite.bypass == ["689", "693", "694", "703", "708"]
 
-def test_ltx23_inpaint_rules_allow_prompt_enhancer_rewrites_and_retake_widget():
+
+def test_ltx23_inpaint_rules_expose_retake_widget():
     rules_model, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
         "vlo_ltx2_5_inpaint.json",
     )
 
     assert warnings == []
-    assert "prompt_enhancer_enabled" in rules_model.frontend_controls
+    assert rules_model.frontend_controls == {}
     assert len(rules_model.derived_widgets) == 1
     assert rules_model.derived_widgets[0].kind == "video_audio_retake"
-    assert len(rules_model.rewrites) == 1
-
-    false_rewrite = rules_model.rewrites[0]
-
-    assert false_rewrite.when.kind == "compare"
-    assert false_rewrite.when.ref.kind == "frontend_control"
-    assert false_rewrite.when.ref.control_id == "prompt_enhancer_enabled"
-    assert false_rewrite.when.operator == "eq"
-    assert false_rewrite.when.value is False
-    assert false_rewrite.bypass == ["599"]
-    assert false_rewrite.set_widgets == []
+    assert rules_model.rewrites == []
 
 
 def test_ltx23_inpaint_workflow_emits_websocket_frames_and_preview_audio():

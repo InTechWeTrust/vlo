@@ -90,16 +90,7 @@
   "validation": {
     "inputs": []
   },
-  "frontend_controls": {
-    "prompt_enhancer_enabled": {
-      "label": "Enable prompt enhancer",
-      "value_type": "boolean",
-      "default": false,
-      "group_id": "prompt",
-      "group_title": "Prompt",
-      "group_order": 1
-    }
-  },
+  "frontend_controls": {},
   "derived_widgets": [
     {
       "id": "retake_mode",
@@ -119,16 +110,7 @@
       }
     }
   ],
-  "rewrites": [
-    {
-      "when": {
-        "kind": "frontend_control_boolean",
-        "control_id": "prompt_enhancer_enabled",
-        "value": false
-      },
-      "bypass": ["599"]
-    }
-  ],
+  "rewrites": [],
   "slots": {},
   "pipeline": [
     {
