@@ -170,6 +170,22 @@ describe("portable extension views", () => {
 
   it("moves an extension panel between regions without remounting it", () => {
     let mountCount = 0;
+    function ExtensionNotes() {
+      const [note, setNote] = useState("");
+      const provided = useContext(ProviderProbe);
+      useEffect(() => {
+        mountCount += 1;
+      }, []);
+      return (
+        <div data-testid="extension-notes" data-provider={provided}>
+          <input
+            aria-label="Extension note"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </div>
+      );
+    }
     const api = createExtensionViewApi(
       extensionScope("example.portable"),
       hostViewRegistry,
@@ -181,22 +197,7 @@ describe("portable extension views", () => {
       title: "Notes",
       defaultRegion: "bottom-dock",
       allowedRegions: ["bottom-dock", "right-sidebar"],
-      component: () => {
-        const [note, setNote] = useState("");
-        const provided = useContext(ProviderProbe);
-        useEffect(() => {
-          mountCount += 1;
-        }, []);
-        return (
-          <div data-testid="extension-notes" data-provider={provided}>
-            <input
-              aria-label="Extension note"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-            />
-          </div>
-        );
-      },
+      component: ExtensionNotes,
     });
 
     try {

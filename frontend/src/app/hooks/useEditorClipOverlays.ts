@@ -13,6 +13,30 @@ import {
 } from "../../features/composite";
 import { extensionClipOverlayRegistry } from "../../features/extensions/timeline/ExtensionClipOverlayRegistry";
 
+let extensionOverlaySnapshot: {
+  revision: number;
+  overlays: readonly TimelineClipOverlayDefinition[];
+} = { revision: -1, overlays: [] };
+
+// useSyncExternalStore needs a referentially stable snapshot, so the adapted
+// overlay list is cached per registry revision.
+function getExtensionOverlays(): readonly TimelineClipOverlayDefinition[] {
+  const revision = extensionClipOverlayRegistry.getRevision();
+  if (extensionOverlaySnapshot.revision !== revision) {
+    extensionOverlaySnapshot = {
+      revision,
+      overlays: extensionClipOverlayRegistry
+        .list()
+        .map((contribution) => contribution.definition.overlay),
+    };
+  }
+  return extensionOverlaySnapshot.overlays;
+}
+
+function subscribeExtensionOverlays(listener: () => void): () => void {
+  return extensionClipOverlayRegistry.subscribe(listener);
+}
+
 export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[] {
   const keyframeClipOverlay = useTimelineKeyframeClipOverlay();
   const assetRevealClipOverlay = useTimelineAssetRevealClipOverlay();
@@ -25,10 +49,10 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
 
   // Extension-registered overlays share the same hot render path as built-in
   // overlays; re-derive when the owner-scoped registry changes.
-  const extensionOverlayRevision = useSyncExternalStore(
-    (listener) => extensionClipOverlayRegistry.subscribe(listener),
-    () => extensionClipOverlayRegistry.getRevision(),
-    () => extensionClipOverlayRegistry.getRevision(),
+  const extensionOverlays = useSyncExternalStore(
+    subscribeExtensionOverlays,
+    getExtensionOverlays,
+    getExtensionOverlays,
   );
 
   return useMemo(
@@ -40,9 +64,7 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
       markersClipOverlay,
       reverseStatusClipOverlay,
       compositeRenderStatusClipOverlay,
-      ...extensionClipOverlayRegistry
-        .list()
-        .map((contribution) => contribution.definition.overlay),
+      ...extensionOverlays,
     ],
     [
       assetRevealClipOverlay,
@@ -52,7 +74,7 @@ export function useEditorClipOverlays(): readonly TimelineClipOverlayDefinition[
       markersClipOverlay,
       muteClipOverlay,
       reverseStatusClipOverlay,
-      extensionOverlayRevision,
+      extensionOverlays,
     ],
   );
 }

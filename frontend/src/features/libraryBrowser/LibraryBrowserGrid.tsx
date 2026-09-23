@@ -68,6 +68,9 @@ export function LibraryBrowserGrid<TItem>({
   const columnCount = Math.max(1, columns);
   const rowCount = Math.ceil(items.length / columnCount);
 
+  // TanStack Virtual's instance mutates in place, so React Compiler must skip
+  // memoizing this component; that opt-out is intended, not a regression.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rowCount,
     getScrollElement: () => scrollRef.current,
