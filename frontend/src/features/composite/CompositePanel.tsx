@@ -95,34 +95,6 @@ export function CompositePanel() {
       }}
       data-testid="composite-panel"
     >
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 0.5,
-          bgcolor: "rgba(255, 193, 7, 0.06)",
-          border: "1px solid rgba(255, 193, 7, 0.15)",
-          borderRadius: 1,
-          p: 1.25,
-        }}
-      >
-        <Typography
-          variant="caption"
-          sx={{
-            color: "#ffb020",
-            fontWeight: 600,
-            display: "flex",
-            alignItems: "center",
-            gap: 0.5,
-          }}
-        >
-          ⚠️ Experimental Feature
-        </Typography>
-        <Typography variant="caption" sx={{ color: "#aeb4bd", lineHeight: 1.3 }}>
-          Scenes and subtimelines are under development.
-        </Typography>
-      </Box>
-
       {isSubtimeline ? (
         <>
           <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
