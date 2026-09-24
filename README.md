@@ -442,7 +442,6 @@ python scripts/install-comfyui-nodes.py
 <!-- comfyui-custom-nodes:start -->
 
 - https://github.com/kijai/ComfyUI-WanVideoWrapper
-- https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler
 - https://github.com/Lightricks/ComfyUI-LTXVideo
 - https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3
 - https://github.com/PxTicks/ComfyUI-vlo

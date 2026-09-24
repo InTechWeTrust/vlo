@@ -24,7 +24,6 @@ COMFYUI_REPOSITORY_URL = "https://github.com/Comfy-Org/ComfyUI.git"
 # WanVideoWrapper remains documented for legacy workflows but is intentionally
 # omitted because those workflows are being replaced.
 MANAGED_CUSTOM_NODE_REPOSITORY_URLS = (
-    "https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler",
     "https://github.com/Lightricks/ComfyUI-LTXVideo",
     "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3",
     "https://github.com/PxTicks/ComfyUI-vlo",
