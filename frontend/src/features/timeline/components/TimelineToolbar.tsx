@@ -40,7 +40,6 @@ import type { TimelineClip } from "../../../types/TimelineTypes";
 import { useCompositeTimelineStore } from "../../composite/useCompositeTimelineStore";
 import {
   ADJUSTMENT_DEFAULT_DURATION_TICKS,
-  MIN_ZOOM,
   MAX_ZOOM,
   TICKS_PER_SECOND,
 } from "../constants";
@@ -55,6 +54,7 @@ import { ExtensionUiSlot } from "../../extensions/ui/publicApi";
 export const TimelineToolbar = () => {
   const zoomScale = useTimelineViewStore((state) => state.zoomScale);
   const setZoomScale = useTimelineViewStore((state) => state.setZoomScale);
+  const minZoomScale = useTimelineViewStore((state) => state.minZoomScale);
   const snappingEnabled = useInteractionStore((state) => state.snappingEnabled);
   const toggleSnappingEnabled = useInteractionStore(
     (state) => state.toggleSnappingEnabled,
@@ -83,8 +83,11 @@ export const TimelineToolbar = () => {
     return false;
   });
 
+  // The slider moves in log2(zoom): the range can span several orders of
+  // magnitude on a long timeline, and a linear track would cram the whole
+  // zoomed-out end into its first few pixels.
   const handleSliderChange = (_: Event, newValue: number | number[]) => {
-    setZoomScale(newValue as number);
+    setZoomScale(2 ** (newValue as number));
   };
 
   const handleDetectBeats = async () => {
@@ -413,10 +416,11 @@ export const TimelineToolbar = () => {
         <ZoomOutIcon sx={{ color: "#888", fontSize: 20 }} />
         <Slider
           size="small"
-          value={zoomScale}
-          min={MIN_ZOOM}
-          max={MAX_ZOOM}
-          step={0.1}
+          value={Math.log2(zoomScale)}
+          min={Math.log2(minZoomScale)}
+          max={Math.log2(MAX_ZOOM)}
+          step={0.01}
+          aria-label="Timeline zoom"
           onChange={handleSliderChange}
           sx={{
             color: "#555",

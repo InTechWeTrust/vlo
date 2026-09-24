@@ -20,6 +20,7 @@ vi.mock("../hooks/useTimelineViewStore", () => {
       ticksToPx: (t: number) => t,
       setScrollContainer: vi.fn(),
       setZoomScale: vi.fn(),
+      setMinZoomScale: vi.fn(),
     });
   store.getState = () => ({ zoomScale: 1 });
   store.subscribe = vi.fn(() => vi.fn());

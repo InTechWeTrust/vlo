@@ -9,7 +9,7 @@ import { getTicksPerFrame } from "../../../core/time/ticksPerFrame";
  * Which gradations the timeline ruler draws at a given zoom, and how they are
  * labelled. Pure — the ruler canvas asks for a scale, then walks it.
  *
- * The ladder runs from whole-hour steps down to a single frame and stops there:
+ * The ladder runs from multi-hour steps down to a single frame and stops there:
  * a frame is the finest thing the timeline can address (every seek snaps to the
  * frame grid), so subdividing further would draw gradations no click can land
  * on. Sub-second steps are restricted to divisors of the project fps, which is
@@ -23,7 +23,9 @@ const MIN_GRADATION_SPACING_PX = 12;
 const MIN_LABEL_SPACING_PX = 64;
 
 /** The steps at or above one second, in seconds. */
-const SECOND_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+const SECOND_STEPS = [
+  1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600,
+];
 
 /** One second on the tick grid — the boundary between frame and timecode labels. */
 const ONE_SECOND_TICKS = mediaSecondsToTick(1);

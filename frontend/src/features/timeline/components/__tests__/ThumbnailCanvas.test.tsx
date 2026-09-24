@@ -122,6 +122,8 @@ describe("ThumbnailCanvas Virtualization", () => {
           scrollContainer: mockScrollContainer as unknown as HTMLElement,
           zoomScale: 1,
           setZoomScale: vi.fn(),
+          minZoomScale: 0.1,
+          setMinZoomScale: vi.fn(),
           ticksToPx: (ticks: number) => ticks,
           pxToTicks: (px: number) => px,
           setScrollContainer: vi.fn(),

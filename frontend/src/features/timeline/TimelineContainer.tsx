@@ -1,4 +1,10 @@
-import React, { useEffect, useCallback, useRef, useLayoutEffect } from "react";
+import React, {
+  useEffect,
+  useCallback,
+  useRef,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { Box } from "@mui/material";
 import { useShallow } from "zustand/react/shallow";
 import {
@@ -26,10 +32,9 @@ import { mediaSecondsToTickExact } from "../renderer/utils/mediaTime";
 import {
   TRACK_HEIGHT,
   TRACK_HEADER_WIDTH,
-  MIN_ZOOM,
-  MAX_ZOOM,
   RULER_HEIGHT,
 } from "./constants";
+import { resolveMinZoomScale, zoomScaleAfterWheel } from "./utils/zoomBounds";
 import { TimelineRuler } from "./components/TimelineRuler";
 import { TimelinePlayhead } from "./components/TimelinePlayhead";
 import { SelectionOverlay } from "./components/SelectionOverlay";
@@ -66,6 +71,17 @@ const scrollStyles = {
     borderRadius: "4px",
   },
 };
+
+const MIN_TIMELINE_DURATION_TICKS = mediaSecondsToTickExact(15);
+const TIMELINE_END_BUFFER_TICKS = mediaSecondsToTickExact(10);
+
+/** The scrollable duration: the content plus room to drop past its end. */
+function paddedTimelineDuration(contentEndTicks: number): number {
+  return Math.max(
+    MIN_TIMELINE_DURATION_TICKS,
+    contentEndTicks + TIMELINE_END_BUFFER_TICKS,
+  );
+}
 
 export interface TimelineContainerProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -117,16 +133,23 @@ function TimelineContainerComponent({
     [timelineTime],
   );
 
-  const { zoomScale, setZoomScale, ticksToPx, pxToTicks, setScrollContainer } =
-    useTimelineViewStore(
-      useShallow((state) => ({
-        zoomScale: state.zoomScale,
-        setZoomScale: state.setZoomScale,
-        ticksToPx: state.ticksToPx,
-        pxToTicks: state.pxToTicks,
-        setScrollContainer: state.setScrollContainer,
-      })),
-    );
+  const {
+    zoomScale,
+    setZoomScale,
+    setMinZoomScale,
+    ticksToPx,
+    pxToTicks,
+    setScrollContainer,
+  } = useTimelineViewStore(
+    useShallow((state) => ({
+      zoomScale: state.zoomScale,
+      setZoomScale: state.setZoomScale,
+      setMinZoomScale: state.setMinZoomScale,
+      ticksToPx: state.ticksToPx,
+      pxToTicks: state.pxToTicks,
+      setScrollContainer: state.setScrollContainer,
+    })),
+  );
 
   // --- INTERNAL DND SETUP ---
   const {
@@ -210,15 +233,8 @@ function TimelineContainerComponent({
         // 3. Store this anchor point
         zoomAnchorRef.current = { mouseOffsetX, anchorTimeTicks };
 
-        // 4. Update the zoom scale
-        const zoomSensitivity = 0.01;
-        const delta = -e.deltaY * zoomSensitivity;
-        const newScale = Math.max(
-          MIN_ZOOM,
-          Math.min(zoomScale + delta, MAX_ZOOM),
-        );
-
-        setZoomScale(newScale);
+        // 4. Update the zoom scale (the store clamps it to the zoom bounds)
+        setZoomScale(zoomScaleAfterWheel(zoomScale, e.deltaY));
       }
     };
 
@@ -247,16 +263,48 @@ function TimelineContainerComponent({
     }
   }, [zoomScale, scrollContainerRef, ticksToPx]);
 
-  const calculateTimelineWidth = () => {
-    let maxClipEnd = timelineClips.reduce(
-      (max, clip) =>
-        Math.max(
-          max,
-          clipPresentationById.get(clip.id)?.end ??
-            clip.start + clip.timelineDuration,
-        ),
-      0,
+  const committedClipEnd = React.useMemo(
+    () =>
+      timelineClips.reduce(
+        (max, clip) =>
+          Math.max(
+            max,
+            clipPresentationById.get(clip.id)?.end ??
+              clip.start + clip.timelineDuration,
+          ),
+        0,
+      ),
+    [timelineClips, clipPresentationById],
+  );
+
+  // Track the viewport width so the zoom-out floor can fit the whole timeline.
+  const [viewportWidth, setViewportWidth] = useState(0);
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setViewportWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [scrollContainerRef]);
+
+  // Derived from committed clips only, so a drag that transiently extends the
+  // timeline does not move the zoom floor mid-gesture.
+  useEffect(() => {
+    setMinZoomScale(
+      resolveMinZoomScale(
+        paddedTimelineDuration(committedClipEnd),
+        viewportWidth - TRACK_HEADER_WIDTH,
+      ),
     );
+  }, [committedClipEnd, viewportWidth, setMinZoomScale]);
+
+  const calculateTimelineWidth = () => {
+    let maxClipEnd = committedClipEnd;
 
     // If dragging, check if the projected position exceeds the current max
     if (interactionActiveClip) {
@@ -296,13 +344,7 @@ function TimelineContainerComponent({
       }
     }
 
-    const minDurationTicks = mediaSecondsToTickExact(15);
-    const bufferTicks = mediaSecondsToTickExact(10);
-    const totalDurationTicks = Math.max(
-      minDurationTicks,
-      maxClipEnd + bufferTicks,
-    );
-    return ticksToPx(totalDurationTicks);
+    return ticksToPx(paddedTimelineDuration(maxClipEnd));
   };
 
   const timelineWidth = calculateTimelineWidth();

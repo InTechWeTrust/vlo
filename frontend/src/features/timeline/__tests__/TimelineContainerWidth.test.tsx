@@ -4,7 +4,11 @@ import { TimelineContainer } from "../TimelineContainer";
 import { useTimelineStore } from "../useTimelineStore";
 import { useTimelineViewStore } from "../hooks/useTimelineViewStore";
 import { useInteractionStore } from "../hooks/useInteractionStore";
-import { TICKS_PER_SECOND } from "../constants";
+import {
+  PIXELS_PER_SECOND,
+  TICKS_PER_SECOND,
+  TRACK_HEADER_WIDTH,
+} from "../constants";
 import { type BaseClip } from "../../../types/TimelineTypes";
 
 // --- MOCKS ---
@@ -200,5 +204,72 @@ describe("TimelineContainer Width Calculation", () => {
     const newWidth = parseFloat(window.getComputedStyle(element2!).minWidth);
 
     expect(newWidth).toBe(defaultWidth);
+  });
+
+  it("lowers the zoom-out floor so a long timeline fits the viewport", () => {
+    const OriginalResizeObserver = globalThis.ResizeObserver;
+    const VIEWPORT_WIDTH = 1080;
+    // Report a measured viewport so the container can derive the floor.
+    globalThis.ResizeObserver = class {
+      private readonly callback: ResizeObserverCallback;
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+      observe(target: Element) {
+        this.callback(
+          [
+            {
+              target,
+              contentRect: { width: VIEWPORT_WIDTH } as DOMRectReadOnly,
+            } as ResizeObserverEntry,
+          ],
+          this as unknown as ResizeObserver,
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+    };
+
+    try {
+      const HOUR = 3600 * TICKS_PER_SECOND;
+      useTimelineStore.setState({
+        clips: [
+          {
+            id: "long",
+            start: 0,
+            timelineDuration: HOUR,
+            trackId: "t1",
+            type: "video",
+            name: "Long",
+            assetId: "asset_long",
+            offset: 0,
+            sourceDuration: HOUR,
+            transformedDuration: HOUR,
+            transformedOffset: 0,
+            croppedSourceDuration: HOUR,
+            transformations: [],
+          },
+        ],
+      });
+
+      render(
+        <TimelineContainer
+          scrollContainerRef={scrollContainerRef}
+          insertGapIndex={null}
+        />,
+      );
+
+      // One hour plus the 10s end buffer fills the viewport minus the header.
+      const expected =
+        (VIEWPORT_WIDTH - TRACK_HEADER_WIDTH) /
+        (((HOUR + 10 * TICKS_PER_SECOND) / TICKS_PER_SECOND) *
+          PIXELS_PER_SECOND);
+      expect(useTimelineViewStore.getState().minZoomScale).toBeCloseTo(
+        expected,
+        8,
+      );
+    } finally {
+      globalThis.ResizeObserver = OriginalResizeObserver;
+    }
   });
 });

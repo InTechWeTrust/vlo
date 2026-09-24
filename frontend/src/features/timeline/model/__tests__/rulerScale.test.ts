@@ -52,7 +52,8 @@ describe("chooseRulerScale", () => {
   });
 
   it("uses whole-second and coarser steps when zoomed out", () => {
-    // Minimum zoom: 10px/s, so a second is too narrow to gradate.
+    // 10px/s (the zoom floor for short timelines): a second is too narrow to
+    // gradate.
     expect(chooseRulerScale(10, FPS)).toEqual({
       gradationTicks: 2 * TICKS_PER_SECOND,
       labelTicks: 10 * TICKS_PER_SECOND,
@@ -63,6 +64,13 @@ describe("chooseRulerScale", () => {
       labelTicks: TICKS_PER_SECOND,
       frameLabels: false,
     });
+  });
+
+  it("keeps labels clear of each other on a timeline zoomed out to fit hours", () => {
+    // A 5-hour timeline fitted into ~1000px.
+    const pps = 1000 / (5 * 3600);
+    const { labelTicks } = chooseRulerScale(pps, FPS);
+    expect((labelTicks / TICKS_PER_SECOND) * pps).toBeGreaterThanOrEqual(64);
   });
 
   it("falls back to the frame step for a frame rate with no divisors", () => {

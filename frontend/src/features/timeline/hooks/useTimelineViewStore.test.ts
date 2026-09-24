@@ -11,6 +11,7 @@ describe("useTimelineViewStore", () => {
   beforeEach(() => {
     useTimelineViewStore.setState({
       zoomScale: 1,
+      minZoomScale: MIN_ZOOM,
     });
   });
 
@@ -26,12 +27,31 @@ describe("useTimelineViewStore", () => {
     store.setZoomScale(2);
     expect(useTimelineViewStore.getState().zoomScale).toBe(2);
 
-    // Clamping checks (assuming 0.1 to 10 limits)
-    store.setZoomScale(MIN_ZOOM);
+    store.setZoomScale(MIN_ZOOM / 2);
     expect(useTimelineViewStore.getState().zoomScale).toBe(MIN_ZOOM);
 
-    store.setZoomScale(MAX_ZOOM);
-    expect(useTimelineViewStore.getState().zoomScale).toBe(MAX_ZOOM); // clamped to 10
+    store.setZoomScale(MAX_ZOOM * 2);
+    expect(useTimelineViewStore.getState().zoomScale).toBe(MAX_ZOOM);
+  });
+
+  it("clamps zoom-out to the length-dependent floor", () => {
+    const store = useTimelineViewStore.getState();
+    store.setMinZoomScale(0.005);
+
+    store.setZoomScale(0.01);
+    expect(useTimelineViewStore.getState().zoomScale).toBe(0.01);
+
+    store.setZoomScale(0.001);
+    expect(useTimelineViewStore.getState().zoomScale).toBe(0.005);
+  });
+
+  it("does not move the current zoom when the floor rises", () => {
+    const store = useTimelineViewStore.getState();
+    store.setMinZoomScale(0.005);
+    store.setZoomScale(0.005);
+
+    store.setMinZoomScale(MIN_ZOOM);
+    expect(useTimelineViewStore.getState().zoomScale).toBe(0.005);
   });
 
   it("calculates ticksToPx correctly based on zoom", () => {
