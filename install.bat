@@ -367,14 +367,25 @@ set "PROFILE_STATUS_BASE=installed"
 :: -- 7. Optional capability profiles --------------------------------
 
 if "%PROFILES_EXPLICIT%"=="1" goto :profiles_chosen
+
+:: Keep what an earlier install chose, so a rerun (and every update) does not
+:: ask again with a default of "no". --profiles still decides outright.
+for /f "usebackq delims=" %%P in (`call "%VENV_PY%" "%SCRIPT_DIR%scripts\previous-install-profiles.py" "%SCRIPT_DIR%backend\runtime\install-profiles.json" 2^>nul`) do (
+    if "%%P"=="sam2" set "WANT_SAM2=1"
+    if "%%P"=="sam-audio" set "WANT_SAM_AUDIO=1"
+    echo [INFO]  %%P was chosen in an earlier install; updating it ^(use --profiles to choose again^).
+)
 if "%ASSUME_YES%"=="1" goto :profiles_chosen
 
+if "%WANT_SAM2%"=="1" goto :ask_sam_audio
 echo.
 set "INSTALL_SAM2="
 set /p INSTALL_SAM2=Would you like to install SAM2 for video segmentation and masking? (Requires CUDA for GPU acceleration) [y/N]:
 if /I "!INSTALL_SAM2!"=="Y" set "WANT_SAM2=1"
 if /I "!INSTALL_SAM2!"=="YES" set "WANT_SAM2=1"
 
+:ask_sam_audio
+if "%WANT_SAM_AUDIO%"=="1" goto :profiles_chosen
 set "INSTALL_SAM_AUDIO="
 set /p INSTALL_SAM_AUDIO=Would you like to install SAM-Audio for prompted audio separation? (Requires Python 3.11+) [y/N]:
 if /I "!INSTALL_SAM_AUDIO!"=="Y" set "WANT_SAM_AUDIO=1"

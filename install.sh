@@ -579,12 +579,28 @@ fi
 # -- 5. Optional capability profiles ---------------------------------
 
 if [ "$PROFILES_EXPLICIT" -eq 0 ]; then
-    printf '\n'
-    ask_yes_no "Would you like to install SAM2 for video segmentation and masking? (Requires CUDA for GPU acceleration) [y/N]: " n want_sam2
-    [ "$want_sam2" = "yes" ] && add_profile sam2
+    # Keep what an earlier install chose, so a rerun (and every update) does
+    # not ask again with a default of "no". --profiles still decides outright.
+    while IFS= read -r previous_profile; do
+        case "$previous_profile" in
+            sam2|sam-audio)
+                add_profile "$previous_profile"
+                info "${previous_profile} was chosen in an earlier install; updating it (use --profiles to choose again)."
+                ;;
+        esac
+    done < <("$VENV_PY" "$SCRIPT_DIR/scripts/previous-install-profiles.py" \
+        "$SCRIPT_DIR/backend/runtime/install-profiles.json" 2>/dev/null || true)
 
-    ask_yes_no "Would you like to install SAM-Audio for prompted audio separation? (Requires Python 3.11+) [y/N]: " n want_sam_audio
-    [ "$want_sam_audio" = "yes" ] && add_profile sam-audio
+    if ! profile_requested sam2; then
+        printf '\n'
+        ask_yes_no "Would you like to install SAM2 for video segmentation and masking? (Requires CUDA for GPU acceleration) [y/N]: " n want_sam2
+        [ "$want_sam2" = "yes" ] && add_profile sam2
+    fi
+
+    if ! profile_requested sam-audio; then
+        ask_yes_no "Would you like to install SAM-Audio for prompted audio separation? (Requires Python 3.11+) [y/N]: " n want_sam_audio
+        [ "$want_sam_audio" = "yes" ] && add_profile sam-audio
+    fi
 fi
 
 install_profile_requirements() {
