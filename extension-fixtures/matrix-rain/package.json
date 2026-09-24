@@ -12,6 +12,6 @@
     "@vlo/extension-sdk": "file:../../packages/extension-sdk",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.11"
   }
 }

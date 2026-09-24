@@ -144,8 +144,10 @@ with an empty folder.
 - installs the npm and Python dependencies and builds the frontend;
 - offers the optional local-AI profiles — SAM2 for segmentation and masking,
   SAM-Audio for prompted audio separation — along with PyTorch with CUDA 13.0.
-  Answer yes if you have an Nvidia GPU and want masking. To add one afterwards,
-  rerun the installer; profiles and CUDA PyTorch installed earlier are kept.
+  Answer yes if you have an Nvidia GPU and want masking. Reruns, including
+  every update, keep and update the profiles and CUDA PyTorch installed
+  earlier, and ask only about profiles you have not chosen yet. To add one
+  afterwards, rerun the installer.
 
 To install without prompts, name the profiles:
 
