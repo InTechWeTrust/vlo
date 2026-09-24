@@ -473,7 +473,7 @@ export function ProjectManager() {
               color: alpha("#FFFFFF", 0.52),
             }}
           >
-            vlo v{VLO_APP_VERSION ? VLO_APP_VERSION.split(".").slice(0, 2).join(".") : "0.2"}
+            vlo v{VLO_APP_VERSION ? VLO_APP_VERSION.split(".").slice(0, 2).join(".") : "0.3"}
           </Typography>
         </LandingPanel>
 

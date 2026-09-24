@@ -10,7 +10,7 @@ Declare the narrowest honest application range in `manifest.json` and optional
 informational metadata:
 
 ```json
-{ "sdk": ">=1.0.0 <2.0.0", "vlo": ">=0.2.0 <0.3.0", "capabilities": ["host.raw"] }
+{ "sdk": ">=1.0.0 <2.0.0", "vlo": ">=0.3.0 <0.4.0", "capabilities": ["host.raw"] }
 ```
 
 Feature-detect `api.trusted.host.list()` or `get(id)`. Use `require(id)` only when

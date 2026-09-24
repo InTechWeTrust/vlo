@@ -106,7 +106,7 @@ function createConformanceApi() {
     },
     trusted: {
       host: {
-        hostVersion: "0.2.0",
+        hostVersion: "0.3.0",
         list: () => [],
         get: () => undefined,
         require: () => {

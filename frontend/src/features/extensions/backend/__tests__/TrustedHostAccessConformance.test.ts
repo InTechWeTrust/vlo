@@ -37,7 +37,7 @@ describe("trusted host access conformance fixture", () => {
     const api = {
       trusted: {
         host: {
-          hostVersion: "0.2.0",
+          hostVersion: "0.3.0",
           list: () => [],
           get: (id: string) => {
             if (id === "timeline.store") {
@@ -154,7 +154,7 @@ describe("trusted host access conformance fixture", () => {
       own: <TResource extends ExtensionResource>(resource: TResource) => resource,
       report: vi.fn(),
     };
-    const host = directory.bind(scope, "0.2.0");
+    const host = directory.bind(scope, "0.3.0");
 
     expect(() =>
       activate({

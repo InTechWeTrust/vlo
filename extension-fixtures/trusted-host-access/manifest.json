@@ -4,7 +4,7 @@
   "name": "Trusted Host Access Conformance Fixture",
   "version": "1.0.0",
   "sdk": ">=1.0.0 <2.0.0",
-  "vlo": ">=0.2.0 <0.3.0",
+  "vlo": ">=0.3.0 <0.4.0",
   "frontend": {
     "entry": "frontend/dist/index.js"
   },

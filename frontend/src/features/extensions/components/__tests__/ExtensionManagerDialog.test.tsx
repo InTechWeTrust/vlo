@@ -253,7 +253,7 @@ describe("ExtensionManagerDialog", () => {
   it("blocks an incompatible VLO range", async () => {
     const incompatible = extensionItem("pending_approval");
     if (!incompatible.manifest) throw new Error("fixture manifest missing");
-    incompatible.manifest.vlo = ">=0.3.0";
+    incompatible.manifest.vlo = ">=999.0.0";
     vi.mocked(globalThis.fetch).mockResolvedValue(
       response({ extensions: [incompatible] }),
     );

@@ -743,7 +743,7 @@ def test_trusted_host_fixture_builds_and_cleans_backend_hook_through_approval(
 
     assert pending.status == "pending_approval"
     assert pending.manifest is not None
-    assert pending.manifest.vlo == ">=0.2.0 <0.3.0"
+    assert pending.manifest.vlo == ">=0.3.0 <0.4.0"
     assert pending.digest is not None
     assert {
         name for name in sys.modules if name.startswith("_vlo_extension_")
@@ -767,7 +767,7 @@ def test_trusted_host_fixture_builds_and_cleans_backend_hook_through_approval(
         if route.path
         == "/app/extensions/example.trusted-host-access/api/host-version"
     )
-    assert version_route.endpoint()["vloVersion"] == "0.2.0"
+    assert version_route.endpoint()["vloVersion"] == "0.3.0"
 
     assert asyncio.run(runtime.stop()) == ()
     assert tuple(extension_logger.filters) == original_filters
