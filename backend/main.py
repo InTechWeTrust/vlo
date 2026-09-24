@@ -13,6 +13,7 @@ from config import (
 )
 from services.legacy_core import project_service
 from models import ProjectCreateRequest, ProjectResponse, AssetResponse, ProjectUpdateRequest
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from services.legacy_core.project_service import get_project_path_by_id
 from routers.comfyui import (
@@ -241,7 +242,7 @@ async def get_app_status():
     comfyui_config_error = get_comfyui_url_error()
     comfyui_status = "invalid_config" if comfyui_config_error else "disconnected"
     comfyui_error = comfyui_config_error
-    vram_info = detect_local_vram()
+    vram_info = await run_in_threadpool(detect_local_vram)
 
     if not comfyui_config_error:
         try:
