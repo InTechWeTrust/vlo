@@ -2365,6 +2365,32 @@ describe("useGenerationStore pipeline phases", () => {
     expect(mockGetRuntimeStatus).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps an offline state through proxy reconnect attempts", async () => {
+    useGenerationStore.getState().connect();
+    const client = getLatestClient();
+    useGenerationStore.setState({ connectionStatus: "disconnected" });
+
+    // The proxy accepts the socket, then reports ComfyUI unreachable.
+    client.emitConnectionChange("connected");
+    expect(useGenerationStore.getState().connectionStatus).toBe(
+      "disconnected",
+    );
+    client.emitEvent({
+      type: "error",
+      data: { message: "ComfyUI connection failed" },
+    });
+    expect(useGenerationStore.getState().connectionStatus).not.toBe(
+      "connecting",
+    );
+
+    client.emitConnectionChange("connected");
+    client.emitEvent({
+      type: "status",
+      data: { status: { exec_info: { queue_remaining: 0 } } },
+    });
+    expect(useGenerationStore.getState().connectionStatus).toBe("connected");
+  });
+
   it("tracks ComfyUI's global queue depth from status broadcasts", async () => {
     useGenerationStore.getState().connect();
     const client = getLatestClient();

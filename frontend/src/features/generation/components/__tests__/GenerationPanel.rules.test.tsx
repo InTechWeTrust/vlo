@@ -455,6 +455,50 @@ describe("GenerationPanel workflow rule hints", () => {
     ).toBeInTheDocument();
   });
 
+  it("replaces the launch button with startup progress while ComfyUI starts", () => {
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        connectionStatus: "disconnected",
+        selectedWorkflowId: null,
+        runtimeStatus: {
+          comfyui: {
+            status: "disconnected",
+            url: "http://127.0.0.1:8188",
+            error: "offline",
+            launch: {
+              state: "running",
+              pid: 4321,
+              exitCode: null,
+              logPath: "/vlo/backend/runtime/comfyui.log",
+              logTail: ["[INFO] Loading custom nodes", "Import times:"],
+            },
+          },
+          settings: {
+            comfyuiInstallVerification: {
+              requestedPath: "/opt/ComfyUI",
+              installPath: "/opt/ComfyUI",
+              valid: true,
+              mainPyPresent: true,
+              sourceMarkers: ["argument parser"],
+              layoutMarkers: ["comfy", "nodes.py", "server.py"],
+              warnings: [],
+            },
+          },
+        },
+      }),
+    );
+
+    render(<GenerationPanel />);
+
+    expect(screen.getByText("ComfyUI is not connected")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Launch ComfyUI" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("comfyui-launch-progress")).toHaveTextContent(
+      "Import times:",
+    );
+  });
+
   it("shows a neutral connecting state instead of the offline gate", () => {
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
       makeHookState({

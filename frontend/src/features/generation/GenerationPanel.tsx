@@ -71,6 +71,7 @@ import {
 } from "./utils/aspectRatioSelection";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
 import { ComfyuiLaunchExitDetails } from "./components/ComfyuiLaunchExitDetails";
+import { ComfyuiLaunchProgress } from "./components/ComfyuiLaunchProgress";
 import { useProjectStore } from "../project";
 import { ExtensionUiSlot } from "../extensions/ui/publicApi";
 import { useGenerationSessionMount } from "./hooks/useGenerationSessionMount";
@@ -385,10 +386,13 @@ export function GenerationPanel() {
   } = useGenerationPanel(effectiveWorkflowMode);
   const configuredInstall =
     runtimeStatus?.settings?.comfyuiInstallVerification;
+  const comfyuiLaunch = runtimeStatus?.comfyui.launch;
+  const comfyuiLaunchStarting = comfyuiLaunch?.state === "running";
   const canLaunchLocalComfyui =
     runtimeStatus !== null &&
     runtimeStatus.comfyui.status !== "connected" &&
     connectionStatus !== "connecting" &&
+    !comfyuiLaunchStarting &&
     configuredInstall?.valid === true &&
     Boolean(configuredInstall.installPath);
 
@@ -509,7 +513,6 @@ export function GenerationPanel() {
     }
   };
 
-  const comfyuiLaunch = runtimeStatus?.comfyui.launch;
   // Hidden while a new launch request is in flight: the status in hand still
   // describes the previous process until the post-launch refresh lands.
   const exitedComfyuiLaunch =
@@ -1320,7 +1323,11 @@ export function GenerationPanel() {
                 {isLaunchingComfyui ? "Launching ComfyUI…" : "Launch ComfyUI"}
               </Button>
             ) : null}
-            {comfyuiLaunchMessage && !exitedComfyuiLaunch ? (
+            {comfyuiLaunchStarting ? (
+              <ComfyuiLaunchProgress
+                latestOutput={comfyuiLaunch?.logTail.at(-1) ?? null}
+              />
+            ) : comfyuiLaunchMessage && !exitedComfyuiLaunch ? (
               <Typography
                 variant="caption"
                 sx={{ color: "text.secondary", display: "block", mt: 1 }}

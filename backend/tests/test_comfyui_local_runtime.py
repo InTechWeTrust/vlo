@@ -820,6 +820,15 @@ def test_launch_log_tail_is_bounded(tmp_path: Path) -> None:
     assert tail[-1] == "line 4999"
 
 
+def test_launch_log_tail_strips_terminal_colours(tmp_path: Path) -> None:
+    log_path = tmp_path / "comfyui.log"
+    log_path.write_bytes(b"\x1b[32m[INFO]\x1b[0m Checkpoint files will always be loaded safely.\n")
+
+    assert local_runtime._read_log_tail(log_path, 0) == [
+        "[INFO] Checkpoint files will always be loaded safely."
+    ]
+
+
 def test_directory_picker_is_single_flight() -> None:
     local_runtime._DIRECTORY_PICKER_LOCK.acquire()
     try:

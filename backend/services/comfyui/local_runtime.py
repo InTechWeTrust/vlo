@@ -77,6 +77,8 @@ _LAYOUT_MARKERS = ("comfy", "nodes.py", "server.py", "folder_paths.py")
 # shipping a large custom-node import dump on every status poll.
 _LAUNCH_LOG_TAIL_BYTES = 16 * 1024
 _LAUNCH_LOG_TAIL_LINES = 20
+# ComfyUI colours its log levels even when writing to a file.
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 _VERIFICATION_CACHE_LOCK = threading.Lock()
 _VERIFICATION_CACHE: dict[str, ComfyuiInstallVerification] = {}
 _DIRECTORY_PICKER_LOCK = threading.Lock()
@@ -385,7 +387,7 @@ def _read_log_tail(log_path: Path, offset: int) -> list[str]:
             data = handle.read()
     except OSError:
         return []
-    lines = data.decode("utf-8", errors="replace").splitlines()
+    lines = _ANSI_ESCAPE.sub("", data.decode("utf-8", errors="replace")).splitlines()
     if start > offset and lines:
         # The read began mid-line.
         lines = lines[1:]

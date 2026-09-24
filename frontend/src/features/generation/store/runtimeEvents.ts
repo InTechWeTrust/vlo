@@ -73,10 +73,12 @@ export function attachRuntimeClientHandlers(
 
   client.onConnectionChange((wsState) => {
     if (wsState === "connected") {
+      // An open socket is not evidence ComfyUI is up: the backend proxy
+      // accepts before dialling upstream, so while ComfyUI is down every
+      // 3s retry opens and then errors. Re-entering "connecting" here made
+      // the panel flicker between the connecting and offline states. The
+      // ComfyUI "status" frame sent on a real connect promotes the state.
       void get().refreshRuntimeStatus();
-      if (get().connectionStatus !== "connected") {
-        set({ connectionStatus: "connecting" });
-      }
       resumeQueuedDispatch();
     } else {
       set((state) => ({
