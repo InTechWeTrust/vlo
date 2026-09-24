@@ -1,3 +1,7 @@
+# cmd.exe can miss `goto`/`call` labels in LF-only batch files, and GitHub's
+# ZIP downloads keep whatever line endings these rules produce.
+*.bat text eol=crlf
+
 # Machine-readable catalogue for extension contract impact reporting.
 # Values describe review sensitivity, not whether every file is a stable API.
 

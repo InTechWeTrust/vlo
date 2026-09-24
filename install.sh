@@ -488,6 +488,11 @@ install_vlo_python() {
 info "VLO Installer"
 printf '\n'
 
+if ! command -v git >/dev/null 2>&1 || ! git --version >/dev/null 2>&1; then
+    error "Git is required to install VLO and its managed runtimes. Install it from https://git-scm.com/downloads, then rerun this script."
+    exit 1
+fi
+
 configure_vlo_node_distribution
 if [ "$FORCE_INSTALL_VLO_NODE" -eq 1 ]; then
     info "--update-node requested. Installing VLO-managed Node.js ${VLO_NODE_VERSION}..."

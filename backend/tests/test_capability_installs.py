@@ -140,6 +140,22 @@ def test_a_profile_override_file_rides_along_with_the_requirements(
     validate_plan(plan)
 
 
+def test_a_vcs_profile_reports_missing_git_before_starting(
+    with_uv: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = install_plan_for_capability("sam2")
+    assert plan is not None
+    monkeypatch.setattr(
+        installs.shutil,
+        "which",
+        lambda command: None if command == "git" else f"/usr/bin/{command}",
+    )
+
+    with pytest.raises(InstallNotAvailableError, match="Git is required"):
+        validate_plan(plan)
+
+
 def test_pip_installs_when_the_machine_has_no_uv(
     without_uv: None,
     monkeypatch: pytest.MonkeyPatch,

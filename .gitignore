@@ -74,3 +74,4 @@ backend/sam2
 .claude
 backend/runtime/
 frontend/dist-render-worker/
+.vlo-update-backups/

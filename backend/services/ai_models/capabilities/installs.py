@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
 import threading
 import time
@@ -360,10 +361,12 @@ def _install_environment() -> dict[str, str]:
 def validate_plan(plan: InstallPlan) -> None:
     """Fail before starting the installer, where the message can be useful.
 
-    A requirements file that is not on disk produces an installer error the
-    user cannot act on ("No such file or directory: -r"), and it is the one
-    precondition worth stating in the capability's own terms.
+    A missing requirements file and a missing Git executable both otherwise
+    produce low-level installer errors. Report them in the capability's own
+    terms before creating a background job.
     """
+
+    requires_git = any(argument.startswith("git+") for argument in plan.argv)
 
     for index, argument in enumerate(plan.argv):
         if argument in ("-r", "--overrides") and index + 1 < len(plan.argv):
@@ -373,6 +376,23 @@ def validate_plan(plan: InstallPlan) -> None:
                     f"The requirements file for this install is missing: "
                     f"{requirements}"
                 )
+            try:
+                contents = requirements.read_text(encoding="utf-8")
+                requires_git = requires_git or any(
+                    "git+" in line.partition("#")[0]
+                    for line in contents.splitlines()
+                )
+            except OSError as exc:
+                raise InstallNotAvailableError(
+                    f"The requirements file for this install could not be read: "
+                    f"{requirements}"
+                ) from exc
+
+    if requires_git and shutil.which("git") is None:
+        raise InstallNotAvailableError(
+            "Git is required for this install. Install it from "
+            "https://git-scm.com/downloads, restart VLO, and try again."
+        )
 
 
 def run_install(

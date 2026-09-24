@@ -98,8 +98,40 @@ install.bat
 run.bat
 ```
 
+### Update
+
+Close vlo, then run the updater from the installation folder. It fetches the
+latest source and reruns the installer to update dependencies and rebuild the
+frontend:
+
+```bash
+./update.sh
+```
+
+```batch
+update.bat
+```
+
+The updater uses the checkout's existing branch and upstream. In an existing Git
+checkout, tracked local changes must be committed or removed before updating.
+
+If vlo was downloaded as a GitHub ZIP, the first update converts that folder
+into a shallow Git checkout. Projects, models, virtual environments, runtime
+settings, and other ignored local data stay where they are. The conversion
+does overwrite source files that differ from the latest version, and it moves
+aside source files the latest version no longer includes. Before touching any
+of them, the updater lists them and asks for confirmation. Each one is saved
+under `.vlo-update-backups/zip-import-<time>/` at its original path, with a
+`MANIFEST.txt`. Pass `--confirm-zip-conversion` to approve without a prompt,
+for example from a script. The updater refuses to convert if a symbolic link
+stands in for a folder that holds VLO's own files, because the conversion would
+replace the link with an empty folder.
+
 `install.sh` / `install.bat`:
 
+- verifies that Git is available before changing the installation. The updater,
+  managed ComfyUI and custom-node installs, and the optional SAM profiles all
+  use Git directly or through VCS-backed Python packages;
 - finds a compatible Node.js (20.19+ or 22.13+) and Python (3.10+), or offers to
   install VLO-managed copies. Those are per-user, and change neither your PATH
   nor your shell profile;

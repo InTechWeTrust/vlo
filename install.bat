@@ -207,6 +207,17 @@ goto :eof
 echo [INFO]  VLO Installer
 echo.
 
+where git >nul 2>&1
+if errorlevel 1 (
+    call :fail "Git is required to install VLO and its managed runtimes. Install it from https://git-scm.com/downloads, open a new terminal, and rerun this script."
+    goto :eof
+)
+git --version >nul 2>&1
+if errorlevel 1 (
+    call :fail "Git was found, but git --version failed. Repair Git, open a new terminal, and rerun this script."
+    goto :eof
+)
+
 :: -- 1. Check prerequisites -----------------------------------------
 
 :: Node.js
