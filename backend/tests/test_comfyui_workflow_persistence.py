@@ -287,6 +287,7 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         for placement in tree["leafPlacements"]
     } == {
         "vlo_klein_multi.json": "image.generate",
+        "vlo_krea2_turbo.json": "image.generate",
         "vlo_SeedVR2_image.json": "image.enhance",
         "vlo_ltx2_5.json": "video.generate",
         "vlo_wan2_2.json": "video.generate",

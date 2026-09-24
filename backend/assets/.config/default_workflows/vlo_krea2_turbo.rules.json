@@ -1,0 +1,203 @@
+{
+  "version": 3,
+  "name": "Krea-2 Turbo",
+  "sections": [
+    {
+      "id": "lora_loaders",
+      "title": "LoRA loaders",
+      "order": 3,
+      "default_open": true
+    },
+    {
+      "id": "advanced_settings",
+      "title": "Advanced Settings",
+      "order": 4,
+      "default_open": false
+    }
+  ],
+  "nodes": {
+    "30:19": {
+      "present": {
+        "label": "Prompt",
+        "input_type": "text",
+        "param": "value"
+      }
+    },
+    "30:24": {
+      "widgets": {
+        "value": {
+          "label": "Prompt enhancement",
+          "value_type": "boolean",
+          "default": true,
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 3
+        }
+      }
+    },
+    "30:3": {
+      "widgets": {
+        "seed": {
+          "label": "Seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 1
+        },
+        "steps": {
+          "label": "Steps",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 20,
+          "step": 1,
+          "default": 8,
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 2
+        },
+        "cfg": {
+          "label": "CFG",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 0
+        },
+        "sampler_name": {
+          "label": "Sampler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 1
+        },
+        "scheduler": {
+          "label": "Scheduler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 2
+        },
+        "denoise": { "hidden": true }
+      }
+    },
+    "30:16": {
+      "widgets": {
+        "max_length": {
+          "label": "Enhancer max tokens",
+          "value_type": "int",
+          "section_id": "advanced_settings",
+          "group_id": "prompt_enhancement",
+          "group_title": "Prompt Enhancement",
+          "group_order": 0
+        }
+      }
+    },
+    "30:15": {
+      "widgets": {
+        "lora_name": {
+          "label": "Model",
+          "discover_when_bypassed": true,
+          "default_node_bypass": true,
+          "section_id": "lora_loaders",
+          "group_id": "lora_style",
+          "group_title": "Style LoRA"
+        }
+      }
+    },
+    "30:27": {
+      "widgets": {
+        "string_b": {
+          "label": "Trigger word",
+          "value_type": "string",
+          "default": "",
+          "section_id": "lora_loaders",
+          "group_id": "lora_style",
+          "group_title": "Style LoRA"
+        }
+      }
+    },
+    "52": {
+      "widgets": {
+        "value": {
+          "label": "Width",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "53": {
+      "widgets": {
+        "value": {
+          "label": "Height",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    }
+  },
+  "validation": { "inputs": [] },
+  "derived_widgets": [],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "workflow_param",
+          "node_id": "30:27",
+          "param": "string_b"
+        },
+        "operator": "eq",
+        "value": ""
+      },
+      "bypass": ["30:27"]
+    }
+  ],
+  "slots": {},
+  "pipeline": [
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 16,
+        "search_steps": 2,
+        "resolution_ladder": { "min": 512, "max": 1536, "steps": 5 },
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs"
+        }
+      },
+      "targets": [
+        {
+          "width": { "node_id": "52", "param": "value" },
+          "height": { "node_id": "53", "param": "value" }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "default": 1024,
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 0
+        },
+        {
+          "key": "target_aspect_ratio",
+          "label": "Aspect ratio",
+          "value_type": "string",
+          "expose": "widget",
+          "source": "client",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 0
+        }
+      ]
+    }
+  ]
+}

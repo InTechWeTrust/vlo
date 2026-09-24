@@ -33,6 +33,7 @@ export const DEFAULT_GENERATION_WORKFLOW_MENU: MenuTreeDefinition = {
     { leafId: "vlo_SeedVR2_video.json", parentId: "video.enhance", order: 0 },
     { leafId: "vlo_gimm_vfi.json", parentId: "video.enhance", order: 1 },
     { leafId: "vlo_klein_multi.json", parentId: "image.generate", order: 0 },
+    { leafId: "vlo_krea2_turbo.json", parentId: "image.generate", order: 1 },
     { leafId: "vlo_SeedVR2_image.json", parentId: "image.enhance", order: 0 },
   ],
 };
