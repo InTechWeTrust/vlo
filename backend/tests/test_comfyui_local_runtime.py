@@ -94,6 +94,10 @@ def test_managed_custom_nodes_match_readme_except_wan_video_wrapper() -> None:
     expected_urls = [
         url for url in readme_urls if not url.endswith("/ComfyUI-WanVideoWrapper")
     ]
+    assert (
+        "https://github.com/xmarre/ComfyUI-Spectrum-MiniMax-H3"
+        in MANAGED_CUSTOM_NODE_REPOSITORY_URLS
+    )
     assert list(MANAGED_CUSTOM_NODE_REPOSITORY_URLS) == expected_urls
 
 
