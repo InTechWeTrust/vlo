@@ -1429,7 +1429,7 @@ describe("useGenerationStore workflow rules", () => {
         });
       useGenerationStore
         .getState()
-        .setMediaInputItemOption("142:files", "audio", true);
+        .setMediaInputItemOption("142:files", "audio", false);
 
       // The extraction finishing rewrites the same selection in place.
       useGenerationStore
@@ -1445,10 +1445,10 @@ describe("useGenerationStore workflow rules", () => {
         value?.kind === "timelineSelection" &&
           value.mediaType === "video" &&
           value.includeEmbeddedAudio,
-      ).toBe(true);
+      ).toBe(false);
     });
 
-    it("drops a per-item switch when a different selection replaces the item", () => {
+    it("resets a per-item switch when a different selection replaces the item", () => {
       const thumbnailFile = new File(["png"], "thumb.png", {
         type: "image/png",
       });
@@ -1466,7 +1466,7 @@ describe("useGenerationStore workflow rules", () => {
         );
       useGenerationStore
         .getState()
-        .setMediaInputItemOption("142:files", "audio", true);
+        .setMediaInputItemOption("142:files", "audio", false);
 
       useGenerationStore
         .getState()
@@ -1477,27 +1477,27 @@ describe("useGenerationStore workflow rules", () => {
           { mediaType: "video", isExtracting: false },
         );
 
+      // The mute belonged to the old range; the new one starts from the
+      // slot's audio-on default.
       const value = useGenerationStore.getState().mediaInputs["142:files"];
       expect(
         value?.kind === "timelineSelection" && value.mediaType === "video"
           ? value.includeEmbeddedAudio
           : undefined,
-      ).toBeUndefined();
+      ).toBe(true);
     });
 
-    it("drops a per-item switch when a different asset replaces the item", () => {
+    it("resets a per-item switch when a different asset replaces the item", () => {
       seedBatch(1);
       useGenerationStore
         .getState()
-        .setMediaInputItemOption("142:files", "audio", true);
+        .setMediaInputItemOption("142:files", "audio", false);
       const { asset } = makeVideoAsset("clip-9");
 
       useGenerationStore.getState().setMediaInputAsset("142:files", asset);
 
       const value = useGenerationStore.getState().mediaInputs["142:files"];
-      expect(
-        value?.kind === "asset" && value.includeEmbeddedAudio,
-      ).toBeUndefined();
+      expect(value?.kind === "asset" && value.includeEmbeddedAudio).toBe(true);
     });
   });
 });

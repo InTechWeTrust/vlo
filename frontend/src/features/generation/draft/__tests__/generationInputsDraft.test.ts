@@ -650,6 +650,26 @@ describe("a committed draft matches what the editor showed: multi-command", () =
     expect(audioFlags(panel)).toEqual([true, false]);
   });
 
+  it("commits a staged mute over the audio-on default", () => {
+    const { target, result, panel } = commitDraft(
+      [CLIPS],
+      [
+        { kind: "attachAsset", inputId: "143:clips", assetId: "clip-a" },
+        { kind: "attachAsset", inputId: "143:clips", assetId: "clip-b" },
+        {
+          kind: "setMediaOption",
+          inputId: "143:clips",
+          slotId: stagedSlot(1),
+          optionId: "audio",
+          value: false,
+        },
+      ],
+    );
+    expect(result.ok).toBe(true);
+    expect(audioFlags(target).slice(3)).toEqual([true, false]);
+    expect(audioFlags(panel).slice(3)).toEqual([true, false]);
+  });
+
   it("empties a batch the editor emptied", () => {
     // With two items the second removal addresses a slot that, untranslated,
     // no longer exists at all — a `media_not_found` refusal of the whole

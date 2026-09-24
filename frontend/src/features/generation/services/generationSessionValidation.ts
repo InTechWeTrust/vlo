@@ -859,7 +859,7 @@ function withMedia(
  * ones. What matters here is `options`, so that attaching a reference and
  * toggling its audio in the same transaction validates: the switch is offered
  * on exactly the terms the batch strip offers it, and a fresh attach starts
- * off unless the store's carry-forward rule applies.
+ * on unless the store's carry-forward rule applies.
  */
 /**
  * The item an attach would create, as the panel will hold it.
@@ -882,9 +882,10 @@ export function simulateAttachedItem(
     input.repeatable?.optionIds.includes("audio") === true &&
     isVideoAssetWithAudio(asset);
   // Replacing a slot with the same asset keeps its switches, matching
-  // `carryForwardItemOptions` in the store.
+  // `carryForwardItemOptions` in the store; new media delivers its soundtrack
+  // by default (`withDefaultItemOptions`).
   const carried =
-    replaced?.assetId === asset.id ? replaced.options.audio === true : false;
+    replaced?.assetId === asset.id ? replaced.options.audio === true : true;
   return {
     slotId: "",
     itemId: "",

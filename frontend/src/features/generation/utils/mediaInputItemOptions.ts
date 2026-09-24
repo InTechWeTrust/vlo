@@ -1,4 +1,4 @@
-import type { GenerationMediaInputValue } from "../types";
+import type { GenerationMediaInputValue, WorkflowInput } from "../types";
 import { isVideoAssetWithAudio } from "./audioSlotAssets";
 
 /**
@@ -25,4 +25,27 @@ export function readIncludeEmbeddedAudio(
 export function canValueCarryAudio(value: GenerationMediaInputValue): boolean {
   if (value.kind === "asset") return isVideoAssetWithAudio(value.asset);
   return value.kind === "timelineSelection" && value.mediaType === "video";
+}
+
+/**
+ * The switches a newly attached item starts with: a reference video delivers
+ * its own soundtrack until the user mutes it. The default is written onto the
+ * value rather than read from an absent flag, because saved panels and
+ * generation metadata already record "muted" as absence.
+ */
+export function withDefaultItemOptions(
+  input: Pick<WorkflowInput, "inputType" | "presentation">,
+  value: GenerationMediaInputValue,
+): GenerationMediaInputValue {
+  if (
+    input.inputType !== "video" ||
+    input.presentation?.repeatable?.itemOptions?.includes("audio") !== true ||
+    !canValueCarryAudio(value) ||
+    value.kind === "frame" ||
+    (value.kind === "timelineSelection" && value.mediaType !== "video") ||
+    typeof value.includeEmbeddedAudio === "boolean"
+  ) {
+    return value;
+  }
+  return { ...value, includeEmbeddedAudio: true };
 }

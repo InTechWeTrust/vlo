@@ -256,12 +256,22 @@ export async function restoreMediaInputsFromMetadata(
     // Identity rides along: a later preparation write is the same occurrence
     // and carries it, and a saved id another slot already holds is refused by
     // the store rather than aliased.
+    const offersAudioOption =
+      workflowInput.inputType === "video" &&
+      workflowInput.presentation?.repeatable?.itemOptions?.includes("audio") ===
+        true;
     const restoreItemOptions = () => {
       if (input.itemId !== undefined) {
         actions.setMediaInputItemId(inputId, input.itemId);
       }
-      if (input.includeEmbeddedAudio === true) {
-        actions.setMediaInputItemOption(inputId, "audio", true);
+      // Metadata records only `true`; absence is a mute, which has to be
+      // written back over the audio-on default a fresh attach starts with.
+      if (input.includeEmbeddedAudio === true || offersAudioOption) {
+        actions.setMediaInputItemOption(
+          inputId,
+          "audio",
+          input.includeEmbeddedAudio === true,
+        );
       }
     };
 

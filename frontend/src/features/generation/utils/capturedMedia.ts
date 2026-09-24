@@ -1,4 +1,5 @@
 import { buildGenerationMediaItem } from "./generationMediaSnapshot";
+import { withDefaultItemOptions } from "./mediaInputItemOptions";
 import type {
   GenerationInputSnapshot,
   GenerationMediaItemSnapshot,
@@ -77,7 +78,7 @@ export function describeCapturedMedia(
   capture: GenerationCapturedMedia,
   previewUrl = "",
 ): GenerationMediaItemSnapshot {
-  return buildGenerationMediaItem({
+  const workflowInput = {
     inputType: input.inputType,
     presentation: input.repeatable ? {
       repeatable: {
@@ -85,5 +86,13 @@ export function describeCapturedMedia(
         itemOptions: input.repeatable.optionIds.filter((id): id is "audio" => id === "audio"),
       },
     } : undefined,
-  }, createCapturedMediaValue(capture, previewUrl), "", 0);
+  };
+  // With the defaults the store applies on attach, so a staged capture shows
+  // the switches it will commit with.
+  return buildGenerationMediaItem(
+    workflowInput,
+    withDefaultItemOptions(workflowInput, createCapturedMediaValue(capture, previewUrl)),
+    "",
+    0,
+  );
 }

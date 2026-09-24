@@ -18,6 +18,7 @@ import {
   createMediaItemId,
   isValidMediaItemId,
 } from "../utils/mediaItemIds";
+import { withDefaultItemOptions } from "../utils/mediaInputItemOptions";
 import { revokePreviewUrl } from "./mediaInputState";
 import type {
   GenerationStoreSet,
@@ -189,16 +190,19 @@ function isSameOccurrence(
 /**
  * A batch item's per-item switches — and its identity — belong to the media,
  * not to the slot it happens to occupy. Carry them across whenever the
- * replacement is the same occurrence; mint a fresh identity otherwise.
+ * replacement is the same occurrence; otherwise mint a fresh identity and
+ * start from the slot's default switches.
  */
 function carryForwardItemOptions(
   previous: GenerationMediaInputValue | null,
   next: GenerationMediaInputValue,
+  input: Pick<WorkflowInput, "inputType" | "presentation"> | undefined,
 ): GenerationMediaInputValue {
   if (!previous || !isSameOccurrence(previous, next)) {
-    return isValidMediaItemId(next.itemId)
+    const identified = isValidMediaItemId(next.itemId)
       ? next
       : { ...next, itemId: createMediaItemId() };
+    return input ? withDefaultItemOptions(input, identified) : identified;
   }
 
   // Extraction completion/error replaces the value, but its edit recipe still
@@ -453,7 +457,11 @@ function updateMediaInputs(
   }
   return {
     ...remaining,
-    [canonicalInputId]: carryForwardItemOptions(previous, value),
+    [canonicalInputId]: carryForwardItemOptions(
+      previous,
+      value,
+      resolveWorkflowInputForSlot(inputId, inputById),
+    ),
   };
 }
 

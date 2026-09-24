@@ -437,9 +437,13 @@ export function compileDraftCommands(
     const appended = targetMedia.filter((item) => isStagedSlotId(item.slotId));
     for (const item of appended) {
       const capture = captures.get(item.itemId);
-      const initialOptions = capture ? describeCapturedMedia(input, capture).options : {};
+      // Only what differs from how the attach lands on its own. An asset's
+      // defaults are not known here, so its switches are always sent.
+      const initialOptions: Readonly<Record<string, boolean>> = capture
+        ? describeCapturedMedia(input, capture).options
+        : {};
       const options = Object.fromEntries(
-        Object.entries(item.options).filter(([key, value]) => value !== (initialOptions[key] ?? false)),
+        Object.entries(item.options).filter(([key, value]) => value !== initialOptions[key]),
       );
       const attachOptions = {
         ...(Object.keys(options).length > 0 ? { itemOptions: options } : {}),

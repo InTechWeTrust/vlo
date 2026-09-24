@@ -2161,10 +2161,9 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       let editorInitial: MiniEditorInitialState | undefined;
       // Per-item audio inclusion belongs to the media, and a bake replaces the
       // value in place (asset -> baked selection), so it has to be carried
-      // across the kind change explicitly.
-      const includeEmbeddedAudio = readIncludeEmbeddedAudio(value)
-        ? true
-        : undefined;
+      // across the kind change explicitly — a mute included, or the new value
+      // would start from the slot's audio-on default.
+      const includeEmbeddedAudio = readIncludeEmbeddedAudio(value);
 
       const prepareFromAsset =
         (asset: Asset) => async (): Promise<ResolvedEditorSource> => {

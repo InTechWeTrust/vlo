@@ -138,12 +138,12 @@ describe("media item identity", () => {
     store().setMediaInputAsset(slot(0), video("a"), { isExtracting: true });
     const id = idAt(slot(0));
 
-    store().setMediaInputItemOption(slot(0), "audio", true);
+    store().setMediaInputItemOption(slot(0), "audio", false);
     store().setMediaInputAsset(slot(0), video("a"), { isExtracting: false });
 
     expect(idAt(slot(0))).toBe(id);
     expect(store().mediaInputs[slot(0)]).toMatchObject({
-      includeEmbeddedAudio: true,
+      includeEmbeddedAudio: false,
     });
   });
 

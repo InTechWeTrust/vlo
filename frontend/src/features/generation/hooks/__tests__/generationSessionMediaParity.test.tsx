@@ -433,32 +433,32 @@ describe("generation media writes: native drop vs SDK attach", () => {
       mediaType: "video",
       hasAudio: true,
       // The switch is offered because the rules declare it and the asset can
-      // deliver a soundtrack; it starts off.
-      options: { audio: false },
+      // deliver a soundtrack; it starts on.
+      options: { audio: true },
       preparing: false,
     });
     const slotId = attached.slotId;
 
     let toggled;
     act(() => {
-      toggled = api.transaction("Include audio", (transaction) => {
-        transaction.setMediaOption(slotId, "audio", true);
+      toggled = api.transaction("Mute audio", (transaction) => {
+        transaction.setMediaOption(slotId, "audio", false);
       });
     });
     expect(toggled).toMatchObject({ ok: true, changed: true });
-    expect(readReferences(api)[0].options).toEqual({ audio: true });
+    expect(readReferences(api)[0].options).toEqual({ audio: false });
 
     // Writing the value it already holds moves nothing, and must say so: an
     // extension gates follow-up work on `changed`.
     let inert;
     act(() => {
-      inert = api.transaction("Include audio again", (transaction) => {
-        transaction.setMediaOption(slotId, "audio", true);
+      inert = api.transaction("Mute audio again", (transaction) => {
+        transaction.setMediaOption(slotId, "audio", false);
       });
     });
     expect(inert).toMatchObject({ ok: true, changed: false });
     const stored = readMediaInputs()[REFERENCE_ID];
-    expect(stored).toMatchObject({ includeEmbeddedAudio: true });
+    expect(stored).toMatchObject({ includeEmbeddedAudio: false });
 
     // A switch the rules never declared is not writable by any id.
     let refused;
@@ -481,10 +481,10 @@ describe("generation media writes: native drop vs SDK attach", () => {
     let result;
     act(() => {
       result = api.transaction("Attach subject", (transaction) => {
-        transaction.attachAsset(REFERENCE_ID, LOUD_VIDEO.id, {
-          itemOptions: { audio: true },
+        transaction.attachAsset(REFERENCE_ID, LOUD_VIDEO.id);
+        transaction.attachAsset(REFERENCE_ID, SECOND_VIDEO.id, {
+          itemOptions: { audio: false },
         });
-        transaction.attachAsset(REFERENCE_ID, SECOND_VIDEO.id);
       });
     });
     expect(result).toMatchObject({ ok: true, changed: true });
