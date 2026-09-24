@@ -70,6 +70,7 @@ import {
   normalizeAspectRatioSelection,
 } from "./utils/aspectRatioSelection";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
+import { ComfyuiLaunchExitDetails } from "./components/ComfyuiLaunchExitDetails";
 import { useProjectStore } from "../project";
 import { ExtensionUiSlot } from "../extensions/ui/publicApi";
 import { useGenerationSessionMount } from "./hooks/useGenerationSessionMount";
@@ -507,6 +508,14 @@ export function GenerationPanel() {
       setIsLaunchingComfyui(false);
     }
   };
+
+  const comfyuiLaunch = runtimeStatus?.comfyui.launch;
+  // Hidden while a new launch request is in flight: the status in hand still
+  // describes the previous process until the post-launch refresh lands.
+  const exitedComfyuiLaunch =
+    comfyuiLaunch?.state === "exited" && !isLaunchingComfyui
+      ? comfyuiLaunch
+      : null;
 
   const comfyuiIsReady =
     runtimeStatus?.comfyui.status === "connected" &&
@@ -1311,13 +1320,16 @@ export function GenerationPanel() {
                 {isLaunchingComfyui ? "Launching ComfyUI…" : "Launch ComfyUI"}
               </Button>
             ) : null}
-            {comfyuiLaunchMessage ? (
+            {comfyuiLaunchMessage && !exitedComfyuiLaunch ? (
               <Typography
                 variant="caption"
                 sx={{ color: "text.secondary", display: "block", mt: 1 }}
               >
                 {comfyuiLaunchMessage}
               </Typography>
+            ) : null}
+            {exitedComfyuiLaunch ? (
+              <ComfyuiLaunchExitDetails launch={exitedComfyuiLaunch} />
             ) : null}
             {comfyuiLaunchError ? (
               <Typography

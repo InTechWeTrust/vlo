@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, TypedDict
 from urllib.parse import urlparse
@@ -67,6 +68,10 @@ _SOURCE_MARKERS = {
     "execution engine": re.compile(r"(?:import\s+execution|execution\.PromptExecutor)"),
 }
 _LAYOUT_MARKERS = ("comfy", "nodes.py", "server.py", "folder_paths.py")
+# Enough of the log to show why a launch died (the traceback tail) without
+# shipping a large custom-node import dump on every status poll.
+_LAUNCH_LOG_TAIL_BYTES = 16 * 1024
+_LAUNCH_LOG_TAIL_LINES = 20
 _VERIFICATION_CACHE_LOCK = threading.Lock()
 _VERIFICATION_CACHE: dict[str, ComfyuiInstallVerification] = {}
 _DIRECTORY_PICKER_LOCK = threading.Lock()
@@ -90,6 +95,17 @@ class ComfyuiInstallVerification(TypedDict):
     sourceMarkers: list[str]
     layoutMarkers: list[str]
     warnings: list[str]
+
+
+LaunchState = Literal["idle", "running", "exited"]
+
+
+class ComfyuiLaunchStatus(TypedDict):
+    state: LaunchState
+    pid: int | None
+    exitCode: int | None
+    logPath: str | None
+    logTail: list[str]
 
 
 class ComfyuiInstallStatus(TypedDict):
@@ -330,6 +346,39 @@ def _portable_python(install_path: Path) -> Path | None:
     return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
+def _launch_environment() -> dict[str, str]:
+    """Environment for a ComfyUI child whose output goes to a log file.
+
+    With stdout redirected to a file, Windows Python encodes output with the
+    ANSI code page, and ComfyUI's log interceptor uses strict error handling,
+    so a single non-cp1252 character printed by a custom node can raise
+    mid-startup. Unbuffered output keeps the log current, so the tail shown in
+    the UI is what the process is doing now rather than what it last flushed.
+    """
+
+    return {
+        **os.environ,
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUNBUFFERED": "1",
+    }
+
+
+def _read_log_tail(log_path: Path, offset: int) -> list[str]:
+    try:
+        with log_path.open("rb") as handle:
+            size = handle.seek(0, os.SEEK_END)
+            start = max(offset, size - _LAUNCH_LOG_TAIL_BYTES)
+            handle.seek(start)
+            data = handle.read()
+    except OSError:
+        return []
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    if start > offset and lines:
+        # The read began mid-line.
+        lines = lines[1:]
+    return [line for line in lines if line.strip()][-_LAUNCH_LOG_TAIL_LINES:]
+
+
 class ComfyuiLocalRuntime:
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -341,6 +390,49 @@ class ComfyuiLocalRuntime:
             "error": None,
         }
         self._process: subprocess.Popen[bytes] | None = None
+        self._launch_log_path: Path | None = None
+        # Byte offset where the current launch's output starts, so the tail
+        # never shows a previous launch's traceback as this one's.
+        self._launch_log_offset = 0
+        self._reported_exit_pid: int | None = None
+
+    def get_launch_status(self) -> ComfyuiLaunchStatus:
+        """Describe the ComfyUI process this backend launched, if any.
+
+        The process is detached with its output redirected to a file, so an
+        early exit (a missing dependency, a CUDA mismatch) is otherwise
+        invisible: the UI would wait for a server that is never coming.
+        """
+
+        with self._lock:
+            process = self._process
+            log_path = self._launch_log_path
+            log_offset = self._launch_log_offset
+        if process is None:
+            return {
+                "state": "idle",
+                "pid": None,
+                "exitCode": None,
+                "logPath": None,
+                "logTail": [],
+            }
+        exit_code = process.poll()
+        log_tail = _read_log_tail(log_path, log_offset) if log_path else []
+        if exit_code is not None and self._reported_exit_pid != process.pid:
+            self._reported_exit_pid = process.pid
+            logger.warning(
+                "ComfyUI (pid %s) exited with code %s; see %s",
+                process.pid,
+                exit_code,
+                log_path,
+            )
+        return {
+            "state": "running" if exit_code is None else "exited",
+            "pid": process.pid,
+            "exitCode": exit_code,
+            "logPath": str(log_path) if log_path else None,
+            "logTail": log_tail,
+        }
 
     def get_install_status(self) -> ComfyuiInstallStatus:
         with self._lock:
@@ -657,11 +749,20 @@ class ComfyuiLocalRuntime:
         seed_managed_frontend_settings(resolved)
         log_path = RUNTIME_ROOT / "comfyui.log"
         log_handle = log_path.open("ab")
+        log_offset = log_handle.tell()
+        log_handle.write(
+            (
+                f"\n=== vlo launched ComfyUI at {datetime.now().isoformat(timespec='seconds')}"
+                f" ===\n{subprocess.list2cmdline(command)}\n"
+            ).encode("utf-8")
+        )
+        log_handle.flush()
         popen_kwargs: dict[str, Any] = {
             "cwd": resolved,
             "stdin": subprocess.DEVNULL,
             "stdout": log_handle,
             "stderr": subprocess.STDOUT,
+            "env": _launch_environment(),
         }
         if os.name == "nt":
             popen_kwargs["creationflags"] = (
@@ -676,6 +777,8 @@ class ComfyuiLocalRuntime:
             log_handle.close()
         with self._lock:
             self._process = process
+            self._launch_log_path = log_path
+            self._launch_log_offset = log_offset
         return {
             "started": True,
             "alreadyRunning": False,

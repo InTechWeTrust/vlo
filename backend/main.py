@@ -43,6 +43,7 @@ from services.comfyui.comfyui_client import (
     get_comfyui_url_error,
     get_http_client,
 )
+from services.comfyui.local_runtime import comfyui_local_runtime
 from services.hardware import detect_local_vram, detect_vram_from_system_stats
 from services.ai_models.capabilities.install_jobs import (
     shutdown_runtime_capability_install_jobs,
@@ -287,6 +288,7 @@ async def get_app_status():
             "url": comfyui_url,
             "error": comfyui_error,
             "modelDownloadsEnabled": is_comfyui_model_downloads_enabled(),
+            "launch": comfyui_local_runtime.get_launch_status(),
         },
         "settings": settings_payload["settings"],
         "hardware": settings_payload["hardware"],

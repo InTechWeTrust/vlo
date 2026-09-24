@@ -34,6 +34,15 @@ def _git_on_path(monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _isolated_launch_log(tmp_path_factory, monkeypatch) -> Path:
+    """Keep launch tests from appending to the real backend/runtime log."""
+
+    runtime_root = tmp_path_factory.mktemp("vlo-runtime")
+    monkeypatch.setattr(local_runtime, "RUNTIME_ROOT", runtime_root)
+    return runtime_root
+
+
 def _without_git(monkeypatch) -> None:
     monkeypatch.setattr(
         local_runtime.shutil,
@@ -619,6 +628,80 @@ def test_launch_uses_windows_portable_python_flags(
         "--windows-standalone-build",
     ]
     assert captured["kwargs"]["stdout"].closed is True
+
+
+def test_launch_status_is_idle_before_any_launch() -> None:
+    assert ComfyuiLocalRuntime().get_launch_status() == {
+        "state": "idle",
+        "pid": None,
+        "exitCode": None,
+        "logPath": None,
+        "logTail": [],
+    }
+
+
+def test_launch_status_reports_an_early_exit_with_this_launchs_log_tail(
+    tmp_path: Path,
+    monkeypatch,
+    _isolated_launch_log: Path,
+) -> None:
+    checkout = tmp_path / "ComfyUI"
+    _write_comfyui_checkout(checkout)
+    python = checkout / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    log_path = _isolated_launch_log / "comfyui.log"
+    log_path.write_text("Traceback from an older launch\n", encoding="utf-8")
+    exit_code: list[int | None] = [None]
+    captured: dict[str, object] = {}
+
+    class FakeProcess:
+        pid = 4323
+
+        def poll(self):
+            return exit_code[0]
+
+    def fake_popen(command, **kwargs):
+        captured["env"] = kwargs["env"]
+        kwargs["stdout"].write(
+            b"Traceback (most recent call last):\n"
+            b"AssertionError: Torch not compiled with CUDA enabled\n"
+        )
+        return FakeProcess()
+
+    monkeypatch.setattr(local_runtime.subprocess, "Popen", fake_popen)
+    manager = ComfyuiLocalRuntime()
+    manager.launch(checkout, "http://127.0.0.1:8188")
+
+    assert manager.get_launch_status()["state"] == "running"
+
+    exit_code[0] = 1
+    status = manager.get_launch_status()
+
+    assert status["state"] == "exited"
+    assert status["exitCode"] == 1
+    assert status["pid"] == 4323
+    assert status["logPath"] == str(log_path)
+    assert status["logTail"][0].startswith("=== vlo launched ComfyUI at ")
+    assert status["logTail"][-1] == (
+        "AssertionError: Torch not compiled with CUDA enabled"
+    )
+    assert "Traceback from an older launch" not in status["logTail"]
+    assert captured["env"]["PYTHONIOENCODING"] == "utf-8"
+    assert captured["env"]["PYTHONUNBUFFERED"] == "1"
+
+
+def test_launch_log_tail_is_bounded(tmp_path: Path) -> None:
+    log_path = tmp_path / "comfyui.log"
+    log_path.write_text(
+        "".join(f"line {index}\n" for index in range(5000)),
+        encoding="utf-8",
+    )
+
+    tail = local_runtime._read_log_tail(log_path, 0)
+
+    assert len(tail) == local_runtime._LAUNCH_LOG_TAIL_LINES
+    assert tail[-1] == "line 4999"
 
 
 def test_directory_picker_is_single_flight() -> None:

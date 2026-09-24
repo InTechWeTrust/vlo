@@ -399,6 +399,62 @@ describe("GenerationPanel workflow rule hints", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows why a launched ComfyUI stopped instead of waiting forever", async () => {
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        connectionStatus: "disconnected",
+        selectedWorkflowId: null,
+        runtimeStatus: {
+          comfyui: {
+            status: "disconnected",
+            url: "http://127.0.0.1:8188",
+            error: "offline",
+            launch: {
+              state: "exited",
+              pid: 4321,
+              exitCode: 1,
+              logPath: "C:\\vlo\\backend\\runtime\\comfyui.log",
+              logTail: [
+                "Traceback (most recent call last):",
+                "AssertionError: Torch not compiled with CUDA enabled",
+              ],
+            },
+          },
+          settings: {
+            comfyuiInstallVerification: {
+              requestedPath: "/opt/ComfyUI",
+              installPath: "/opt/ComfyUI",
+              valid: true,
+              mainPyPresent: true,
+              sourceMarkers: ["argument parser"],
+              layoutMarkers: ["comfy", "nodes.py", "server.py"],
+              warnings: [],
+            },
+          },
+        },
+      }),
+    );
+
+    render(<GenerationPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Launch ComfyUI" }));
+    await waitFor(() => {
+      expect(runtimeApiMocks.launchComfyui).toHaveBeenCalled();
+    });
+
+    expect(
+      screen.queryByText("ComfyUI started; waiting for it to become ready…"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/ComfyUI stopped \(exit code 1\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("comfyui-launch-log-tail")).toHaveTextContent(
+      "Torch not compiled with CUDA enabled",
+    );
+    expect(
+      screen.getByText("Full log: C:\\vlo\\backend\\runtime\\comfyui.log"),
+    ).toBeInTheDocument();
+  });
+
   it("shows a neutral connecting state instead of the offline gate", () => {
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
       makeHookState({

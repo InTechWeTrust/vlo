@@ -192,6 +192,13 @@ def test_app_status_reports_connected_comfyui_and_available_sam2(
             "url": "http://127.0.0.1:8188",
             "error": None,
             "modelDownloadsEnabled": True,
+            "launch": {
+                "state": "idle",
+                "pid": None,
+                "exitCode": None,
+                "logPath": None,
+                "logTail": [],
+            },
         },
         "settings": fake_settings_payload()["settings"],
         "hardware": fake_settings_payload()["hardware"],

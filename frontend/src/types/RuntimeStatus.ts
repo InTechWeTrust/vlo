@@ -73,6 +73,19 @@ export interface LegacyCapabilityStatus {
   verifiedThrough?: CapabilityVerificationStage | null;
 }
 
+/**
+ * The ComfyUI process vlo itself launched, as the backend last saw it. Its
+ * output goes to a log file rather than a console, so an early exit is only
+ * visible through this.
+ */
+export interface ComfyUiLaunchStatus {
+  state: "idle" | "running" | "exited";
+  pid: number | null;
+  exitCode: number | null;
+  logPath: string | null;
+  logTail: string[];
+}
+
 export interface RuntimeStatus {
   backend: {
     status: BackendRuntimeStatus;
@@ -84,6 +97,7 @@ export interface RuntimeStatus {
     url: string;
     error: string | null;
     modelDownloadsEnabled?: boolean;
+    launch?: ComfyUiLaunchStatus;
   };
   settings?: RuntimeSettings;
   hardware?: RuntimeHardware;
