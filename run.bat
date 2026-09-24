@@ -17,18 +17,27 @@ shift
 goto :parse_args
 :done_args
 
-:: Verify installation
+:: Verify installation. A double-clicked window closes the moment we exit, so
+:: hold it open long enough to read why.
 if not exist "%PYTHON_BIN%" (
-    echo Error: Backend not installed. Run install.bat first.
+    echo.
+    echo [ERROR] VLO is not installed yet.
+    echo [INFO]  Run install.bat first, then start VLO with run.bat.
+    echo.
+    pause
     exit /b 1
 )
 if not exist "%SCRIPT_DIR%frontend\dist\index.html" (
     echo Warning: Frontend not built. Run install.bat or npm run build.
 )
 
-:: Open browser after delay
+:: A wildcard bind address is not something a browser can connect to.
+set "BROWSER_HOST=%HOST%"
+if "%BROWSER_HOST%"=="0.0.0.0" set "BROWSER_HOST=127.0.0.1"
+
+:: Open the browser once the server answers, not on a fixed delay.
 if "%NO_BROWSER%"=="0" (
-    start "" /b cmd /c "timeout /t 2 /nobreak >nul && start http://%HOST%:%PORT%"
+    start "" /b "%PYTHON_BIN%" "%SCRIPT_DIR%scripts\open-browser-when-ready.py" "http://%BROWSER_HOST%:%PORT%"
 )
 
 echo Starting VLO at http://%HOST%:%PORT%

@@ -15,18 +15,32 @@ for arg in "$@"; do
     esac
 done
 
-# Verify installation
+# Verify installation. Launched from a file manager, the terminal closes the
+# moment we exit, so hold it open long enough to read why.
 if [ ! -x "$PYTHON_BIN" ]; then
-    echo "Error: Backend not installed. Run ./install.sh first."
+    echo ""
+    echo "Error: VLO is not installed yet."
+    echo "Run ./install.sh first, then start VLO with ./run.sh."
+    echo ""
+    if [ -t 0 ]; then
+        read -r -p "Press Enter to close..." _ || true
+    fi
     exit 1
 fi
 if [ ! -f "$SCRIPT_DIR/frontend/dist/index.html" ]; then
     echo "Warning: Frontend not built. Run ./install.sh or npm run build."
 fi
 
-# Open browser after short delay
+# A wildcard bind address is not something a browser can connect to.
+BROWSER_HOST="$HOST"
+if [ "$BROWSER_HOST" = "0.0.0.0" ]; then
+    BROWSER_HOST="127.0.0.1"
+fi
+
+# Open the browser once the server answers, not on a fixed delay.
 if [ "$NO_BROWSER" = false ]; then
-    (sleep 2 && "$PYTHON_BIN" -m webbrowser "http://${HOST}:${PORT}" 2>/dev/null) &
+    "$PYTHON_BIN" "$SCRIPT_DIR/scripts/open-browser-when-ready.py" \
+        "http://${BROWSER_HOST}:${PORT}" >/dev/null 2>&1 &
 fi
 
 echo "Starting VLO at http://${HOST}:${PORT}"
