@@ -33,6 +33,9 @@ set "PROFILES_EXPLICIT=0"
 set "WANT_SAM2=0"
 set "WANT_SAM_AUDIO=0"
 set "CUDA_TORCH_CHOICE="
+set "HAD_CUDA_TORCH=0"
+set "TORCH_CUDA_INDEX_URL=https://download.pytorch.org/whl/cu130"
+if defined VLO_TORCH_CUDA_INDEX_URL set "TORCH_CUDA_INDEX_URL=%VLO_TORCH_CUDA_INDEX_URL%"
 set "ASSUME_YES=0"
 set "PROFILE_STATUS_BASE=skipped"
 set "PROFILE_STATUS_SAM2=skipped"
@@ -90,10 +93,16 @@ if "%~1"=="" (
     echo [ERROR] --profiles needs a value
     goto :usage_error
 )
+:take_profile_values
 call :add_profiles "%~1"
 if errorlevel 1 goto :usage_error
 shift
-goto :parse_args
+:: cmd splits unquoted arguments at commas, so `--profiles sam2,sam-audio`
+:: arrives as two arguments. Keep taking values until the next option.
+if "%~1"=="" goto :parse_args
+set "NEXT_ARG=%~1"
+if "!NEXT_ARG:~0,1!"=="-" goto :parse_args
+goto :take_profile_values
 
 :done_args
 goto :after_profile_helpers
@@ -317,8 +326,22 @@ if %errorlevel% neq 0 (
 :: -- 6. Install backend dependencies --------------------------------
 
 echo [INFO]  Installing backend Python dependencies...
+
+:: The backend venv is created by `uv sync` and does NOT contain pip, so every
+:: optional install goes through `uv pip` targeting that venv rather than
+:: `python -m pip`.
+set "VENV_PY=%SCRIPT_DIR%backend\.venv\Scripts\python.exe"
+
+:: Checked before the sync, which is about to replace a CUDA build with the
+:: lockfile's PyPI build.
+call :venv_has_cuda_index_torch
+if not errorlevel 1 set "HAD_CUDA_TORCH=1"
+
 cd /d "%SCRIPT_DIR%backend"
-call "%UV_BIN%" sync --frozen --python "%PYTHON_CMD%"
+:: --inexact: the optional profiles are installed with `uv pip`, outside the
+:: lockfile, so an exact sync would uninstall them. Rerunning the installer to
+:: add one profile must not remove the others.
+call "%UV_BIN%" sync --frozen --inexact --python "%PYTHON_CMD%"
 if %errorlevel% neq 0 (
     set "PROFILE_STATUS_BASE=failed"
     call :write_profile_marker
@@ -326,11 +349,6 @@ if %errorlevel% neq 0 (
     goto :eof
 )
 set "PROFILE_STATUS_BASE=installed"
-
-:: The backend venv is created by `uv sync` and does NOT contain pip, so every
-:: optional install goes through `uv pip` targeting that venv rather than
-:: `python -m pip`.
-set "VENV_PY=%SCRIPT_DIR%backend\.venv\Scripts\python.exe"
 
 :: -- 7. Optional capability profiles --------------------------------
 
@@ -349,10 +367,15 @@ if /I "!INSTALL_SAM_AUDIO!"=="Y" set "WANT_SAM_AUDIO=1"
 if /I "!INSTALL_SAM_AUDIO!"=="YES" set "WANT_SAM_AUDIO=1"
 
 :profiles_chosen
-if "%WANT_SAM2%"=="0" if "%WANT_SAM_AUDIO%"=="0" goto :skip_optional
+if "%WANT_SAM2%"=="0" if "%WANT_SAM_AUDIO%"=="0" if "%HAD_CUDA_TORCH%"=="0" goto :skip_optional
 
 if /I "%CUDA_TORCH_CHOICE%"=="no" goto :skip_cuda_torch
 if /I "%CUDA_TORCH_CHOICE%"=="yes" goto :do_cuda_torch
+:: An earlier run installed the CUDA build, and the sync has just replaced it.
+if "%HAD_CUDA_TORCH%"=="1" (
+    echo [INFO]  Restoring the CUDA PyTorch build from an earlier install.
+    goto :do_cuda_torch
+)
 if "%PROFILES_EXPLICIT%"=="1" goto :do_cuda_torch
 if "%ASSUME_YES%"=="1" goto :do_cuda_torch
 set "INSTALL_CUDA_TORCH="
@@ -361,8 +384,7 @@ if /I "!INSTALL_CUDA_TORCH!"=="N" goto :skip_cuda_torch
 if /I "!INSTALL_CUDA_TORCH!"=="NO" goto :skip_cuda_torch
 
 :do_cuda_torch
-echo [INFO]  Installing CUDA PyTorch...
-call "%UV_BIN%" pip install --python "%VENV_PY%" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+call :install_cuda_torch
 if %errorlevel% neq 0 (
     echo [WARN]  CUDA PyTorch installation failed. Attempting to proceed anyway...
 )
@@ -540,6 +562,38 @@ if errorlevel 1 (
 
 echo [INFO]  Installed VLO-managed Node.js %NODE_VERSION%.
 exit /b 0
+
+:: Whether the backend venv holds a PyTorch build from the CUDA index. It has
+:: to be asked before `uv sync`: torch is locked to PyPI, so the sync swaps that
+:: build out even when inexact, and this is how a rerun knows to put it back.
+:venv_has_cuda_index_torch
+if not exist "%VENV_PY%" exit /b 1
+"%VENV_PY%" -c "import importlib.metadata as m, sys; sys.exit(0 if '+cu' in m.version('torch') else 1)" >nul 2>&1
+exit /b %errorlevel%
+
+:install_cuda_torch
+:: PyPI's Windows wheels are CPU builds; one that already has CUDA is kept.
+"%VENV_PY%" -c "import sys, torch; sys.exit(0 if torch.version.cuda else 1)" >nul 2>&1
+if not errorlevel 1 (
+    echo [INFO]  PyTorch in the backend environment already has CUDA support.
+    exit /b 0
+)
+:: Pinned to the versions `uv sync` just installed from the lockfile, so the
+:: CUDA build is the release everything else in the lock was resolved with.
+:: Read back through a file: `for /f` mangles a command with several quoted
+:: parts.
+set "TORCH_PINS="
+set "TORCH_PINS_FILE=%TEMP%\vlo-torch-pins.txt"
+"%VENV_PY%" -c "import importlib.metadata as m; print(' '.join(p + '==' + m.version(p).split('+')[0] for p in ('torch', 'torchaudio')))" > "%TORCH_PINS_FILE%"
+if errorlevel 1 exit /b 1
+set /p TORCH_PINS=<"%TORCH_PINS_FILE%"
+del "%TORCH_PINS_FILE%" >nul 2>&1
+if not defined TORCH_PINS exit /b 1
+echo [INFO]  Installing CUDA PyTorch...
+:: --reinstall-package: the CPU build of the same version already satisfies
+:: these pins, so without it uv keeps the CPU build and installs nothing.
+call "%UV_BIN%" pip install --python "%VENV_PY%" --index-url "%TORCH_CUDA_INDEX_URL%" --reinstall-package torch --reinstall-package torchaudio --reinstall-package torchvision %TORCH_PINS% torchvision
+exit /b %errorlevel%
 
 :try_python_path
 set "CANDIDATE_PATH=%~1"

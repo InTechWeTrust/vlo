@@ -66,6 +66,8 @@ PROFILES_REQUESTED=""
 PROFILES_EXPLICIT=0
 ASSUME_YES=0
 CUDA_TORCH_CHOICE=""
+HAD_CUDA_TORCH=0
+TORCH_CUDA_INDEX_URL="${VLO_TORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/cu130}"
 INTERACTIVE=1
 
 add_profile() {
@@ -209,6 +211,70 @@ ask_yes_no() {
         y|Y|yes|YES) printf -v "$__outvar" 'yes' ;;
         *) printf -v "$__outvar" 'no' ;;
     esac
+}
+
+# -- Backend environment and CUDA PyTorch ------------------------------
+
+# Run from backend/. --inexact: the optional profiles are installed with
+# `uv pip`, outside the lockfile, so an exact sync would uninstall them.
+# Rerunning the installer to add one profile must not remove the others.
+sync_backend_environment() {
+    "$UV_BIN" sync --frozen --inexact --python "$PYTHON_CMD"
+}
+
+# Whether the backend venv holds a PyTorch build from the CUDA index. It has
+# to be asked before `uv sync`: torch is locked to PyPI, so the sync swaps that
+# build out even when inexact, and this is how a rerun knows to put it back.
+venv_has_cuda_index_torch() {
+    [ -x "$VENV_PY" ] || return 1
+    "$VENV_PY" -c 'import importlib.metadata as m, sys; sys.exit(0 if "+cu" in m.version("torch") else 1)' \
+        >/dev/null 2>&1
+}
+
+install_cuda_torch() {
+    local pins
+
+    # PyPI's Linux wheels are already CUDA builds; only a CPU build (PyPI's
+    # Windows and macOS wheels) needs replacing.
+    if "$VENV_PY" -c 'import sys, torch; sys.exit(0 if torch.version.cuda else 1)' >/dev/null 2>&1; then
+        info "PyTorch in the backend environment already has CUDA support."
+        return 0
+    fi
+
+    # Pinned to the versions `uv sync` just installed from the lockfile, so the
+    # CUDA build is the release everything else in the lock was resolved with.
+    pins="$("$VENV_PY" -c 'import importlib.metadata as m; print(" ".join(p + "==" + m.version(p).split("+")[0] for p in ("torch", "torchaudio")))')" \
+        || return 1
+
+    info "Installing CUDA PyTorch..."
+    # --reinstall-package: the CPU build of the same version already satisfies
+    # these pins, so without it uv keeps the CPU build and installs nothing.
+    # shellcheck disable=SC2086 # $pins is a space-separated requirement list.
+    "$UV_BIN" pip install --python "$VENV_PY" --index-url "$TORCH_CUDA_INDEX_URL" \
+        --reinstall-package torch --reinstall-package torchaudio --reinstall-package torchvision \
+        $pins torchvision
+}
+
+# Offered with the profiles that want a GPU, and repeated without asking when
+# an earlier run left a CUDA build that the sync has just replaced.
+run_cuda_torch_step() {
+    if ! profile_requested sam2 && ! profile_requested sam-audio && [ "$HAD_CUDA_TORCH" -eq 0 ]; then
+        return 0
+    fi
+
+    if [ -z "$CUDA_TORCH_CHOICE" ] && [ "$HAD_CUDA_TORCH" -eq 1 ]; then
+        CUDA_TORCH_CHOICE=yes
+        info "Restoring the CUDA PyTorch build from an earlier install."
+    fi
+    if [ -z "$CUDA_TORCH_CHOICE" ]; then
+        ask_yes_no "Would you like to install PyTorch with CUDA 13.0 support? (Highly recommended on Nvidia GPUs) [Y/n]: " y CUDA_TORCH_CHOICE
+    fi
+
+    if [ "$CUDA_TORCH_CHOICE" = "yes" ]; then
+        install_cuda_torch || warn "CUDA PyTorch installation failed. Attempting to proceed anyway..."
+    else
+        info "Skipping CUDA PyTorch installation, using existing PyTorch."
+    fi
 }
 
 configure_vlo_node_distribution() {
@@ -479,8 +545,20 @@ info "Building frontend..."
 # -- 4. Install backend dependencies ---------------------------------
 
 info "Installing backend Python dependencies..."
+
+# The backend venv is created by `uv sync` and does NOT contain pip, so every
+# optional install goes through `uv pip` targeting that venv rather than
+# `python -m pip`.
+VENV_PY="$SCRIPT_DIR/backend/.venv/bin/python"
+
+# Checked before the sync, which is about to replace a CUDA build with the
+# lockfile's PyPI build.
+if venv_has_cuda_index_torch; then
+    HAD_CUDA_TORCH=1
+fi
+
 cd "$SCRIPT_DIR/backend"
-if "$UV_BIN" sync --frozen --python "$PYTHON_CMD"; then
+if sync_backend_environment; then
     record_profile_status base installed
 else
     record_profile_status base failed
@@ -488,11 +566,6 @@ else
     write_profile_marker
     exit 1
 fi
-
-# The backend venv is created by `uv sync` and does NOT contain pip, so every
-# optional install goes through `uv pip` targeting that venv rather than
-# `python -m pip`.
-VENV_PY="$SCRIPT_DIR/backend/.venv/bin/python"
 
 # -- 5. Optional capability profiles ---------------------------------
 
@@ -530,19 +603,7 @@ install_profile_requirements() {
     return 1
 }
 
-if profile_requested sam2 || profile_requested sam-audio; then
-    if [ -z "$CUDA_TORCH_CHOICE" ]; then
-        ask_yes_no "Would you like to install PyTorch with CUDA 13.0 support? (Highly recommended on Nvidia GPUs) [Y/n]: " y CUDA_TORCH_CHOICE
-    fi
-    if [ "$CUDA_TORCH_CHOICE" = "yes" ]; then
-        info "Installing CUDA PyTorch..."
-        if ! "$UV_BIN" pip install --python "$VENV_PY" torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130; then
-            warn "CUDA PyTorch installation failed. Attempting to proceed anyway..."
-        fi
-    else
-        info "Skipping CUDA PyTorch installation, using existing PyTorch."
-    fi
-fi
+run_cuda_torch_step
 
 if profile_requested sam2; then
     if [ -d "$SCRIPT_DIR/backend/sam2" ]; then

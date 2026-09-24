@@ -107,7 +107,7 @@ run.bat
 - offers the optional local-AI profiles — SAM2 for segmentation and masking,
   SAM-Audio for prompted audio separation — along with PyTorch with CUDA 13.0.
   Answer yes if you have an Nvidia GPU and want masking. To add one afterwards,
-  rerun the installer.
+  rerun the installer; profiles and CUDA PyTorch installed earlier are kept.
 
 To install without prompts, name the profiles:
 

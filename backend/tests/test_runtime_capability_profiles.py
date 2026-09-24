@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -474,6 +476,191 @@ def test_both_installers_cover_every_optional_profile(installer: str) -> None:
         assert Path(profile.requirements).name in script, (
             f"{installer} never installs {profile.requirements}"
         )
+
+
+def _fake_wheel(directory: Path, name: str, version: str, body: str = "") -> None:
+    """A pure-Python wheel carrying just enough to install and import."""
+
+    dist_info = f"{name}-{version}.dist-info"
+    files = {
+        f"{name}/__init__.py": body,
+        f"{dist_info}/METADATA": (
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
+        ),
+        f"{dist_info}/WHEEL": (
+            "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\n"
+            "Tag: py3-none-any\n"
+        ),
+        f"{dist_info}/RECORD": "",
+    }
+    directory.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(directory / f"{name}-{version}-py3-none-any.whl", "w") as wheel:
+        for path, content in files.items():
+            wheel.writestr(path, content)
+
+
+def _fake_torch(cuda: str | None) -> str:
+    return f"from types import SimpleNamespace\nversion = SimpleNamespace(cuda={cuda!r})\n"
+
+
+@pytest.mark.parametrize(
+    ("pypi_torch_cuda", "expected"),
+    [
+        # Windows and macOS: PyPI's torch is a CPU build. The sync swaps the
+        # CUDA build out on every run, so a rerun has to put it back.
+        (None, ["1.0", "1.0+cu130", "1.0", "1.0+cu130"]),
+        # Linux: PyPI's torch already has CUDA, so there is nothing to replace.
+        ("13.0", ["1.0", "1.0", "1.0", "1.0"]),
+    ],
+    ids=["pypi-cpu-build", "pypi-cuda-build"],
+)
+def test_install_sh_keeps_cuda_torch_across_a_rerun(
+    tmp_path: Path, pypi_torch_cuda: str | None, expected: list[str]
+) -> None:
+    """Run install.sh's own sync and CUDA steps against fake torch wheels.
+
+    torch is locked to PyPI, so even an inexact `uv sync` replaces a build
+    from the CUDA index, and `uv pip install torch` alone keeps a CPU build of
+    the same version because it already satisfies the request.
+    """
+
+    uv = shutil.which("uv")
+    if uv is None or not Path("/bin/bash").exists():  # pragma: no cover
+        pytest.skip("bash and uv are required to exercise install.sh")
+
+    pypi = tmp_path / "pypi"
+    _fake_wheel(pypi, "torch", "1.0", _fake_torch(pypi_torch_cuda))
+    _fake_wheel(pypi, "torchaudio", "1.0")
+    # Stands in for an optional profile: installed with `uv pip`, outside the
+    # lockfile, so only an inexact sync leaves it alone.
+    _fake_wheel(pypi, "fake_profile", "1.0")
+    cuda_index = tmp_path / "cuda-index"
+    packages = {"torch": "1.0+cu130", "torchaudio": "1.0+cu130", "torchvision": "0.1+cu130"}
+    for name, version in packages.items():
+        _fake_wheel(cuda_index / name, name, version, _fake_torch("13.0") if name == "torch" else "")
+        filename = f"{name}-{version.replace('+', '%2B')}-py3-none-any.whl"
+        (cuda_index / name / "index.html").write_text(f'<a href="{filename}">{filename}</a>')
+
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    (backend / "pyproject.toml").write_text(
+        '[project]\nname = "fake-backend"\nversion = "0.1"\n'
+        'requires-python = ">=3.10"\ndependencies = ["torch==1.0", "torchaudio==1.0"]\n'
+        "[tool.uv]\npackage = false\n",
+        encoding="utf-8",
+    )
+    env = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"}
+    env.update(
+        UV_CACHE_DIR=str(tmp_path / "uv-cache"),
+        UV_OFFLINE="1",
+        UV_PYTHON_DOWNLOADS="never",
+        VLO_TORCH_CUDA_INDEX_URL=cuda_index.as_uri(),
+    )
+    subprocess.run(
+        [uv, "lock", "--quiet", "--no-index", "--find-links", str(pypi)],
+        cwd=backend,
+        env=env,
+        check=True,
+        timeout=60,
+    )
+
+    script = (REPO_ROOT / "install.sh").read_text(encoding="utf-8")
+    prelude = tmp_path / "prelude.sh"
+    prelude.write_text(
+        script[script.index("usage() {") : script.index("# -- 1. Check prerequisites")],
+        encoding="utf-8",
+    )
+    harness = tmp_path / "harness.sh"
+    harness.write_text(
+        "\n".join(
+            [
+                "set -euo pipefail",
+                f'SCRIPT_DIR="{tmp_path}"',
+                f'UV_BIN="{uv}"',
+                f'PYTHON_CMD="{sys.executable}"',
+                "FORCE_INSTALL_VLO_NODE=0",
+                "info() { :; }",
+                "warn() { printf 'WARN %s\\n' \"$*\"; }",
+                "error() { :; }",
+                "set -- --profiles sam2 --cuda-torch",
+                f'source "{prelude}"',
+                'VENV_PY="$SCRIPT_DIR/backend/.venv/bin/python"',
+                "report() {",
+                "    \"$VENV_PY\" -c 'import importlib.metadata as m; "
+                "print(\"TORCH\", m.version(\"torch\"))'",
+                "}",
+                'cd "$SCRIPT_DIR/backend"',
+                "sync_backend_environment >/dev/null 2>&1",
+                "report",
+                "run_cuda_torch_step >/dev/null 2>&1",
+                "report",
+                f'"$UV_BIN" pip install --quiet --python "$VENV_PY" --no-index --find-links "{pypi}" fake_profile',
+                # The rerun asks for nothing optional and names no CUDA choice.
+                'PROFILES_REQUESTED=""',
+                'CUDA_TORCH_CHOICE=""',
+                "if venv_has_cuda_index_torch; then HAD_CUDA_TORCH=1; fi",
+                "sync_backend_environment >/dev/null 2>&1",
+                "report",
+                "run_cuda_torch_step >/dev/null 2>&1",
+                "report",
+                "\"$VENV_PY\" -c 'import fake_profile' && echo PROFILE_KEPT",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        ["/bin/bash", str(harness)],
+        env=env,
+        check=True,
+        timeout=120,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+    )
+
+    reported = [
+        line.split()[1] for line in completed.stdout.splitlines() if line.startswith("TORCH ")
+    ]
+    assert reported == expected, completed.stdout + completed.stderr
+    assert "PROFILE_KEPT" in completed.stdout, completed.stderr
+
+
+def test_install_bat_mirrors_the_install_sh_backend_steps() -> None:
+    """install.bat cannot run here, so this only ties it to the steps above.
+
+    The test before this one exercises install.sh; the batch port of the same
+    steps was checked by hand on cmd.exe. What this catches is one installer
+    changing without the other.
+    """
+
+    script = (REPO_ROOT / "install.bat").read_text(encoding="utf-8")
+
+    assert 'sync --frozen --inexact --python "%PYTHON_CMD%"' in script
+    assert "call :venv_has_cuda_index_torch" in script
+    assert "--reinstall-package torch --reinstall-package torchaudio" in script
+    assert '"%HAD_CUDA_TORCH%"=="1"' in script
+
+
+def test_install_sh_is_executable_in_git() -> None:
+    """The README says `./install.sh`, which a fresh clone takes from the index."""
+
+    try:
+        listed = subprocess.run(
+            ["git", "ls-files", "-s", "install.sh"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):  # pragma: no cover
+        pytest.skip("not running from a git checkout")
+    if not listed:  # pragma: no cover - exported tree
+        pytest.skip("install.sh is not tracked here")
+
+    # A staged chmod counts; an unstaged one would still ship as 100644.
+    assert listed.split()[0] == "100755"
 
 
 def test_install_sh_routes_every_prompt_through_the_non_interactive_helper() -> None:
