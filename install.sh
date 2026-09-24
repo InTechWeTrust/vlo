@@ -498,7 +498,9 @@ if [ "$FORCE_INSTALL_VLO_NODE" -eq 1 ]; then
     info "--update-node requested. Installing VLO-managed Node.js ${VLO_NODE_VERSION}..."
     install_vlo_node
 elif try_node_path "$VLO_NODE_EXE" "VLO-managed Node.js"; then
-    prompt_existing_node_choice
+    # Already the managed runtime at the pinned version: nothing to offer.
+    # --update-node still forces a reinstall.
+    :
 else
     while IFS= read -r candidate_node; do
         if try_node_path "$candidate_node" "node"; then

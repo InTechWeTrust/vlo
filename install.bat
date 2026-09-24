@@ -228,12 +228,10 @@ if "%FORCE_INSTALL_VLO_NODE%"=="1" (
     if errorlevel 1 goto :eof
     goto :node_found
 )
+:: Already the managed runtime at the pinned version: nothing to offer.
+:: --update-node still forces a reinstall.
 call :try_node_path "%VLO_NODE_EXE%" "VLO-managed Node.js"
-if not errorlevel 1 (
-    call :prompt_existing_node_choice
-    if errorlevel 1 goto :eof
-    goto :node_found
-)
+if not errorlevel 1 goto :node_found
 
 for /f "tokens=*" %%F in ('where node 2^>nul') do (
     call :try_node_path "%%~fF" "node"
