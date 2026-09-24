@@ -136,11 +136,13 @@ export async function clearSam2EditorSession(
 
 export async function generateMaskVideo(
   request: Sam2GenerateMaskRequest,
+  options?: { signal?: AbortSignal },
 ): Promise<Sam2GeneratedMaskVideo> {
   const response = await fetch(`${SAM2_API}/masks/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
+    signal: options?.signal,
   });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response));

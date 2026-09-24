@@ -189,8 +189,10 @@ export function useSam2MaskPanel({
     pointsHash: null,
     maskId: null,
   });
+  const sam2GenerationAbortRef = useRef<AbortController | null>(null);
   const assets = useAssetStore((state) => state.assets);
   const addLocalAsset = useAssetStore((state) => state.addLocalAsset);
+  const updateAsset = useAssetStore((state) => state.updateAsset);
   const deleteAsset = useAssetStore((state) => state.deleteAsset);
   const selectedParentAsset = useMemo(
     () =>
@@ -331,6 +333,10 @@ export function useSam2MaskPanel({
     };
   }, []);
 
+  const cancelSam2Generation = useCallback(() => {
+    sam2GenerationAbortRef.current?.abort();
+  }, []);
+
   // Reset transient SAM2 error state during render when the active clip/mask
   // changes, then run the imperative cleanup side-effects in an effect.
   const [lastClipMaskKey, setLastClipMaskKey] = useState<string>(
@@ -345,11 +351,17 @@ export function useSam2MaskPanel({
 
   useEffect(() => {
     cancelSam2PreviewRequest();
+    cancelSam2Generation();
     activeSam2SessionInitRef.current = null;
     if (selectedClipId) {
       useMaskViewStore.getState().clearSam2LivePreview(selectedClipId);
     }
-  }, [cancelSam2PreviewRequest, selectedClipId, selectedMaskId]);
+  }, [
+    cancelSam2Generation,
+    cancelSam2PreviewRequest,
+    selectedClipId,
+    selectedMaskId,
+  ]);
 
   const selectedClipIdRef = useRef(selectedClipId);
   const selectedMaskIdRef = useRef(selectedMaskId);
@@ -361,6 +373,7 @@ export function useSam2MaskPanel({
   useEffect(() => {
     return () => {
       cancelSam2PreviewRequest();
+      cancelSam2Generation();
       activeSam2SessionInitRef.current = null;
       const existing = activeSam2SessionRef.current;
       if (!existing) return;
@@ -373,7 +386,7 @@ export function useSam2MaskPanel({
         useMaskViewStore.getState().clearSam2LivePreview(clipId);
       }
     };
-  }, [cancelSam2PreviewRequest]);
+  }, [cancelSam2Generation, cancelSam2PreviewRequest]);
 
   useEffect(() => {
     const existing = activeSam2SessionRef.current;
@@ -746,6 +759,9 @@ export function useSam2MaskPanel({
 
     setSam2GenerateError(null);
     setIsSam2Generating(true);
+    cancelSam2Generation();
+    const generationController = new AbortController();
+    sam2GenerationAbortRef.current = generationController;
 
     const previousSam2AssetId = selectedMask.sam2MaskAssetId;
     const now = Date.now();
@@ -789,19 +805,23 @@ export function useSam2MaskPanel({
       );
 
       let outputFile: File;
+      let generatedVideoFps: number | null = null;
       if (parentAsset.type === "image") {
         const visibleSourceFrame = getRenderedSourceFrameReferenceFromTicks(
           visibleSourceStartTicks,
           sourceRegistration.fps,
           sourceRegistration.frameCount,
         );
-        const generated = await generateMaskFrame({
-          sourceId: sourceRegistration.sourceId,
-          points: normalizedSam2Points,
-          ticksPerSecond: TICKS_PER_SECOND,
-          timeTicks: visibleSourceFrame.timeTicks,
-          maskId: selectedMaskId,
-        });
+        const generated = await generateMaskFrame(
+          {
+            sourceId: sourceRegistration.sourceId,
+            points: normalizedSam2Points,
+            ticksPerSecond: TICKS_PER_SECOND,
+            timeTicks: visibleSourceFrame.timeTicks,
+            maskId: selectedMaskId,
+          },
+          { signal: generationController.signal },
+        );
         outputFile = new File(
           [generated.blob],
           `${parentAsset.name}_sam2_${selectedMaskId}_${now}.png`,
@@ -811,14 +831,23 @@ export function useSam2MaskPanel({
           },
         );
       } else {
-        const generated = await generateMaskVideo({
-          sourceId: sourceRegistration.sourceId,
-          points: normalizedSam2Points,
-          ticksPerSecond: TICKS_PER_SECOND,
-          maskId: selectedMaskId,
-          visibleSourceStartTicks,
-          visibleSourceDurationTicks,
-        });
+        // Batch propagation releases the backend editor state to avoid keeping
+        // two copies of the source window resident. Mirror that invalidation
+        // here so the next preview explicitly creates a fresh session.
+        activeSam2SessionRef.current = null;
+        activeSam2SessionInitRef.current = null;
+        const generated = await generateMaskVideo(
+          {
+            sourceId: sourceRegistration.sourceId,
+            points: normalizedSam2Points,
+            ticksPerSecond: TICKS_PER_SECOND,
+            maskId: selectedMaskId,
+            visibleSourceStartTicks,
+            visibleSourceDurationTicks,
+          },
+          { signal: generationController.signal },
+        );
+        generatedVideoFps = generated.fps;
         outputFile = new File(
           [generated.blob],
           `${parentAsset.name}_sam2_${selectedMaskId}_${now}.mp4`,
@@ -841,6 +870,11 @@ export function useSam2MaskPanel({
 
       if (!createdAsset) {
         throw new Error("Failed to create generated SAM2 mask asset.");
+      }
+      if (generatedVideoFps !== null && generatedVideoFps > 0) {
+        // Sparse mask packet cadence is intentionally not the source cadence,
+        // so media probing cannot infer the logical frame grid correctly.
+        await updateAsset(createdAsset.id, { fps: generatedVideoFps });
       }
 
       const pointsHash = hashSam2Points(normalizedSam2Points);
@@ -868,15 +902,27 @@ export function useSam2MaskPanel({
         }
       }
     } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "name" in error &&
+        error.name === "AbortError"
+      ) {
+        return;
+      }
       const message =
         error instanceof Error ? error.message : "SAM2 generation failed";
       setSam2GenerateError(message);
     } finally {
-      setIsSam2Generating(false);
+      if (sam2GenerationAbortRef.current === generationController) {
+        sam2GenerationAbortRef.current = null;
+        setIsSam2Generating(false);
+      }
     }
   }, [
     addLocalAsset,
     assets,
+    cancelSam2Generation,
     deleteAsset,
     ensureSam2Available,
     sam2Points,
@@ -884,6 +930,7 @@ export function useSam2MaskPanel({
     selectedClipId,
     selectedMask,
     selectedMaskId,
+    updateAsset,
     updateClipMask,
   ]);
 

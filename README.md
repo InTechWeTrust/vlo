@@ -390,6 +390,7 @@ which is useful for headless or scripted setups:
 - `COMFYUI_INSTALL_DIR`: path to an existing ComfyUI install, used as the starting value until the app records one. Model downloads need a configured install directory and a local ComfyUI URL
 - `SAM2_DEVICE`: `auto`, `cpu`, or a CUDA/MPS-capable value supported by your environment
 - `SAM2_CACHE_DIR`: cache location for prepared SAM2 data
+- `SAM2_MAX_PROPAGATION_FRAMES`: maximum visible source-window length accepted by SAM2 (defaults to `900`; set to `0` to disable the limit)
 
 ## Development
 

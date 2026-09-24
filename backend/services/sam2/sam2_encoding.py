@@ -1,11 +1,13 @@
 from io import BytesIO
 from fractions import Fraction
 import math
+from collections.abc import Callable
 from typing import cast
 
 import av
 import numpy as np
 from av.video.stream import VideoStream
+from av.video.frame import PictureType
 
 
 class Sam2EncodingError(RuntimeError):
@@ -32,7 +34,14 @@ def _validate_mask_frames(mask_frames: np.ndarray) -> tuple[int, int, int]:
     return frame_count, height, width
 
 
-def encode_binary_masks_to_red_mp4(mask_frames: np.ndarray, fps: float) -> bytes:
+def encode_binary_masks_to_red_mp4(
+    mask_frames: np.ndarray,
+    fps: float,
+    *,
+    window_start_frame: int = 0,
+    source_frame_count: int | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> bytes:
     """
     Encode binary mask frames into an H.264 MP4 without alpha.
 
@@ -42,13 +51,25 @@ def encode_binary_masks_to_red_mp4(mask_frames: np.ndarray, fps: float) -> bytes
     - B: 0
     """
     frame_count, height, width = _validate_mask_frames(mask_frames)
+    if window_start_frame < 0:
+        raise Sam2EncodingError(
+            f"Window start frame must be >= 0, got {window_start_frame}"
+        )
+    if source_frame_count is None:
+        source_frame_count = window_start_frame + frame_count
+    if source_frame_count <= 0:
+        raise Sam2EncodingError(
+            f"Source frame count must be > 0, got {source_frame_count}"
+        )
+    window_end_frame = window_start_frame + frame_count - 1
+    if window_end_frame >= source_frame_count:
+        raise Sam2EncodingError(
+            "Mask window exceeds the source frame count: "
+            f"window={window_start_frame}-{window_end_frame}, "
+            f"source_frame_count={source_frame_count}"
+        )
 
     av_rate = _fps_to_av_rate(fps)
-
-    # Ensure uint8 binary values for deterministic encoding.
-    if mask_frames.dtype != np.uint8:
-        mask_frames = mask_frames.astype(np.uint8)
-    mask_frames = np.where(mask_frames > 0, 255, 0).astype(np.uint8)
 
     buf = BytesIO()
     try:
@@ -69,12 +90,39 @@ def encode_binary_masks_to_red_mp4(mask_frames: np.ndarray, fps: float) -> bytes
             "profile": "high",
         }
 
-        for i in range(frame_count):
-            mask = mask_frames[i]
+        blank_mask = np.zeros((height, width), dtype=np.uint8)
+        samples: list[tuple[int, np.ndarray, bool]] = []
+        if window_start_frame > 0:
+            samples.append((0, blank_mask, True))
+
+        for local_index in range(frame_count):
+            samples.append(
+                (
+                    window_start_frame + local_index,
+                    mask_frames[local_index],
+                    local_index == 0,
+                )
+            )
+
+        # MP4 samples remain active until the following sample. Insert a blank
+        # immediately after the window so the final mask does not fill the
+        # source suffix, then retain a terminal sample for the source duration.
+        post_window_frame = window_end_frame + 1
+        if post_window_frame < source_frame_count:
+            samples.append((post_window_frame, blank_mask, True))
+        terminal_frame = source_frame_count - 1
+        if samples[-1][0] < terminal_frame:
+            samples.append((terminal_frame, blank_mask, False))
+
+        for source_index, mask, force_keyframe in samples:
+            if cancel_check is not None and cancel_check():
+                raise Sam2EncodingError("SAM2 mask encoding was cancelled")
             rgb = np.zeros((height, width, 3), dtype=np.uint8)
-            rgb[..., 0] = mask
+            rgb[..., 0] = (mask > 0).astype(np.uint8) * 255
             frame = av.VideoFrame.from_ndarray(rgb, format="rgb24")
-            frame.pts = i
+            frame.pts = source_index
+            if force_keyframe:
+                frame.pict_type = PictureType.I
             for packet in stream.encode(frame):
                 output.mux(packet)
 
@@ -88,6 +136,19 @@ def encode_binary_masks_to_red_mp4(mask_frames: np.ndarray, fps: float) -> bytes
     return buf.getvalue()
 
 
-def encode_binary_masks_to_transparent_mp4(mask_frames: np.ndarray, fps: float) -> bytes:
+def encode_binary_masks_to_transparent_mp4(
+    mask_frames: np.ndarray,
+    fps: float,
+    *,
+    window_start_frame: int = 0,
+    source_frame_count: int | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> bytes:
     """Backward-compatible wrapper for older call sites."""
-    return encode_binary_masks_to_red_mp4(mask_frames, fps)
+    return encode_binary_masks_to_red_mp4(
+        mask_frames,
+        fps,
+        window_start_frame=window_start_frame,
+        source_frame_count=source_frame_count,
+        cancel_check=cancel_check,
+    )

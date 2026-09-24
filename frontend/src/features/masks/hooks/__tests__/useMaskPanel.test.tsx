@@ -343,13 +343,16 @@ describe("useMaskPanel", () => {
         sourceFile,
         "sam2-image-parent-hash",
       );
-      expect(generateMaskFrame).toHaveBeenCalledWith({
-        sourceId: "sam2_source_image",
-        points: canonicalMaskPoints,
-        ticksPerSecond: TICKS_PER_SECOND,
-        timeTicks: 0,
-        maskId: "mask_image",
-      });
+      expect(generateMaskFrame).toHaveBeenCalledWith(
+        {
+          sourceId: "sam2_source_image",
+          points: canonicalMaskPoints,
+          ticksPerSecond: TICKS_PER_SECOND,
+          timeTicks: 0,
+          maskId: "mask_image",
+        },
+        { signal: expect.any(AbortSignal) },
+      );
       expect(generateMaskVideo).not.toHaveBeenCalled();
       expect(addLocalAsset).toHaveBeenCalledTimes(1);
     });
@@ -531,6 +534,146 @@ describe("useMaskPanel", () => {
     await waitFor(() => {
       expect(useMaskViewStore.getState().maskPreviewTarget).toBeNull();
     });
+  });
+
+  it("cancels video mask generation when the selected clip changes", async () => {
+    const parent = createParentClip("clip_video", "video");
+    const mask = createSam2MaskClip(parent, "mask_video", "apply");
+    mask.maskPoints = [{ x: 0.5, y: 0.5, label: 1, timeTicks: 0 }];
+    const sourceFile = new File(["video-bytes"], "source.mp4", {
+      type: "video/mp4",
+    });
+    const parentAsset = {
+      id: parent.assetId,
+      type: "video" as const,
+      name: "source.mp4",
+      src: "source.mp4",
+      hash: "sam2-video-parent-hash",
+      file: sourceFile,
+      createdAt: 0,
+    };
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { [parent.id]: "mask_video" },
+      isMaskTabActive: true,
+    });
+    useAssetStore.setState({ assets: [parentAsset] });
+    vi.mocked(registerSourceVideo).mockResolvedValue({
+      sourceId: "sam2_source_video",
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      frameCount: 300,
+      durationSec: 10,
+    });
+
+    let generationSignal: AbortSignal | undefined;
+    vi.mocked(generateMaskVideo).mockImplementation(
+      (_request, options) =>
+        new Promise((_resolve, reject) => {
+          generationSignal = options?.signal;
+          options?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }),
+    );
+
+    const { result } = renderHook(() => useMaskPanel());
+    let generationPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      generationPromise = result.current.sam2.generateSam2Mask();
+    });
+    await waitFor(() => expect(generateMaskVideo).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      useTimelineStore.setState({ selectedClipIds: [] });
+    });
+    await act(async () => {
+      await generationPromise;
+    });
+
+    expect(generationSignal?.aborted).toBe(true);
+    expect(result.current.sam2.sam2GenerateError).toBeNull();
+    expect(result.current.sam2.isSam2Generating).toBe(false);
+  });
+
+  it("stamps the source frame rate on sparse SAM2 mask video assets", async () => {
+    const parent = createParentClip("clip_video_fps", "video");
+    const mask = createSam2MaskClip(parent, "mask_video_fps", "apply");
+    mask.maskPoints = [{ x: 0.5, y: 0.5, label: 1, timeTicks: 0 }];
+    const sourceFile = new File(["video-bytes"], "source.mp4", {
+      type: "video/mp4",
+    });
+    const parentAsset = {
+      id: parent.assetId,
+      type: "video" as const,
+      name: "source.mp4",
+      src: "source.mp4",
+      hash: "sam2-video-fps-parent-hash",
+      file: sourceFile,
+      createdAt: 0,
+    };
+    // Media probing of a sparse mask reports its packet cadence, not the
+    // source frame grid.
+    const addLocalAsset = vi.fn(async (file: File, _metadata?: unknown) => ({
+      id: "sam2_generated_video_asset",
+      type: "video" as const,
+      name: file.name,
+      src: "sam2_generated.mp4",
+      hash: "generated-video-hash",
+      file,
+      fps: 9.03,
+      createdAt: 0,
+    }));
+    const updateAsset = vi.fn(async () => undefined);
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { [parent.id]: "mask_video_fps" },
+      isMaskTabActive: true,
+    });
+    useAssetStore.setState({
+      assets: [parentAsset],
+      addLocalAsset,
+      updateAsset,
+      deleteAsset: vi.fn(async () => undefined),
+    });
+    vi.mocked(registerSourceVideo).mockResolvedValue({
+      sourceId: "sam2_source_video_fps",
+      width: 1920,
+      height: 1080,
+      fps: 29.97,
+      frameCount: 3000,
+      durationSec: 100.1,
+    });
+    vi.mocked(generateMaskVideo).mockResolvedValue({
+      blob: new Blob(["mask-mp4"], { type: "video/mp4" }),
+      width: 1920,
+      height: 1080,
+      fps: 29.97,
+      frameCount: 3000,
+    });
+
+    const { result } = renderHook(() => useMaskPanel());
+    await act(async () => {
+      await result.current.sam2.generateSam2Mask();
+    });
+
+    expect(result.current.sam2.sam2GenerateError).toBeNull();
+    expect(updateAsset).toHaveBeenCalledWith("sam2_generated_video_asset", {
+      fps: 29.97,
+    });
+    const updatedMask = useTimelineStore
+      .getState()
+      .clips.find((clip): clip is MaskTimelineClip => clip.id === mask.id);
+    expect(updatedMask?.sam2MaskAssetId).toBe("sam2_generated_video_asset");
   });
 
   it("drops the mask preview target when another clip is selected", async () => {

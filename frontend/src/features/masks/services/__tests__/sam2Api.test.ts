@@ -54,9 +54,9 @@ describe("sam2Api", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("/sam2/editor/session/clear");
   });
 
-  it("decodes mask video metadata headers with safe fallbacks", async () => {
+  it("decodes mask video metadata headers and passes cancellation", async () => {
     const blob = new Blob(["mask"], { type: "video/mp4" });
-    stubFetch(
+    const fetchMock = stubFetch(
       createMockResponse({
         blob,
         headers: {
@@ -67,20 +67,27 @@ describe("sam2Api", () => {
         },
       }),
     );
+    const controller = new AbortController();
 
     await expect(
-      generateMaskVideo({
-        sourceId: "s",
-        points: [],
-        ticksPerSecond: 1000,
-        maskId: "m",
-      }),
+      generateMaskVideo(
+        {
+          sourceId: "s",
+          points: [],
+          ticksPerSecond: 1000,
+          maskId: "m",
+        },
+        { signal: controller.signal },
+      ),
     ).resolves.toEqual({
       blob,
       width: 1280,
       height: 720,
       fps: 0,
       frameCount: 42,
+    });
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      signal: controller.signal,
     });
   });
 

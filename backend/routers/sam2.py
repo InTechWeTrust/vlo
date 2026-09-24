@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import threading
+from contextlib import suppress
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -12,7 +15,9 @@ from services.model_work.leases import ModelWorkError
 from services.sam2 import sam2_service
 from services.sam2.sam2_service import (
     Sam2ConfigError,
+    Sam2CancelledError,
     Sam2Point,
+    Sam2RequestError,
     Sam2RuntimeError,
     Sam2SourceNotFoundError,
 )
@@ -127,7 +132,10 @@ async def clear_sam2_editor_session(request: Sam2EditorSessionRequest) -> dict[s
 
 
 @router.post("/masks/generate")
-async def generate_sam2_mask_video(request: Sam2GenerateMaskRequest) -> Response:
+async def generate_sam2_mask_video(
+    request: Sam2GenerateMaskRequest,
+    client_request: Request,
+) -> Response:
     if not request.points:
         raise HTTPException(status_code=400, detail="At least one point is required")
 
@@ -141,6 +149,16 @@ async def generate_sam2_mask_video(request: Sam2GenerateMaskRequest) -> Response
         for point in request.points
     ]
 
+    cancel_event = threading.Event()
+
+    async def cancel_on_disconnect() -> None:
+        while True:
+            if await client_request.is_disconnected():
+                cancel_event.set()
+                return
+            await asyncio.sleep(0.1)
+
+    disconnect_task = asyncio.create_task(cancel_on_disconnect())
     try:
         generated = await run_in_threadpool(
             sam2_service.generate_mask_video,
@@ -150,7 +168,12 @@ async def generate_sam2_mask_video(request: Sam2GenerateMaskRequest) -> Response
             request.maskId,
             request.visibleSourceStartTicks,
             request.visibleSourceDurationTicks,
+            cancel_event,
         )
+    except Sam2RequestError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Sam2CancelledError as exc:
+        raise HTTPException(status_code=499, detail=str(exc)) from exc
     except ModelWorkError as exc:
         raise http_exception_for(exc) from exc
     except Sam2SourceNotFoundError as exc:
@@ -159,6 +182,10 @@ async def generate_sam2_mask_video(request: Sam2GenerateMaskRequest) -> Response
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Sam2RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        disconnect_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await disconnect_task
 
     headers = {
         "X-Sam2-Width": str(generated.width),

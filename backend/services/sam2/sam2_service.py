@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
+import inspect
 import os
+import shutil
+import tempfile
 import av
 import sys
 import threading
@@ -19,6 +22,7 @@ from PIL import Image
 from config import (
     SAM2_CACHE_DIR,
     SAM2_DEVICE,
+    SAM2_MAX_PROPAGATION_FRAMES,
 )
 from services.ai_models.capabilities import (
     SAM2_CAPABILITY_ID,
@@ -27,6 +31,7 @@ from services.ai_models.capabilities import (
 )
 from services.ai_models.health import capability_runtime_health
 from services.ai_models.source_cache import JsonSourceCache, sanitize_source_hash
+from services.model_work.leases import LeaseAbandonedError
 from services.model_work.local_inference import run_local_inference
 from services.sam2.sam2_encoding import Sam2EncodingError, encode_binary_masks_to_red_mp4
 from services.sam2.sam2_discovery import discover_sam2_models, Sam2ModelInfo
@@ -38,6 +43,14 @@ class Sam2ConfigError(RuntimeError):
 
 class Sam2RuntimeError(RuntimeError):
     """Raised when SAM2 inference fails."""
+
+
+class Sam2RequestError(ValueError):
+    """Raised when a valid request exceeds a configured SAM2 boundary."""
+
+
+class Sam2CancelledError(Sam2RuntimeError):
+    """Raised when a disconnected client cancels SAM2 work."""
 
 
 class Sam2SourceNotFoundError(FileNotFoundError):
@@ -542,11 +555,30 @@ def build_sam2_runtime(
 SOURCES_DIR = SAM2_CACHE_DIR / "sources"
 METADATA_DIR = SAM2_CACHE_DIR / "metadata"
 PREPARED_SOURCES_DIR = SAM2_CACHE_DIR / "prepared_sources"
-PREPARED_FRAMES_DIR = SAM2_CACHE_DIR / "prepared_frames"
 SOURCES_DIR.mkdir(parents=True, exist_ok=True)
 METADATA_DIR.mkdir(parents=True, exist_ok=True)
 PREPARED_SOURCES_DIR.mkdir(parents=True, exist_ok=True)
-PREPARED_FRAMES_DIR.mkdir(parents=True, exist_ok=True)
+# Windowed JPEG frames live only for one init_state call.
+TEMPORARY_FRAMES_PREFIX = "sam2_frames_"
+
+
+def _purge_stale_frame_directories() -> None:
+    """Remove frame folders that outlived the process that created them.
+
+    A temporary frame folder still present at startup belongs to a run that
+    crashed (an out-of-memory kill skips cleanup). ``prepared_frames`` is the
+    retired per-window cache, which grew without bound.
+    """
+    stale_paths = [
+        SAM2_CACHE_DIR / "prepared_frames",
+        *SAM2_CACHE_DIR.glob(f"{TEMPORARY_FRAMES_PREFIX}*"),
+    ]
+    for stale_path in stale_paths:
+        if stale_path.is_dir():
+            shutil.rmtree(stale_path, ignore_errors=True)
+
+
+_purge_stale_frame_directories()
 
 _SOURCE_METADATA_CACHE = JsonSourceCache[Sam2SourceMetadata](
     metadata_dir=lambda: METADATA_DIR,
@@ -577,8 +609,8 @@ class _Sam2PropagatedMask:
 
     Batch propagation owns a throwaway inference state, so its result is
     published here rather than being read back out of an editor session's
-    predictor internals. Masks are binary, so packbits gives an 8x reduction
-    for free and keeps a full-length 1080p propagation in the tens of MB.
+    predictor internals. Only the requested window is retained, and packbits
+    gives its binary masks an additional 8x reduction.
     """
 
     packed_frames: np.ndarray
@@ -592,6 +624,15 @@ _EDITOR_SESSIONS: dict[str, _Sam2EditorSession] = {}
 _PROPAGATED_MASKS: OrderedDict[str, _Sam2PropagatedMask] = OrderedDict()
 PROPAGATED_MASK_CACHE_MAX_BYTES = 256 * 1024 * 1024
 FRAME_INDEX_EPSILON = 1e-6
+# Container timestamps are rounded to their time base; a frame presented up to
+# this fraction of a frame late still owns the slot it was meant for.
+FRAME_PTS_TOLERANCE = 1e-3
+CancelCheck = Callable[[], bool]
+
+
+def _raise_if_cancelled(cancel_check: CancelCheck | None) -> None:
+    if cancel_check is not None and cancel_check():
+        raise Sam2CancelledError("SAM2 generation was cancelled")
 
 
 def _store_propagated_mask(
@@ -603,8 +644,14 @@ def _store_propagated_mask(
     window: tuple[int, int],
 ) -> None:
     start_frame, end_frame = window
+    expected_frame_count = (end_frame - start_frame) + 1
+    if frames.shape[0] != expected_frame_count:
+        raise Sam2RuntimeError(
+            "SAM2 propagation cache received an unexpected frame count: "
+            f"expected={expected_frame_count}, actual={frames.shape[0]}"
+        )
     entry = _Sam2PropagatedMask(
-        packed_frames=np.packbits(frames[start_frame : end_frame + 1] > 0, axis=-1),
+        packed_frames=np.packbits(frames > 0, axis=-1),
         window_start_frame=start_frame,
         window_end_frame=end_frame,
         width=source.width,
@@ -775,20 +822,6 @@ def _prepared_video_path(source: Sam2SourceMetadata, normalized_mp4: bool) -> Pa
     return PREPARED_SOURCES_DIR / f"{source.source_id}{suffix}"
 
 
-def _prepared_frames_path(
-    source: Sam2SourceMetadata,
-    frame_window: tuple[int, int] | None = None,
-) -> Path:
-    cache_version = "jpeg_v2"
-    if frame_window is None:
-        return PREPARED_FRAMES_DIR / f"{source.source_id}_{cache_version}"
-    start_frame, end_frame = _normalize_frame_window(frame_window, source.frame_count)
-    return (
-        PREPARED_FRAMES_DIR
-        / f"{source.source_id}_{start_frame:06d}_{end_frame:06d}_{cache_version}"
-    )
-
-
 def _coerce_av_rate(value: Any, fallback_fps: float = 30.0) -> Fraction:
     numerator = getattr(value, "numerator", None)
     denominator = getattr(value, "denominator", None)
@@ -886,16 +919,36 @@ def _ensure_prepared_video(source: Sam2SourceMetadata, normalized_mp4: bool) -> 
         return _convert_video_to_mp4(source.path, prepared_path)
 
 
-def _extract_video_frames_to_jpeg(
+def _frame_display_index(
+    frame_pts: int,
+    *,
+    stream_start_pts: int,
+    stream_time_base: float,
+    fps: float,
+) -> int:
+    """First source-frame slot at which a decoded frame is on screen."""
+    offset_frames = (frame_pts - stream_start_pts) * stream_time_base * fps
+    return int(np.ceil(offset_frames - FRAME_PTS_TOLERANCE))
+
+
+def _write_window_frames_to_jpeg(
     video_path: Path,
     target_dir: Path,
-    frame_window: tuple[int, int] | None = None,
-) -> Path:
-    if target_dir.exists():
-        for stale_file in target_dir.glob("*.jpg"):
-            stale_file.unlink()
-    target_dir.mkdir(parents=True, exist_ok=True)
+    *,
+    start_frame: int,
+    end_frame: int | None,
+    fps: float | None,
+    seek_to_window: bool,
+    cancel_check: CancelCheck | None,
+) -> int | None:
+    """Write one JPEG per source-frame slot; ``None`` when the seek overshot.
 
+    Slots follow player semantics: each slot shows the latest frame presented
+    at or before it. Timestamp gaps, duplicate timestamps and a stream that
+    ends before its reported frame count then hold the displayed frame
+    instead of shifting every later index, which is what the editor shows at
+    the same source time.
+    """
     try:
         container = av.open(str(video_path))
     except Exception as exc:
@@ -903,77 +956,142 @@ def _extract_video_frames_to_jpeg(
             f"Unable to open video for frame extraction: {video_path}"
         ) from exc
 
-    start_frame = 0
-    end_frame: int | None = None
-    if frame_window is not None:
-        start_frame = max(0, int(frame_window[0]))
-        end_frame = max(start_frame, int(frame_window[1]))
+    held_frame: Any = None
+    held_image: Image.Image | None = None
+    next_index = start_frame
 
-    # Decode sequentially to keep source-frame indexing exact; random frame seeks
-    # can land on codec-dependent positions and drift the SAM2 frame mapping.
-    source_frame_index = 0
-    extracted_frame_count = 0
+    def _write_held(slot_index: int) -> None:
+        nonlocal held_image
+        frame_path = target_dir / f"{slot_index - start_frame:05d}.jpg"
+        try:
+            if held_image is None:
+                held_image = held_frame.to_image()
+                if held_image.mode not in ("RGB", "L"):
+                    held_image = held_image.convert("RGB")
+            held_image.save(str(frame_path), format="JPEG", quality=95)
+        except Exception as exc:
+            raise Sam2RuntimeError(
+                f"Failed to write extracted frame '{frame_path.name}' for SAM2"
+            ) from exc
+
     try:
         if not container.streams.video:
             raise Sam2RuntimeError(
                 f"Unable to open video for frame extraction: {video_path}"
             )
 
-        for frame in container.decode(video=0):
-            if source_frame_index < start_frame:
-                source_frame_index += 1
-                continue
-            if end_frame is not None and source_frame_index > end_frame:
-                break
-            frame_path = target_dir / f"{extracted_frame_count:05d}.jpg"
-            try:
-                image = frame.to_image()
-                if image.mode not in ("RGB", "L"):
-                    image = image.convert("RGB")
-                image.save(str(frame_path), format="JPEG", quality=95)
-            except Exception as exc:
+        stream = container.streams.video[0]
+        source_fps = float(fps or _resolve_av_stream_rate(stream))
+        stream_time_base = float(stream.time_base)
+        stream_start_pts = int(stream.start_time or 0)
+
+        if seek_to_window:
+            target_pts = stream_start_pts + int(
+                np.floor((start_frame / source_fps) / stream_time_base)
+            )
+            # Seek to the preceding keyframe, then recover source-frame slots
+            # from presentation timestamps. This preserves MP4 edit-list
+            # semantics while avoiding a decode of the entire source prefix.
+            container.seek(
+                target_pts,
+                stream=stream,
+                backward=True,
+                any_frame=False,
+            )
+
+        for frame in container.decode(stream):
+            _raise_if_cancelled(cancel_check)
+            if frame.pts is None:
                 raise Sam2RuntimeError(
-                    f"Failed to write extracted frame '{frame_path.name}' for SAM2"
-                ) from exc
-            source_frame_index += 1
-            extracted_frame_count += 1
+                    "A decoded frame had no presentation timestamp; "
+                    "the requested SAM2 window cannot be indexed safely"
+                )
+            display_index = _frame_display_index(
+                int(frame.pts),
+                stream_start_pts=stream_start_pts,
+                stream_time_base=stream_time_base,
+                fps=source_fps,
+            )
+
+            if display_index > next_index:
+                if held_frame is None:
+                    if seek_to_window:
+                        return None
+                    # Nothing precedes the stream's first frame; show it.
+                    held_frame = frame
+                last_index = display_index - 1
+                if end_frame is not None:
+                    last_index = min(last_index, end_frame)
+                for slot_index in range(next_index, last_index + 1):
+                    _write_held(slot_index)
+                next_index = last_index + 1
+                if end_frame is not None and next_index > end_frame:
+                    break
+
+            held_frame = frame
+            held_image = None
+        else:
+            if held_frame is not None:
+                final_index = end_frame if end_frame is not None else next_index
+                for slot_index in range(next_index, final_index + 1):
+                    _write_held(slot_index)
+                next_index = final_index + 1
     finally:
         container.close()
 
-    if extracted_frame_count <= 0:
+    return next_index - start_frame
+
+
+def _extract_video_frames_to_jpeg(
+    video_path: Path,
+    target_dir: Path,
+    frame_window: tuple[int, int] | None = None,
+    fps: float | None = None,
+    cancel_check: CancelCheck | None = None,
+) -> Path:
+    if target_dir.exists():
+        for stale_file in target_dir.glob("*.jpg"):
+            stale_file.unlink()
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    start_frame = 0
+    end_frame: int | None = None
+    if frame_window is not None:
+        start_frame = max(0, int(frame_window[0]))
+        end_frame = max(start_frame, int(frame_window[1]))
+
+    def extract(seek_to_window: bool) -> int | None:
+        return _write_window_frames_to_jpeg(
+            video_path,
+            target_dir,
+            start_frame=start_frame,
+            end_frame=end_frame,
+            fps=fps,
+            seek_to_window=seek_to_window,
+            cancel_check=cancel_check,
+        )
+
+    written_frame_count = extract(start_frame > 0)
+    if written_frame_count is None:
+        # The keyframe seek landed after the window start (an inexact container
+        # index), so the frames on screen at the window start were skipped.
+        for stale_file in target_dir.glob("*.jpg"):
+            stale_file.unlink()
+        written_frame_count = extract(False)
+
+    if not written_frame_count:
         raise Sam2RuntimeError(
-            f"No frames were extracted from video '{video_path.name}' for SAM2"
+            f"No frames were extracted for SAM2 window {start_frame}-{end_frame} "
+            f"from '{video_path.name}'"
         )
     return target_dir
-
-
-def _ensure_prepared_jpeg_frames(
-    source: Sam2SourceMetadata,
-    video_path: Path,
-    frame_window: tuple[int, int] | None = None,
-) -> Path:
-    normalized_window = _normalize_frame_window(frame_window, source.frame_count)
-    full_window = (0, source.frame_count - 1)
-    path_window: tuple[int, int] | None = (
-        None if normalized_window == full_window else normalized_window
-    )
-    expected_frame_count = (normalized_window[1] - normalized_window[0]) + 1
-    frames_path = _prepared_frames_path(source, frame_window=path_window)
-    with _PREPARE_VIDEO_LOCK:
-        existing = sorted(frames_path.glob("*.jpg"))
-        if len(existing) == expected_frame_count:
-            return frames_path
-        return _extract_video_frames_to_jpeg(
-            video_path,
-            frames_path,
-            frame_window=normalized_window,
-        )
 
 
 def _initialize_inference_state(
     predictor: Any,
     source: Sam2SourceMetadata,
     frame_window: tuple[int, int] | None = None,
+    cancel_check: CancelCheck | None = None,
 ) -> tuple[Any, Path, int, int]:
     errors: list[str] = []
     attempted_video_paths: list[Path] = []
@@ -981,21 +1099,86 @@ def _initialize_inference_state(
     window_start_frame, window_end_frame = normalized_window
     window_frame_count = (window_end_frame - window_start_frame) + 1
 
+    def _init_state(video_path: Path, *, windowed: bool) -> Any:
+        init_state = predictor.init_state
+        kwargs: dict[str, Any] = {"video_path": str(video_path)}
+        if windowed:
+            try:
+                parameters = inspect.signature(init_state).parameters
+            except (TypeError, ValueError):
+                parameters = {}
+            accepts_kwargs = any(
+                parameter.kind == inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+            if accepts_kwargs or "offload_video_to_cpu" in parameters:
+                kwargs["offload_video_to_cpu"] = True
+        return init_state(**kwargs)
+
+    def _init_from_temporary_jpegs(video_path: Path) -> tuple[Any, Path, int, int]:
+        _raise_if_cancelled(cancel_check)
+        with tempfile.TemporaryDirectory(
+            prefix=f"{TEMPORARY_FRAMES_PREFIX}{source.source_id}_",
+            dir=SAM2_CACHE_DIR,
+        ) as temporary_dir:
+            frames_dir = _extract_video_frames_to_jpeg(
+                video_path,
+                Path(temporary_dir),
+                frame_window=normalized_window,
+                fps=source.fps,
+                cancel_check=cancel_check,
+            )
+            _raise_if_cancelled(cancel_check)
+            inference_state = _init_state(frames_dir, windowed=True)
+            _raise_if_cancelled(cancel_check)
+        return (
+            inference_state,
+            video_path,
+            window_start_frame,
+            window_frame_count,
+        )
+
     def _try_init(video_path: Path) -> tuple[Any, Path, int, int] | None:
         try:
+            _raise_if_cancelled(cancel_check)
             attempted_video_paths.append(video_path)
-            return (
-                predictor.init_state(video_path=str(video_path)),
+            initialized = (
+                _init_state(video_path, windowed=False),
                 video_path,
                 0,
                 source.frame_count,
             )
+            _raise_if_cancelled(cancel_check)
+            return initialized
+        except Sam2CancelledError:
+            raise
         except Exception as exc:  # pragma: no cover - environment dependent
             errors.append(f"{video_path.name}: {exc}")
             return None
 
     source_path = source.path
     source_suffix = source_path.suffix.lower()
+
+    # A caller-supplied window is a hard resource boundary. Never offer the
+    # original MP4 to SAM2 here: its native loader eagerly materializes every
+    # source frame before propagation limits are applied.
+    if frame_window is not None:
+        try:
+            extraction_source = source_path
+            if source_suffix != ".mp4":
+                extraction_source = _ensure_prepared_video(
+                    source,
+                    normalized_mp4=False,
+                )
+            return _init_from_temporary_jpegs(extraction_source)
+        except Sam2CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - environment dependent
+            errors.append(f"{source.source_id}/(windowed-jpeg-frames): {exc}")
+            raise Sam2RuntimeError(
+                "Failed to initialize SAM2 from the requested source window "
+                f"({'; '.join(errors)})"
+            ) from exc
 
     if source_suffix != ".mp4":
         try:
@@ -1023,17 +1206,9 @@ def _initialize_inference_state(
     # Some SAM2 variants accept a JPEG frame directory instead of a video file.
     fallback_video_path = attempted_video_paths[-1] if attempted_video_paths else source.path
     try:
-        frames_dir = _ensure_prepared_jpeg_frames(
-            source,
-            fallback_video_path,
-            frame_window=normalized_window,
-        )
-        return (
-            predictor.init_state(video_path=str(frames_dir)),
-            frames_dir,
-            window_start_frame,
-            window_frame_count,
-        )
+        return _init_from_temporary_jpegs(fallback_video_path)
+    except Sam2CancelledError:
+        raise
     except Exception as exc:  # pragma: no cover - environment dependent
         errors.append(f"{source.source_id}/(jpeg-frames): {exc}")
 
@@ -1073,6 +1248,12 @@ def _create_editor_session(
 def _get_editor_session(source_id: str, mask_id: str) -> _Sam2EditorSession | None:
     with _EDITOR_SESSIONS_LOCK:
         return _EDITOR_SESSIONS.get(_editor_session_key(source_id, mask_id))
+
+
+def _discard_editor_session(source_id: str, mask_id: str) -> bool:
+    key = _editor_session_key(source_id, mask_id)
+    with _EDITOR_SESSIONS_LOCK:
+        return _EDITOR_SESSIONS.pop(key, None) is not None
 
 
 def _session_covers_frame_window(
@@ -1117,7 +1298,7 @@ def init_editor_session(
         visible_source_start_ticks is not None
         or visible_source_duration_ticks is not None
     )
-    frame_window: tuple[int, int] | None = None
+    frame_window = _normalize_frame_window(None, source.frame_count)
     if has_visible_range:
         if ticks_per_second is None or ticks_per_second <= 0:
             raise ValueError(
@@ -1129,6 +1310,7 @@ def init_editor_session(
             visible_source_start_ticks=visible_source_start_ticks,
             visible_source_duration_ticks=visible_source_duration_ticks,
         )
+    _validate_frame_window_limit(frame_window)
 
     def _initialize() -> None:
         # Session init loads the predictor and builds an inference state: GPU
@@ -1157,9 +1339,8 @@ def init_editor_session(
         "fps": source.fps,
         "frameCount": source.frame_count,
     }
-    if frame_window is not None:
-        payload["frameWindowStartFrame"] = frame_window[0]
-        payload["frameWindowEndFrame"] = frame_window[1]
+    payload["frameWindowStartFrame"] = frame_window[0]
+    payload["frameWindowEndFrame"] = frame_window[1]
     return payload
 
 
@@ -1169,14 +1350,12 @@ def clear_editor_session(source_id: str, mask_id: str) -> dict[str, Any]:
         raise ValueError("mask_id is required")
 
     sanitized_source_id = _sanitize_source_hash(source_id)
-    key = _editor_session_key(sanitized_source_id, normalized_mask_id)
-    with _EDITOR_SESSIONS_LOCK:
-        removed = _EDITOR_SESSIONS.pop(key, None)
+    removed = _discard_editor_session(sanitized_source_id, normalized_mask_id)
     _discard_propagated_mask(sanitized_source_id, normalized_mask_id)
     return {
         "sourceId": _sanitize_source_hash(source_id),
         "maskId": normalized_mask_id,
-        "cleared": removed is not None,
+        "cleared": removed,
     }
 
 
@@ -1254,6 +1433,16 @@ def _normalize_frame_window(
     if end_frame < start_frame:
         end_frame = start_frame
     return (start_frame, end_frame)
+
+
+def _validate_frame_window_limit(frame_window: tuple[int, int]) -> None:
+    frame_count = (frame_window[1] - frame_window[0]) + 1
+    if SAM2_MAX_PROPAGATION_FRAMES > 0 and frame_count > SAM2_MAX_PROPAGATION_FRAMES:
+        raise Sam2RequestError(
+            f"SAM2 source window contains {frame_count} frames, exceeding the "
+            f"configured limit of {SAM2_MAX_PROPAGATION_FRAMES}. Trim the clip or "
+            "increase SAM2_MAX_PROPAGATION_FRAMES."
+        )
 
 
 def _source_ticks_range_to_frame_window(
@@ -1467,12 +1656,21 @@ def _run_sam2_propagation(
     points_by_frame: dict[int, list[Sam2Point]],
     mask_id: str | None = None,
     frame_window: tuple[int, int] | None = None,
+    cancel_check: CancelCheck | None = None,
 ) -> np.ndarray:
+    _raise_if_cancelled(cancel_check)
     predictor = _runtime.get_predictor()
-    # Batch propagation always builds its own inference state. Borrowing the
-    # editor session shared it with the foreground frame-preview path, which
-    # propagation then wiped via reset_state(). Propagated masks are published
-    # to a dedicated cache instead of being read back out of predictor internals.
+    active_start_frame, active_end_frame = _normalize_frame_window(
+        frame_window,
+        source.frame_count,
+    )
+    # The editor session and propagation state contain the same decoded window.
+    # Release the editor-owned reference before constructing the throwaway
+    # propagation state so both copies are not resident at once.
+    if mask_id:
+        _discard_editor_session(source.source_id, mask_id)
+        _discard_propagated_mask(source.source_id, mask_id)
+
     (
         inference_state,
         _,
@@ -1482,24 +1680,23 @@ def _run_sam2_propagation(
         predictor=predictor,
         source=source,
         frame_window=frame_window,
+        cancel_check=cancel_check,
     )
 
     if hasattr(predictor, "reset_state"):
         predictor.reset_state(inference_state)
 
+    active_frame_count = (active_end_frame - active_start_frame) + 1
     frames = np.zeros(
-        (source.frame_count, source.height, source.width),
+        (active_frame_count, source.height, source.width),
         dtype=np.uint8,
-    )
-    active_start_frame, active_end_frame = _normalize_frame_window(
-        frame_window,
-        source.frame_count,
     )
     predictor_source_start = frame_index_offset
     predictor_source_end = frame_index_offset + predictor_frame_count - 1
-    active_start_frame = max(active_start_frame, predictor_source_start)
-    active_end_frame = min(active_end_frame, predictor_source_end)
-    if active_end_frame < active_start_frame:
+    if (
+        predictor_source_start > active_start_frame
+        or predictor_source_end < active_end_frame
+    ):
         raise Sam2RuntimeError(
             "SAM2 predictor initialization did not cover the clip's visible source-time range"
         )
@@ -1509,6 +1706,7 @@ def _run_sam2_propagation(
     seen_frames: set[int] = set()
 
     for frame_index in sorted(points_by_frame.keys()):
+        _raise_if_cancelled(cancel_check)
         if frame_index < active_start_frame or frame_index > active_end_frame:
             continue
 
@@ -1537,7 +1735,9 @@ def _run_sam2_propagation(
         conditioning_predictor_frames.append(predictor_frame_index)
         seeded_logits = _extract_logits_from_add_points_result(add_result)
         if seeded_logits is not None:
-            frames[frame_index] = _logits_to_binary_frame(seeded_logits)
+            frames[frame_index - active_start_frame] = _logits_to_binary_frame(
+                seeded_logits
+            )
             seen_frames.add(frame_index)
 
     if not conditioning_source_frames:
@@ -1550,6 +1750,7 @@ def _run_sam2_propagation(
     start_frame_idx = min(conditioning_predictor_frames)
     try:
         for reverse in (False, True):
+            _raise_if_cancelled(cancel_check)
             if reverse and start_frame_idx <= predictor_active_start:
                 continue
             if reverse:
@@ -1564,6 +1765,7 @@ def _run_sam2_propagation(
                 max_frame_num_to_track=max_track_distance,
             )
             for output in propagation_iter:
+                _raise_if_cancelled(cancel_check)
                 if not isinstance(output, (list, tuple)) or len(output) < 3:
                     continue
                 predictor_frame_index = int(output[0])
@@ -1576,8 +1778,12 @@ def _run_sam2_propagation(
                     continue
                 if source_frame_index < active_start_frame or source_frame_index > active_end_frame:
                     continue
-                frames[source_frame_index] = _logits_to_binary_frame(logits)
+                frames[source_frame_index - active_start_frame] = _logits_to_binary_frame(
+                    logits
+                )
                 seen_frames.add(source_frame_index)
+    except Sam2CancelledError:
+        raise
     except Exception as exc:  # pragma: no cover - environment dependent
         raise Sam2RuntimeError("SAM2 propagation failed") from exc
 
@@ -1680,7 +1886,10 @@ def generate_mask_video(
     mask_id: str | None = None,
     visible_source_start_ticks: float | None = None,
     visible_source_duration_ticks: float | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> Sam2GeneratedMaskVideo:
+    cancel_check = cancel_event.is_set if cancel_event is not None else None
+    _raise_if_cancelled(cancel_check)
     source = get_source_metadata(source_id)
     points_by_frame = group_points_by_frame(
         points=points,
@@ -1697,20 +1906,37 @@ def generate_mask_video(
         visible_source_start_ticks=visible_source_start_ticks,
         visible_source_duration_ticks=visible_source_duration_ticks,
     )
-    frames = run_local_inference(
-        lambda: _run_sam2_propagation(
-            source,
-            points_by_frame,
-            mask_id=mask_id,
-            frame_window=frame_window,
-        ),
-        source="sam2",
-        label="SAM2 mask video",
-        owner="vlo.sam2",
-    )
+    _validate_frame_window_limit(frame_window)
     try:
-        video_bytes = encode_binary_masks_to_red_mp4(frames, source.fps)
+        frames = run_local_inference(
+            lambda: _run_sam2_propagation(
+                source,
+                points_by_frame,
+                mask_id=mask_id,
+                frame_window=frame_window,
+                cancel_check=cancel_check,
+            ),
+            source="sam2",
+            label="SAM2 mask video",
+            owner="vlo.sam2",
+            # A disconnected client leaves the GPU queue immediately rather
+            # than waiting for admission only to discard the result.
+            stop=cancel_event,
+        )
+    except LeaseAbandonedError as exc:
+        raise Sam2CancelledError("SAM2 generation was cancelled") from exc
+    _raise_if_cancelled(cancel_check)
+    try:
+        video_bytes = encode_binary_masks_to_red_mp4(
+            frames,
+            source.fps,
+            window_start_frame=frame_window[0],
+            source_frame_count=source.frame_count,
+            cancel_check=cancel_check,
+        )
     except Sam2EncodingError as exc:
+        if cancel_check is not None and cancel_check():
+            raise Sam2CancelledError("SAM2 generation was cancelled") from exc
         raise Sam2RuntimeError(str(exc)) from exc
 
     return Sam2GeneratedMaskVideo(
@@ -1873,6 +2099,7 @@ def get_cached_mask_frames(
         visible_source_start_ticks=visible_source_start_ticks,
         visible_source_duration_ticks=visible_source_duration_ticks,
     )
+    _validate_frame_window_limit(frame_window)
     start_frame, end_frame = frame_window
 
     # 1. Prefer the last propagation for this mask. It is the flow the error

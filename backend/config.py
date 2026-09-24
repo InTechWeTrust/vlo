@@ -38,6 +38,23 @@ COMFYUI_INSTALL_DIR = (
 
 SAM2_DEVICE = os.environ.get("SAM2_DEVICE", "auto").strip() or "auto"
 
+
+def _read_nonnegative_int_env(name: str, default: int) -> int:
+    raw_value = os.environ.get(name, "").strip()
+    if not raw_value:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+SAM2_MAX_PROPAGATION_FRAMES = _read_nonnegative_int_env(
+    "SAM2_MAX_PROPAGATION_FRAMES",
+    900,
+)
+
 SAM2_CACHE_DIR = Path(
     os.environ.get("SAM2_CACHE_DIR", str(PROJECTS_ROOT / ".sam2_cache"))
 )

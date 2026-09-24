@@ -73,7 +73,7 @@ def test_sam2_predictor_exclusion(
     monkeypatch.setattr(
         sam2_service,
         "encode_binary_masks_to_red_mp4",
-        lambda _frames, _fps: b"mp4",
+        lambda _frames, _fps, **_kwargs: b"mp4",
     )
 
     inside_propagation = threading.Event()

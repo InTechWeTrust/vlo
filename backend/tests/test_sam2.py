@@ -1,4 +1,5 @@
 import sys
+import threading
 import types
 from collections import OrderedDict
 from collections.abc import Callable
@@ -14,6 +15,7 @@ import pytest
 from fastapi import HTTPException
 from PIL import Image
 
+import config as backend_config
 from routers import sam2 as sam2_router
 from routers.sam2 import (
     Sam2GenerateFrameRequest,
@@ -21,13 +23,20 @@ from routers.sam2 import (
     Sam2PointRequest,
 )
 from services.sam2 import sam2_service
+from services.model_work.leases import LeaseAbandonedError
 from services.sam2.sam2_service import (
+    Sam2CancelledError,
     Sam2GeneratedMaskFrame,
     Sam2GeneratedMaskVideo,
     Sam2Point,
     Sam2SourceMetadata,
     Sam2SourceNotFoundError,
 )
+
+
+class _ConnectedRequest:
+    async def is_disconnected(self) -> bool:
+        return False
 
 
 def _configure_tmp_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -47,6 +56,8 @@ def _write_mp4(
     *,
     fps: Fraction = Fraction(10, 1),
     frame_fn: Callable[[int, int, int], np.ndarray] | None = None,
+    pts_fn: Callable[[int], int] | None = None,
+    gop_size: int | None = None,
 ) -> None:
     container = av.open(str(video_path), mode="w")
     try:
@@ -54,6 +65,8 @@ def _write_mp4(
         stream.width = width
         stream.height = height
         stream.pix_fmt = "yuv420p"
+        if gop_size is not None:
+            stream.codec_context.gop_size = gop_size
 
         for index in range(num_frames):
             if frame_fn is None:
@@ -61,7 +74,7 @@ def _write_mp4(
             else:
                 frame_array = frame_fn(index, width, height)
             frame = av.VideoFrame.from_ndarray(frame_array, format="rgb24")
-            frame.pts = index
+            frame.pts = index if pts_fn is None else pts_fn(index)
             for packet in stream.encode(frame):
                 container.mux(packet)
 
@@ -69,6 +82,19 @@ def _write_mp4(
             container.mux(packet)
     finally:
         container.close()
+
+
+def _gray_level_frame(index: int, width: int, height: int) -> np.ndarray:
+    return np.full((height, width, 3), index * 6, dtype=np.uint8)
+
+
+def _extracted_gray_levels(frames_dir: Path) -> list[int]:
+    levels: list[int] = []
+    for frame_path in sorted(frames_dir.glob("*.jpg")):
+        with Image.open(frame_path) as image:
+            mean = float(np.asarray(image.convert("L"), dtype=np.float32).mean())
+        levels.append(int(round(mean / 6)))
+    return levels
 
 
 def test_group_points_by_frame_uses_time_ticks() -> None:
@@ -124,6 +150,30 @@ def test_source_ticks_range_to_frame_window_maps_to_expected_bounds() -> None:
     )
 
     assert frame_window == (24, 71)
+
+
+def test_frame_window_limit_rejects_oversized_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sam2_service, "SAM2_MAX_PROPAGATION_FRAMES", 3)
+
+    sam2_service._validate_frame_window_limit((10, 12))
+    with pytest.raises(ValueError, match="contains 4 frames.*limit of 3"):
+        sam2_service._validate_frame_window_limit((10, 13))
+
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [("", 900), ("not-a-number", 900), ("-1", 900), ("0", 0), ("120", 120)],
+)
+def test_sam2_frame_limit_config_falls_back_safely(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_value: str,
+    expected: int,
+) -> None:
+    monkeypatch.setenv("TEST_SAM2_FRAME_LIMIT", raw_value)
+
+    assert backend_config._read_nonnegative_int_env("TEST_SAM2_FRAME_LIMIT", 900) == expected
 
 
 def test_register_source_video_dedupes_by_hash(
@@ -200,6 +250,132 @@ def test_extract_video_frames_to_jpeg_uses_requested_window(tmp_path: Path) -> N
     assert [path.name for path in extracted_files] == ["00000.jpg", "00001.jpg"]
     with Image.open(extracted_files[0]) as image:
         assert image.size == (5, 4)
+        channels = np.asarray(image.convert("RGB"), dtype=np.float32).mean(axis=(0, 1))
+        assert channels[1] > channels[0]
+        assert channels[1] > channels[2]
+
+
+def test_extract_video_frames_to_jpeg_seeks_to_late_window(tmp_path: Path) -> None:
+    video_path = tmp_path / "source.mp4"
+    _write_mp4(
+        video_path,
+        width=16,
+        height=16,
+        num_frames=40,
+        frame_fn=_gray_level_frame,
+        gop_size=5,
+    )
+
+    frames_dir = sam2_service._extract_video_frames_to_jpeg(
+        video_path,
+        tmp_path / "frames",
+        frame_window=(23, 27),
+        fps=10.0,
+    )
+
+    assert _extracted_gray_levels(frames_dir) == [23, 24, 25, 26, 27]
+
+
+def test_extract_video_frames_to_jpeg_holds_frames_across_timestamp_gaps(
+    tmp_path: Path,
+) -> None:
+    video_path = tmp_path / "source.mp4"
+    # Source frames 0,1,2,4,5: slot 3 has no frame of its own, so a player
+    # keeps showing frame 2 there.
+    _write_mp4(
+        video_path,
+        width=16,
+        height=16,
+        num_frames=5,
+        frame_fn=lambda index, width, height: _gray_level_frame(
+            index if index < 3 else index + 1,
+            width,
+            height,
+        ),
+        pts_fn=lambda index: index if index < 3 else index + 1,
+    )
+
+    frames_dir = sam2_service._extract_video_frames_to_jpeg(
+        video_path,
+        tmp_path / "frames",
+        frame_window=(1, 4),
+        fps=10.0,
+    )
+
+    assert _extracted_gray_levels(frames_dir) == [1, 2, 2, 4]
+
+
+def test_extract_video_frames_to_jpeg_holds_last_frame_past_stream_end(
+    tmp_path: Path,
+) -> None:
+    video_path = tmp_path / "source.mp4"
+    _write_mp4(
+        video_path,
+        width=16,
+        height=16,
+        num_frames=10,
+        frame_fn=_gray_level_frame,
+    )
+
+    # A reported frame count can exceed the decodable frames (edit lists,
+    # duration-derived counts); the window still gets one frame per slot.
+    frames_dir = sam2_service._extract_video_frames_to_jpeg(
+        video_path,
+        tmp_path / "frames",
+        frame_window=(7, 11),
+        fps=10.0,
+    )
+
+    assert _extracted_gray_levels(frames_dir) == [7, 8, 9, 9, 9]
+
+
+def test_extract_video_frames_to_jpeg_redecodes_from_start_when_seek_overshoots(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    seek_modes: list[bool] = []
+
+    def fake_write(
+        _video_path: Path,
+        target_dir: Path,
+        *,
+        seek_to_window: bool,
+        **_kwargs: object,
+    ) -> int | None:
+        seek_modes.append(seek_to_window)
+        (target_dir / "00000.jpg").write_bytes(b"jpeg")
+        return None if seek_to_window else 1
+
+    monkeypatch.setattr(sam2_service, "_write_window_frames_to_jpeg", fake_write)
+
+    frames_dir = sam2_service._extract_video_frames_to_jpeg(
+        tmp_path / "source.mp4",
+        tmp_path / "frames",
+        frame_window=(5, 5),
+    )
+
+    assert seek_modes == [True, False]
+    assert frames_dir == tmp_path / "frames"
+
+
+def test_purge_stale_frame_directories_removes_orphaned_frames(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(sam2_service, "SAM2_CACHE_DIR", tmp_path)
+    legacy_dir = tmp_path / "prepared_frames" / "source_000001_000002_jpeg_v2"
+    legacy_dir.mkdir(parents=True)
+    orphan_dir = tmp_path / f"{sam2_service.TEMPORARY_FRAMES_PREFIX}source_abc"
+    orphan_dir.mkdir()
+    (orphan_dir / "00000.jpg").write_bytes(b"jpeg")
+    kept_dir = tmp_path / "prepared_sources"
+    kept_dir.mkdir()
+
+    sam2_service._purge_stale_frame_directories()
+
+    assert not (tmp_path / "prepared_frames").exists()
+    assert not orphan_dir.exists()
+    assert kept_dir.exists()
 
 
 def test_initialize_inference_state_falls_back_to_jpeg_frames_when_prepare_fails(
@@ -226,7 +402,6 @@ def test_initialize_inference_state_falls_back_to_jpeg_frames_when_prepare_fails
         frame_count=1,
         duration_sec=1 / 25.0,
     )
-    prepared_frames_path = tmp_path / "frames"
     fake_predictor = FakePredictor()
 
     def fake_ensure_prepared_video(
@@ -241,11 +416,20 @@ def test_initialize_inference_state_falls_back_to_jpeg_frames_when_prepare_fails
         "_ensure_prepared_video",
         fake_ensure_prepared_video,
     )
-    monkeypatch.setattr(
-        sam2_service,
-        "_ensure_prepared_jpeg_frames",
-        lambda _source, video_path, frame_window=None: prepared_frames_path,
-    )
+    extracted_paths: list[Path] = []
+
+    def fake_extract(
+        video_path: Path,
+        target_dir: Path,
+        frame_window: tuple[int, int] | None = None,
+        **_kwargs: object,
+    ) -> Path:
+        assert video_path == source_path
+        assert frame_window == (0, 0)
+        extracted_paths.append(target_dir)
+        return target_dir
+
+    monkeypatch.setattr(sam2_service, "_extract_video_frames_to_jpeg", fake_extract)
 
     inference_state, prepared_path, frame_index_offset, frame_count = (
         sam2_service._initialize_inference_state(
@@ -254,11 +438,12 @@ def test_initialize_inference_state_falls_back_to_jpeg_frames_when_prepare_fails
         )
     )
 
-    assert inference_state == {"video_path": str(prepared_frames_path)}
-    assert prepared_path == prepared_frames_path
+    assert inference_state == {"video_path": str(extracted_paths[0])}
+    assert prepared_path == source_path
     assert frame_index_offset == 0
     assert frame_count == 1
-    assert fake_predictor.init_calls == [str(prepared_frames_path)]
+    assert fake_predictor.init_calls == [str(extracted_paths[0])]
+    assert not extracted_paths[0].exists()
 
 
 def test_encode_png_frame_returns_valid_grayscale_png() -> None:
@@ -320,7 +505,11 @@ def test_generate_endpoint_rejects_empty_points() -> None:
         ticksPerSecond=96_000,
     )
     with pytest.raises(HTTPException) as exc_info:
-        anyio.run(sam2_router.generate_sam2_mask_video, request)
+        anyio.run(
+            sam2_router.generate_sam2_mask_video,
+            request,
+            _ConnectedRequest(),
+        )
     assert exc_info.value.status_code == 400
     assert "point" in str(exc_info.value.detail).lower()
 
@@ -345,7 +534,11 @@ def test_generate_endpoint_returns_404_for_missing_source(
         maskId="mask_1",
     )
     with pytest.raises(HTTPException) as exc_info:
-        anyio.run(sam2_router.generate_sam2_mask_video, request)
+        anyio.run(
+            sam2_router.generate_sam2_mask_video,
+            request,
+            _ConnectedRequest(),
+        )
     assert exc_info.value.status_code == 404
     assert "missing source" in str(exc_info.value.detail)
 
@@ -375,7 +568,11 @@ def test_generate_endpoint_returns_mp4_with_headers(
         ticksPerSecond=96_000,
         maskId="mask_1",
     )
-    response = anyio.run(sam2_router.generate_sam2_mask_video, request)
+    response = anyio.run(
+        sam2_router.generate_sam2_mask_video,
+        request,
+        _ConnectedRequest(),
+    )
 
     assert response.body == b"fake-mp4-data"
     assert response.media_type == "video/mp4"
@@ -415,10 +612,15 @@ def test_generate_endpoint_forwards_visible_source_range(
         visibleSourceStartTicks=9_600,
         visibleSourceDurationTicks=48_000,
     )
-    response = anyio.run(sam2_router.generate_sam2_mask_video, request)
+    response = anyio.run(
+        sam2_router.generate_sam2_mask_video,
+        request,
+        _ConnectedRequest(),
+    )
 
     assert response.status_code == 200
-    assert captured_call["args"] == (
+    captured_args = cast(tuple[object, ...], captured_call["args"])
+    assert captured_args[:6] == (
         "source_ok",
         [{"x": 0.5, "y": 0.5, "label": 1, "timeTicks": 0.0}],
         96_000.0,
@@ -426,6 +628,7 @@ def test_generate_endpoint_forwards_visible_source_range(
         9_600.0,
         48_000.0,
     )
+    assert isinstance(captured_args[6], threading.Event)
     assert captured_call["kwargs"] == {}
 
 
@@ -546,7 +749,7 @@ def test_generate_single_frame_mask_adds_points_only_on_requested_frame(
     monkeypatch.setattr(
         sam2_service,
         "_initialize_inference_state",
-        lambda predictor, source, frame_window=None: (
+        lambda predictor, source, frame_window=None, **_kwargs: (
             {"inference": "state"},
             source.path,
             0,
@@ -672,7 +875,7 @@ def _install_propagation_predictor(
     return fake_predictor
 
 
-def test_run_sam2_propagation_never_borrows_the_editor_session(
+def test_run_sam2_propagation_releases_the_editor_session_before_batch_state(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -718,6 +921,7 @@ def test_run_sam2_propagation_never_borrows_the_editor_session(
     assert fake_predictor.init_state_calls == 1
     assert editor_state not in fake_predictor.reset_states
     assert session.inference_state is editor_state
+    assert sam2_service._get_editor_session(source.source_id, "mask_1") is None
 
 
 def test_get_cached_mask_frames_serves_the_last_propagation(
@@ -856,7 +1060,6 @@ def test_run_sam2_propagation_seeds_conditioning_frames_and_runs_bidirectional(
     points_by_frame: dict[int, list[Sam2Point]] = {
         2: [{"x": 0.5, "y": 0.5, "label": 1, "timeTicks": 0}],
     }
-
     frames = sam2_service._run_sam2_propagation(source, points_by_frame)
 
     assert fake_predictor.propagate_calls == [(2, False), (2, True)]
@@ -891,8 +1094,8 @@ def test_run_sam2_propagation_respects_frame_window(
                 yield (0, [1], np.ones((1, 2, 2), dtype=np.float32))
                 yield (1, [1], np.ones((1, 2, 2), dtype=np.float32))
             else:
-                yield (3, [1], np.ones((1, 2, 2), dtype=np.float32))
-                yield (4, [1], np.ones((1, 2, 2), dtype=np.float32))
+                yield (1, [1], np.ones((1, 2, 2), dtype=np.float32))
+                yield (2, [1], np.ones((1, 2, 2), dtype=np.float32))
 
     fake_predictor = FakePredictor()
     monkeypatch.setattr(sam2_service._runtime, "get_predictor", lambda: fake_predictor)
@@ -912,6 +1115,16 @@ def test_run_sam2_propagation_respects_frame_window(
     points_by_frame: dict[int, list[Sam2Point]] = {
         2: [{"x": 0.5, "y": 0.5, "label": 1, "timeTicks": 0}],
     }
+    monkeypatch.setattr(
+        sam2_service,
+        "_initialize_inference_state",
+        lambda predictor, source, frame_window=None, **_kwargs: (
+            {"state": "ok"},
+            source.path,
+            2,
+            2,
+        ),
+    )
 
     frames = sam2_service._run_sam2_propagation(
         source,
@@ -919,11 +1132,9 @@ def test_run_sam2_propagation_respects_frame_window(
         frame_window=(2, 3),
     )
 
-    assert np.all(frames[2] == 255)
-    assert np.all(frames[3] == 255)
-    assert np.all(frames[0] == 0)
-    assert np.all(frames[1] == 0)
-    assert np.all(frames[4] == 0)
+    assert frames.shape == (2, 2, 2)
+    assert np.all(frames[0] == 255)
+    assert np.all(frames[1] == 255)
 
 
 def test_run_sam2_propagation_maps_source_frames_for_windowed_sessions(
@@ -977,7 +1188,7 @@ def test_run_sam2_propagation_maps_source_frames_for_windowed_sessions(
     monkeypatch.setattr(
         sam2_service,
         "_initialize_inference_state",
-        lambda predictor, source, frame_window=None: (
+        lambda predictor, source, frame_window=None, **_kwargs: (
             {"state": "ok"},
             source.path,
             2,
@@ -1002,9 +1213,10 @@ def test_run_sam2_propagation_maps_source_frames_for_windowed_sessions(
         (1, False, 1),
         (1, True, 1),
     ]
+    assert frames.shape == (3, 2, 2)
+    assert np.all(frames[0] == 255)
+    assert np.all(frames[1] == 255)
     assert np.all(frames[2] == 255)
-    assert np.all(frames[3] == 255)
-    assert np.all(frames[4] == 255)
 
 
 def test_run_sam2_propagation_uses_max_frame_num_to_track_when_supported(
@@ -1055,6 +1267,16 @@ def test_run_sam2_propagation_uses_max_frame_num_to_track_when_supported(
     points_by_frame: dict[int, list[Sam2Point]] = {
         2: [{"x": 0.5, "y": 0.5, "label": 1, "timeTicks": 0}],
     }
+    monkeypatch.setattr(
+        sam2_service,
+        "_initialize_inference_state",
+        lambda predictor, source, frame_window=None, **_kwargs: (
+            {"state": "ok"},
+            source.path,
+            1,
+            4,
+        ),
+    )
 
     sam2_service._run_sam2_propagation(
         source,
@@ -1063,8 +1285,8 @@ def test_run_sam2_propagation_uses_max_frame_num_to_track_when_supported(
     )
 
     assert fake_predictor.propagate_calls == [
-        (2, False, 2),
-        (2, True, 1),
+        (1, False, 2),
+        (1, True, 1),
     ]
 
 
@@ -1086,16 +1308,28 @@ def test_generate_mask_video_passes_visible_source_window_to_propagation(
     )
 
     captured_window: dict[str, tuple[int, int] | None] = {"value": None}
+    captured_encoding: dict[str, object] = {}
 
     def fake_run(
         _source: Sam2SourceMetadata,
         _points_by_frame: dict[int, list[Sam2Point]],
         mask_id: str | None = None,
         frame_window: tuple[int, int] | None = None,
+        **_kwargs: object,
     ) -> np.ndarray:
         del mask_id
         captured_window["value"] = frame_window
-        return np.zeros((source.frame_count, source.height, source.width), dtype=np.uint8)
+        assert frame_window is not None
+        frame_count = (frame_window[1] - frame_window[0]) + 1
+        return np.zeros((frame_count, source.height, source.width), dtype=np.uint8)
+
+    def fake_encode(
+        frames: np.ndarray,
+        fps: float,
+        **kwargs: object,
+    ) -> bytes:
+        captured_encoding.update(frames=frames, fps=fps, **kwargs)
+        return b"mp4"
 
     monkeypatch.setattr(sam2_service, "get_source_metadata", lambda _source_id: source)
     monkeypatch.setattr(
@@ -1106,7 +1340,7 @@ def test_generate_mask_video_passes_visible_source_window_to_propagation(
     monkeypatch.setattr(
         sam2_service,
         "encode_binary_masks_to_red_mp4",
-        lambda _frames, _fps: b"mp4",
+        fake_encode,
     )
 
     generated = sam2_service.generate_mask_video(
@@ -1120,6 +1354,106 @@ def test_generate_mask_video_passes_visible_source_window_to_propagation(
 
     assert generated.video_bytes == b"mp4"
     assert captured_window["value"] == (1, 1)
+    assert np.asarray(captured_encoding["frames"]).shape == (1, 2, 2)
+    assert captured_encoding["window_start_frame"] == 1
+    assert captured_encoding["source_frame_count"] == 5
+
+
+def _five_frame_source(tmp_path: Path) -> Sam2SourceMetadata:
+    source_path = tmp_path / "source.mp4"
+    source_path.write_bytes(b"video")
+    return Sam2SourceMetadata(
+        source_id="source_1",
+        source_hash="source_1",
+        path=source_path,
+        width=2,
+        height=2,
+        fps=24.0,
+        frame_count=5,
+        duration_sec=5 / 24.0,
+    )
+
+
+def test_generate_mask_video_leaves_the_gpu_queue_when_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = _five_frame_source(tmp_path)
+    cancel_event = threading.Event()
+    captured_stop: dict[str, object] = {}
+
+    def fake_run_local_inference(_callable: object, **kwargs: object) -> object:
+        captured_stop["stop"] = kwargs.get("stop")
+        cancel_event.set()
+        raise LeaseAbandonedError("Stopped waiting for the local GPU")
+
+    monkeypatch.setattr(sam2_service, "get_source_metadata", lambda _source_id: source)
+    monkeypatch.setattr(sam2_service, "run_local_inference", fake_run_local_inference)
+
+    with pytest.raises(Sam2CancelledError):
+        sam2_service.generate_mask_video(
+            source_id="source_1",
+            points=[{"x": 0.5, "y": 0.5, "label": 1, "timeTicks": 0}],
+            ticks_per_second=96_000,
+            mask_id="mask_1",
+            cancel_event=cancel_event,
+        )
+
+    assert captured_stop["stop"] is cancel_event
+
+
+def test_generate_mask_video_skips_work_for_an_already_cancelled_request(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = _five_frame_source(tmp_path)
+    cancel_event = threading.Event()
+    cancel_event.set()
+
+    def fail_run_local_inference(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("cancelled work must not queue for the GPU")
+
+    monkeypatch.setattr(sam2_service, "get_source_metadata", lambda _source_id: source)
+    monkeypatch.setattr(sam2_service, "run_local_inference", fail_run_local_inference)
+
+    with pytest.raises(Sam2CancelledError):
+        sam2_service.generate_mask_video(
+            source_id="source_1",
+            points=[{"x": 0.5, "y": 0.5, "label": 1, "timeTicks": 0}],
+            ticks_per_second=96_000,
+            cancel_event=cancel_event,
+        )
+
+
+def test_generate_endpoint_cancels_work_when_the_client_disconnects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class DisconnectedRequest:
+        async def is_disconnected(self) -> bool:
+            return True
+
+    def fake_generate(*args: object) -> Sam2GeneratedMaskVideo:
+        cancel_event = cast(threading.Event, args[6])
+        if not cancel_event.wait(timeout=5):
+            raise AssertionError("disconnect was not propagated to the service")
+        raise Sam2CancelledError("SAM2 generation was cancelled")
+
+    monkeypatch.setattr(sam2_router.sam2_service, "generate_mask_video", fake_generate)
+    request = Sam2GenerateMaskRequest(
+        sourceId="source_ok",
+        points=[Sam2PointRequest(x=0.5, y=0.5, label=1, timeTicks=0)],
+        ticksPerSecond=96_000,
+        maskId="mask_1",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        anyio.run(
+            sam2_router.generate_sam2_mask_video,
+            request,
+            DisconnectedRequest(),
+        )
+
+    assert exc_info.value.status_code == 499
 
 
 def test_runtime_raises_when_cuda_is_requested_but_not_detected(
@@ -1495,11 +1829,18 @@ def test_initialize_inference_state_uses_prepared_video_for_non_mp4(
         duration_sec=4.0,
     )
 
-    init_calls: list[str] = []
+    init_calls: list[tuple[str, bool, bool]] = []
 
     class FakePredictor:
-        def init_state(self, video_path: str):
-            init_calls.append(video_path)
+        def init_state(
+            self,
+            video_path: str,
+            offload_video_to_cpu: bool = False,
+            async_loading_frames: bool = False,
+        ):
+            init_calls.append(
+                (video_path, offload_video_to_cpu, async_loading_frames)
+            )
             return {"video_path": video_path}
 
     monkeypatch.setattr(
@@ -1522,7 +1863,7 @@ def test_initialize_inference_state_uses_prepared_video_for_non_mp4(
     assert used_path == prepared_path
     assert frame_index_offset == 0
     assert frame_count == source.frame_count
-    assert init_calls == [str(prepared_path)]
+    assert init_calls == [(str(prepared_path), False, False)]
 
 
 def test_initialize_inference_state_falls_back_to_normalized_mp4_for_mp4_failures(
@@ -1545,11 +1886,18 @@ def test_initialize_inference_state_falls_back_to_normalized_mp4_for_mp4_failure
         duration_sec=4.0,
     )
 
-    init_calls: list[str] = []
+    init_calls: list[tuple[str, bool, bool]] = []
 
     class FakePredictor:
-        def init_state(self, video_path: str):
-            init_calls.append(video_path)
+        def init_state(
+            self,
+            video_path: str,
+            offload_video_to_cpu: bool = False,
+            async_loading_frames: bool = False,
+        ):
+            init_calls.append(
+                (video_path, offload_video_to_cpu, async_loading_frames)
+            )
             if video_path == str(source_path):
                 raise RuntimeError("primary init failed")
             return {"video_path": video_path}
@@ -1574,7 +1922,10 @@ def test_initialize_inference_state_falls_back_to_normalized_mp4_for_mp4_failure
     assert used_path == prepared_path
     assert frame_index_offset == 0
     assert frame_count == source.frame_count
-    assert init_calls == [str(source_path), str(prepared_path)]
+    assert init_calls == [
+        (str(source_path), False, False),
+        (str(prepared_path), False, False),
+    ]
 
 
 def test_editor_session_init_and_clear(
@@ -1605,7 +1956,7 @@ def test_editor_session_init_and_clear(
     monkeypatch.setattr(
         sam2_service,
         "_initialize_inference_state",
-        lambda predictor, source, frame_window=None: (
+        lambda predictor, source, frame_window=None, **_kwargs: (
             {"inference": "state"},
             source.path,
             0,
@@ -1684,7 +2035,7 @@ def test_init_editor_session_uses_visible_source_range_window(
     assert fake_predictor.reset_calls == 1
 
 
-def test_initialize_inference_state_falls_back_to_jpeg_frames_directory(
+def test_initialize_inference_state_uses_only_jpeg_frames_for_a_window(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1692,8 +2043,6 @@ def test_initialize_inference_state_falls_back_to_jpeg_frames_directory(
     source_path.write_bytes(b"video")
     prepared_video_path = tmp_path / "source.mp4"
     prepared_video_path.write_bytes(b"prepared")
-    prepared_frames_path = tmp_path / "prepared_frames"
-    prepared_frames_path.mkdir(parents=True, exist_ok=True)
 
     source = Sam2SourceMetadata(
         source_id="source_1",
@@ -1706,16 +2055,19 @@ def test_initialize_inference_state_falls_back_to_jpeg_frames_directory(
         duration_sec=4.0,
     )
 
-    init_calls: list[str] = []
+    init_calls: list[tuple[str, bool, bool]] = []
 
     class FakePredictor:
-        def init_state(self, video_path: str):
-            init_calls.append(video_path)
-            if video_path == str(prepared_video_path):
-                raise RuntimeError("Only JPEG frames are supported at this moment")
-            if video_path == str(prepared_frames_path):
-                return {"video_path": video_path}
-            raise RuntimeError("unexpected path")
+        def init_state(
+            self,
+            video_path: str,
+            offload_video_to_cpu: bool = False,
+            async_loading_frames: bool = False,
+        ):
+            init_calls.append(
+                (video_path, offload_video_to_cpu, async_loading_frames)
+            )
+            return {"video_path": video_path}
 
     monkeypatch.setattr(
         sam2_service,
@@ -1723,16 +2075,20 @@ def test_initialize_inference_state_falls_back_to_jpeg_frames_directory(
         lambda _source, normalized_mp4: prepared_video_path,
     )
     captured_window: dict[str, tuple[int, int] | None] = {"value": None}
+    extracted_paths: list[Path] = []
 
-    def fake_prepare_jpegs(
-        _source: Sam2SourceMetadata,
-        _video_path: Path,
+    def fake_extract(
+        video_path: Path,
+        target_dir: Path,
         frame_window: tuple[int, int] | None = None,
+        **_kwargs: object,
     ) -> Path:
+        assert video_path == prepared_video_path
         captured_window["value"] = frame_window
-        return prepared_frames_path
+        extracted_paths.append(target_dir)
+        return target_dir
 
-    monkeypatch.setattr(sam2_service, "_ensure_prepared_jpeg_frames", fake_prepare_jpegs)
+    monkeypatch.setattr(sam2_service, "_extract_video_frames_to_jpeg", fake_extract)
 
     (
         inference_state,
@@ -1745,9 +2101,10 @@ def test_initialize_inference_state_falls_back_to_jpeg_frames_directory(
         frame_window=(12, 23),
     )
 
-    assert inference_state == {"video_path": str(prepared_frames_path)}
-    assert used_path == prepared_frames_path
+    assert inference_state == {"video_path": str(extracted_paths[0])}
+    assert used_path == prepared_video_path
     assert frame_index_offset == 12
     assert frame_count == 12
     assert captured_window["value"] == (12, 23)
-    assert init_calls == [str(prepared_video_path), str(prepared_frames_path)]
+    assert init_calls == [(str(extracted_paths[0]), True, False)]
+    assert not extracted_paths[0].exists()
