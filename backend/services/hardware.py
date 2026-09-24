@@ -9,6 +9,9 @@ from typing import Any, Literal
 
 HIGH_VRAM_THRESHOLD_MB = 48 * 1024
 _LOCAL_VRAM_CACHE_TTL_SECONDS = 60.0
+# A cold nvidia-smi (driver/NVML initialisation) has been measured at over 3s;
+# a timeout is cached as "no GPU" for the TTL above.
+_NVIDIA_SMI_TIMEOUT_SECONDS = 8
 _cached_local_vram: tuple[float, "VramInfo"] | None = None
 
 VramSource = Literal["comfyui", "nvidia_smi"]
@@ -63,7 +66,7 @@ def detect_local_vram() -> VramInfo:
             check=True,
             capture_output=True,
             text=True,
-            timeout=2,
+            timeout=_NVIDIA_SMI_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.SubprocessError):
         info = VramInfo(total_mb=None)
