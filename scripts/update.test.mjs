@@ -19,11 +19,11 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Drives the real updater against throwaway repositories: update.bat (and its
-// PowerShell ZIP converter) on Windows, update.sh everywhere else.
+// PowerShell source step) on Windows, update.sh everywhere else.
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const IS_WINDOWS = process.platform === "win32";
-const UPDATER_FILES = ["update.sh", "update.bat", "scripts/convert-zip-install.ps1"];
+const UPDATER_FILES = ["update.sh", "update.bat", "scripts/update-source.ps1"];
 
 function git(cwd, ...args) {
   const result = spawnSync(
@@ -173,19 +173,56 @@ test("fast-forwards a Git checkout that rewrites the updater itself", (t) => {
   assert.deepEqual(installerArgs(fixture), ["--profiles", "none"]);
 });
 
-test("refuses to update a Git checkout with tracked local changes", (t) => {
+test("changes nothing in a Git checkout when it cannot ask before discarding changes", (t) => {
   const fixture = createFixture(t);
   const checkout = join(fixture.root, "checkout");
   git(fixture.root, "clone", "-q", fixture.origin, checkout);
   fixture.commitV2();
-  writeFiles(checkout, { "settings.json": '{"mine": true}\n' });
+  writeFiles(checkout, { "settings.json": '{"mine": true}\n', "staged.txt": "staged\n" });
+  git(checkout, "add", "staged.txt");
 
   const result = runUpdater(fixture, checkout);
 
   assert.notEqual(result.status, 0, result.output);
-  assert.match(result.output, /Tracked source files have local changes/);
+  assert.match(result.output, /--replace-local-files/);
+  assert.match(result.output, /settings\.json/);
+  assert.match(result.output, /staged\.txt/);
+  assert.equal(read(checkout, "settings.json"), '{"mine": true}\n');
   assert.equal(read(checkout, "keep.txt"), "v1\n");
+  assert.match(git(checkout, "status", "--porcelain"), /^A {2}staged\.txt$/m);
+  assert.deepEqual(backupDirectories(checkout), []);
   assert.equal(existsSync(fixture.installLog), false);
+});
+
+test("backs up and discards local changes before updating a Git checkout", (t) => {
+  const fixture = createFixture(t);
+  const checkout = join(fixture.root, "checkout");
+  git(fixture.root, "clone", "-q", fixture.origin, checkout);
+  fixture.commitV2();
+  writeFiles(checkout, {
+    "settings.json": '{"mine": true}\n',
+    "staged.txt": "staged\n",
+    "projects/demo/project.json": "project data\n",
+  });
+  git(checkout, "add", "staged.txt");
+
+  const result = runUpdater(fixture, checkout, ["--replace-local-files", "--profiles", "none"]);
+
+  assert.equal(result.status, 0, result.output);
+  assert.equal(git(checkout, "status", "--porcelain"), "");
+  assert.equal(read(checkout, "keep.txt"), "v2\n");
+  assert.equal(read(checkout, "settings.json"), '{"shipped": true}\n');
+  assert.equal(existsSync(join(checkout, "staged.txt")), false);
+  assert.equal(read(checkout, "projects/demo/project.json"), "project data\n");
+  assert.deepEqual(installerArgs(fixture), ["--profiles", "none"]);
+
+  const backups = backupDirectories(checkout);
+  assert.equal(backups.length, 1);
+  assert.match(backups[0], /^local-changes-/);
+  const backup = join(checkout, ".vlo-update-backups", backups[0]);
+  assert.equal(read(backup, "settings.json"), '{"mine": true}\n');
+  assert.equal(read(backup, "staged.txt"), "staged\n");
+  assert.match(read(backup, "MANIFEST.txt"), /settings\.json[\s\S]*staged\.txt/);
 });
 
 test("converts an unmodified ZIP installation without asking", (t) => {
@@ -209,7 +246,7 @@ test("changes nothing when it cannot ask before replacing ZIP files", (t) => {
   const result = runUpdater(fixture, installation);
 
   assert.notEqual(result.status, 0, result.output);
-  assert.match(result.output, /--confirm-zip-conversion/);
+  assert.match(result.output, /--replace-local-files/);
   assert.match(result.output, /settings\.json/);
   assert.match(result.output, /removed\.txt/);
   assert.equal(existsSync(join(installation, ".git")), false);
@@ -232,7 +269,7 @@ test("backs up replaced, obstructing and leftover files before converting a ZIP"
   });
 
   const result = runUpdater(fixture, installation, [
-    "--confirm-zip-conversion",
+    "--replace-local-files",
     "--profiles",
     "none",
   ]);
@@ -269,7 +306,7 @@ test("moves a folder that occupies the path of a new file", (t) => {
   git(fixture.origin, "commit", "-qm", "v2");
   writeFiles(installation, { "slot.txt/inside.json": "user data\n" });
 
-  const result = runUpdater(fixture, installation, ["--confirm-zip-conversion"]);
+  const result = runUpdater(fixture, installation, ["--replace-local-files"]);
 
   assert.equal(result.status, 0, result.output);
   assert.equal(read(installation, "slot.txt"), "a file in v2\n");
@@ -287,7 +324,7 @@ test("never swaps a linked folder that holds tracked files for an empty one", (t
   rmSync(linked, { recursive: true });
   symlinkSync(elsewhere, linked, IS_WINDOWS ? "junction" : "dir");
 
-  const result = runUpdater(fixture, installation, ["--confirm-zip-conversion"]);
+  const result = runUpdater(fixture, installation, ["--replace-local-files"]);
 
   if (IS_WINDOWS) {
     // Git for Windows reads through a junction as if it were a folder, so the

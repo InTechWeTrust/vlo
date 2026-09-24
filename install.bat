@@ -319,11 +319,16 @@ if %errorlevel% neq 0 (
     call :fail "npm install failed"
     goto :eof
 )
-call "%NPM_CMD%" install --prefix frontend
+:: Run from inside frontend rather than with --prefix: npm 10 on Windows (the
+:: VLO-managed Node's npm) otherwise records the repository root as a
+:: "vlo": "file:.." dependency in frontend/package.json and its lockfile.
+cd /d "%SCRIPT_DIR%frontend"
+call "%NPM_CMD%" install
 if %errorlevel% neq 0 (
-    call :fail "npm install --prefix frontend failed"
+    call :fail "npm install in frontend failed"
     goto :eof
 )
+cd /d "%SCRIPT_DIR%"
 
 :: -- 5. Build frontend ----------------------------------------------
 

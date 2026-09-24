@@ -29,7 +29,7 @@ set "DEFAULT_BRANCH=main"
 if not defined VLO_UPDATE_REPOSITORY set "VLO_UPDATE_REPOSITORY=%DEFAULT_REPOSITORY%"
 if not defined VLO_UPDATE_BRANCH set "VLO_UPDATE_BRANCH=%DEFAULT_BRANCH%"
 set "RC=0"
-set "CONFIRM_ZIP_CONVERSION="
+set "REPLACE_LOCAL_FILES="
 set "INSTALL_ARGS="
 
 :: Keep the updater's own option; everything else goes to install.bat. cmd
@@ -39,8 +39,8 @@ set "INSTALL_ARGS="
 if "%~1"=="" goto :args_done
 if /I "%~1"=="-h" goto :usage
 if /I "%~1"=="--help" goto :usage
-if /I "%~1"=="--confirm-zip-conversion" (
-    set "CONFIRM_ZIP_CONVERSION=-Confirmed"
+if /I "%~1"=="--replace-local-files" (
+    set "REPLACE_LOCAL_FILES=-ReplaceLocalFiles"
 ) else (
     set "INSTALL_ARGS=%INSTALL_ARGS% %1"
 )
@@ -58,50 +58,14 @@ if errorlevel 1 goto :git_missing
 
 if not exist "%SCRIPT_DIR%install.bat" goto :not_installation
 if not exist "%SCRIPT_DIR%package.json" goto :not_installation
+if not exist "%SCRIPT_DIR%scripts\update-source.ps1" goto :not_installation
 
-if exist "%SCRIPT_DIR%.git" goto :update_checkout
-goto :convert_zip
-
-:update_checkout
-git -C "%PROJECT_DIR%" rev-parse --is-inside-work-tree >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] The .git entry exists but is not a usable Git checkout.
-    goto :failed
-)
-
-set "STATUS_FILE=%TEMP%\vlo-update-status-%RANDOM%-%RANDOM%.txt"
-git -C "%PROJECT_DIR%" status --porcelain --untracked-files=no > "%STATUS_FILE%"
-if errorlevel 1 (
-    del /q "%STATUS_FILE%" >nul 2>&1
-    echo [ERROR] Git could not inspect this checkout.
-    goto :failed
-)
-for %%F in ("%STATUS_FILE%") do set "STATUS_SIZE=%%~zF"
-if not "%STATUS_SIZE%"=="0" (
-    echo [ERROR] Tracked source files have local changes. Commit or remove them before updating.
-    type "%STATUS_FILE%"
-    del /q "%STATUS_FILE%" >nul 2>&1
-    goto :failed
-)
-del /q "%STATUS_FILE%" >nul 2>&1
-
-echo [INFO]  Fetching updates for the existing Git checkout...
-git -C "%PROJECT_DIR%" pull --ff-only
-if errorlevel 1 (
-    echo [ERROR] Git could not fast-forward this checkout. Resolve its branch or upstream configuration, then rerun the updater.
-    goto :failed
-)
-goto :rebuild
-
-:convert_zip
-:: The converter lists every local file it would replace or move and asks
-:: before touching any of them; see scripts\convert-zip-install.ps1.
-if not exist "%SCRIPT_DIR%scripts\convert-zip-install.ps1" goto :not_installation
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\convert-zip-install.ps1" -Root "%PROJECT_DIR%" -Repository "%VLO_UPDATE_REPOSITORY%" -Branch "%VLO_UPDATE_BRANCH%" %CONFIRM_ZIP_CONVERSION%
+:: Fast-forward the Git checkout, or convert a ZIP download into one. Either
+:: way, it lists every local file it would replace or move and asks before
+:: touching any of them; see scripts\update-source.ps1.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\update-source.ps1" -Root "%PROJECT_DIR%" -Repository "%VLO_UPDATE_REPOSITORY%" -Branch "%VLO_UPDATE_BRANCH%" %REPLACE_LOCAL_FILES%
 if errorlevel 1 goto :failed
-goto :rebuild
 
-:rebuild
 echo.
 echo [INFO]  Rebuilding VLO with the updated installer...
 call "%SCRIPT_DIR%install.bat"%INSTALL_ARGS%
@@ -119,22 +83,20 @@ echo [ERROR] Then open a new terminal and rerun this script.
 goto :failed
 
 :usage
-echo Usage: update.bat [--confirm-zip-conversion] [installer options]
+echo Usage: update.bat [--replace-local-files] [installer options]
 echo.
 echo Fetch the latest VLO source, then rerun install.bat to update dependencies
 echo and rebuild the frontend. Installer options such as --profiles and
 echo --update-node are passed through unchanged.
 echo.
-echo Tracked local changes must be committed or removed before updating a Git
-echo checkout.
+echo If updating would replace or move a local file, the updater lists those
+echo files and asks first; each one is saved under .vlo-update-backups\ before
+echo it is touched. That covers tracked source files with local changes in a
+echo Git checkout, and the first update of a folder downloaded as a GitHub ZIP,
+echo which converts it into a Git checkout.
 echo.
-echo A folder downloaded as a GitHub ZIP is converted into a Git checkout. If
-echo that would replace or move any local file, the updater lists those files
-echo and asks first; each one is saved under .vlo-update-backups\ before it is
-echo touched.
-echo.
-echo   --confirm-zip-conversion  Approve those changes without asking. Required
-echo                             when the updater cannot prompt.
+echo   --replace-local-files  Approve those changes without asking. Required
+echo                          when the updater cannot prompt.
 goto :finish
 
 :failed

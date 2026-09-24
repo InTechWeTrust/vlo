@@ -112,20 +112,26 @@ frontend:
 update.bat
 ```
 
-The updater uses the checkout's existing branch and upstream. In an existing Git
-checkout, tracked local changes must be committed or removed before updating.
+The updater uses the checkout's existing branch and upstream. Projects, models,
+virtual environments, runtime settings, and other ignored local data stay where
+they are.
 
-If vlo was downloaded as a GitHub ZIP, the first update converts that folder
-into a shallow Git checkout. Projects, models, virtual environments, runtime
-settings, and other ignored local data stay where they are. The conversion
-does overwrite source files that differ from the latest version, and it moves
-aside source files the latest version no longer includes. Before touching any
-of them, the updater lists them and asks for confirmation. Each one is saved
-under `.vlo-update-backups/zip-import-<time>/` at its original path, with a
-`MANIFEST.txt`. Pass `--confirm-zip-conversion` to approve without a prompt,
-for example from a script. The updater refuses to convert if a symbolic link
-stands in for a folder that holds VLO's own files, because the conversion would
-replace the link with an empty folder.
+The updater may need to replace or move some local files:
+
+- **Git checkout:** tracked source files with local changes are replaced by
+  the committed version before the update.
+- **GitHub ZIP download:** the first update converts the folder into a shallow
+  Git checkout. Source files that differ from the latest version are
+  overwritten, and source files the latest version no longer includes are moved
+  aside.
+
+In both cases, the updater lists those files and asks for confirmation before
+touching any of them. Each one is saved under
+`.vlo-update-backups/<kind>-<time>/` at its original path, with a
+`MANIFEST.txt`. Pass `--replace-local-files` to approve without a prompt, for
+example from a script. The updater refuses if a symbolic link stands in for a
+folder that holds VLO's own files, because the update would replace the link
+with an empty folder.
 
 `install.sh` / `install.bat`:
 

@@ -540,7 +540,9 @@ info "Python ${PY_VERSION} found via ${PYTHON_SOURCE}"
 info "Installing npm dependencies..."
 cd "$SCRIPT_DIR"
 "$NPM_CMD" install
-"$NPM_CMD" install --prefix frontend
+# Run from inside frontend rather than with --prefix, as install.bat must:
+# npm 10 on Windows records the repository root as a frontend dependency.
+(cd "$SCRIPT_DIR/frontend" && "$NPM_CMD" install)
 
 # -- 3. Build frontend ------------------------------------------------
 
