@@ -51,6 +51,7 @@ describe("zoomScaleAfterWheel", () => {
     const nearRatio = zoomScaleAfterWheel(1, 100) / 1;
     const farRatio = zoomScaleAfterWheel(0.001, 100) / 0.001;
     expect(farRatio).toBeCloseTo(nearRatio);
+    expect(nearRatio).toBeCloseTo(Math.exp(-0.6));
     expect(nearRatio).toBeLessThan(1);
   });
 

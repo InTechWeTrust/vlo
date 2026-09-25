@@ -35,7 +35,7 @@ export function clampZoomScale(scale: number, minZoomScale: number): number {
  * proportion at every zoom. An additive step would jump from the far zoom-out
  * range straight to 1x in a single notch.
  */
-const WHEEL_ZOOM_RATE = 0.002;
+const WHEEL_ZOOM_RATE = 0.006;
 
 export function zoomScaleAfterWheel(scale: number, deltaY: number): number {
   return scale * Math.exp(-deltaY * WHEEL_ZOOM_RATE);
