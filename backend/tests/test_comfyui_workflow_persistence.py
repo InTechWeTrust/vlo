@@ -317,6 +317,8 @@ def test_packaged_workflow_menu_hides_experimental_workflows(tmp_path, monkeypat
 
     assert "vlo_minimax_h3_masked_guide.json" not in workflow_ids
     assert "vlo_ltx2_5_ic_edit.json" not in workflow_ids
+    assert "vlo_wan_ttm.json" not in workflow_ids
+    assert "vlo_wan_animate.json" not in workflow_ids
     assert "vlo_minimax_h3_inpaint.json" in workflow_ids
 
 

@@ -2522,38 +2522,6 @@
       "bgcolor": "#000"
     },
     {
-      "id": 443,
-      "type": "NormalizeAudioLoudness",
-      "pos": [-760, 3590],
-      "size": [290, 70],
-      "flags": {
-        "collapsed": false
-      },
-      "order": 61,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "audio",
-          "type": "AUDIO",
-          "link": 1244
-        }
-      ],
-      "outputs": [
-        {
-          "name": "audio",
-          "type": "AUDIO",
-          "links": [811, 1247]
-        }
-      ],
-      "properties": {
-        "cnr_id": "ComfyUI-WanVideoWrapper",
-        "ver": "3d7b49e2df66bbbe379cd54748baf9decfe678a2",
-        "Node name for S&R": "NormalizeAudioLoudness",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [-16]
-    },
-    {
       "id": 109,
       "type": "LTXVConcatAVLatent",
       "pos": [920, 4370],
@@ -3322,7 +3290,7 @@
         {
           "name": "audio",
           "type": "AUDIO",
-          "links": [1244]
+          "links": [811, 1247]
         },
         {
           "name": "video_info",
@@ -3539,7 +3507,7 @@
     [753, 408, 0, 368, 2, "VAE"],
     [786, 125, 1, 425, 0, "LATENT"],
     [787, 219, 0, 425, 1, "VAE"],
-    [811, 443, 0, 329, 0, "AUDIO"],
+    [811, 644, 2, 329, 0, "AUDIO"],
     [828, 471, 0, 460, 0, "VAE"],
     [829, 463, 0, 461, 0, "VAE"],
     [830, 466, 0, 462, 0, "CLIP"],
@@ -3570,8 +3538,7 @@
     [1227, 569, 2, 527, 0, "LATENT"],
     [1237, 110, 0, 563, 1, "CONDITIONING"],
     [1238, 626, 0, 563, 2, "CONDITIONING"],
-    [1244, 644, 2, 443, 0, "AUDIO"],
-    [1247, 443, 0, 179, 0, "AUDIO"],
+    [1247, 644, 2, 179, 0, "AUDIO"],
     [1253, 556, 0, 645, 0, "IMAGE"],
     [1276, 563, 0, 682, 0, "MODEL"],
     [1278, 684, 0, 129, 0, "MODEL"],
