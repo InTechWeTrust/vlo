@@ -3,7 +3,6 @@ import { CloudDownload } from "@mui/icons-material";
 import {
   getAvailableModels,
   startModelDownload,
-  startModelDownloadBatch,
   type DownloadableModel,
 } from "../../../services/downloadApi";
 import { ModelDownloadPanel } from "../../../shared/components/ModelDownloadPanel";
@@ -74,11 +73,9 @@ export function Sam2ModelDownloadOverlay({
     anyLocalDownloadActive,
     handleDownload,
     handleCancel,
-    handleDownloadAll,
     adoptExternalJob,
   } = useModelDownloadController({
     startDownload: (modelKey) => startModelDownload("sam2", modelKey),
-    startBatch: (modelKeys) => startModelDownloadBatch("sam2", modelKeys),
     onDownloadComplete: () => {
       void fetchModels({ silent: true });
     },
@@ -108,7 +105,6 @@ export function Sam2ModelDownloadOverlay({
       activeDownloads={activeDownloads}
       anyLocalDownloadActive={anyLocalDownloadActive}
       onDownload={handleDownload}
-      onDownloadAll={handleDownloadAll}
       onCancel={handleCancel}
       onDismissError={dismissError}
       onAdoptExternalJob={adoptExternalJob}

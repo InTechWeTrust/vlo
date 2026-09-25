@@ -4,7 +4,7 @@ Skip to install instructions [here](#install), or continue reading.
 
 Vlo is a free, local, open source video editor with AI features.
 
-The aim is to integrate the latest-and-greatest AI tools with real video editing workflows, and to allow users to add their own extensions, making it a playground for cutting-edge tools which may not yet exist in commercial products. Currently, it includes tools for automatic rotoscoping, semantic audio extraction, beat detection etc. It also has a live bridge to ComfyUI, to run *any* possible ComfyUI workflow, and it includes bespoke workflows tailored for using AI models to edit live on the timeline.
+It is extensible, with the goal of making it a playground for cutting-edge tools which may not yet exist in commercial products. It integrates AI tools with real video editing workflows, including tools for automatic rotoscoping, semantic audio extraction, beat detection etc. It also has a live bridge to ComfyUI, to run *any* possible ComfyUI workflow, and it includes bespoke workflows tailored for using AI models to edit live on the timeline.
 
 Ultimately I want vlo to be useful for *anyone* who wants to make videos, so it is free, extensible and open source.  It aims to handle the tricky design problems of building a proper frame-accurate nonlinear video editor so that you can build extensions and code (or vibe) your own effects.
 

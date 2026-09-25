@@ -6,7 +6,6 @@ import { getAvailableModels, subscribeToProgress } from "../../../../services/do
 vi.mock("../../../../services/downloadApi", () => ({
   getAvailableModels: vi.fn(),
   startModelDownload: vi.fn(),
-  startModelDownloadBatch: vi.fn(),
   cancelDownload: vi.fn(),
   subscribeToProgress: vi.fn(),
 }));
@@ -72,11 +71,12 @@ describe("Sam2ModelDownloadOverlay", () => {
     expect(screen.getByText("Faster, ~185 MB")).toBeInTheDocument();
     expect(screen.getByText("SAM2.1 Large")).toBeInTheDocument();
     expect(screen.getByText("Higher quality, ~900 MB")).toBeInTheDocument();
-    // 2 per-model "Download" buttons + 1 "Download all (2)" button
-    expect(screen.getAllByRole("button", { name: /download/i })).toHaveLength(3);
+    // The models are alternatives, so only per-model "Download" buttons are
+    // offered — no "Download all".
+    expect(screen.getAllByRole("button", { name: /download/i })).toHaveLength(2);
     expect(
-      screen.getByRole("button", { name: /download all/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /download all/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not notify the parent when no SAM2 models are installed", async () => {
@@ -119,8 +119,7 @@ describe("Sam2ModelDownloadOverlay", () => {
     });
 
     expect(screen.getByText("SAM2.1 Large")).toBeInTheDocument();
-    // 2 per-model "Download" buttons + 1 "Download all (2)" button
-    expect(screen.getAllByRole("button", { name: /download/i })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: /download/i })).toHaveLength(2);
     expect(
       screen.queryByText(/showing built-in download options/i),
     ).not.toBeInTheDocument();
