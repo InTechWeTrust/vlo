@@ -13,6 +13,9 @@ export interface ActiveModelDownload {
   progress: DownloadProgressEvent | null;
   /** True when the job was started by another panel/workflow and adopted here. */
   external: boolean;
+  /** True once the user asked to cancel, until the job's terminal event
+   * arrives. Lets the panel acknowledge the click immediately. */
+  cancelling: boolean;
 }
 
 export interface DownloadContext {
@@ -118,7 +121,7 @@ export function useModelDownloadController({
     (modelKey: string, jobId: string, external: boolean): Promise<JobOutcome> => {
       setActiveDownloads((prev) => ({
         ...prev,
-        [modelKey]: { jobId, modelKey, progress: null, external },
+        [modelKey]: { jobId, modelKey, progress: null, external, cancelling: false },
       }));
 
       teardownSubscription(modelKey);
@@ -220,13 +223,22 @@ export function useModelDownloadController({
     async (modelKey?: string) => {
       const snapshot = activeDownloadsRef.current;
       const keys = modelKey ? [modelKey] : Object.keys(snapshot);
+      const setCancelling = (key: string, jobId: string, cancelling: boolean) => {
+        setActiveDownloads((prev) => {
+          const current = prev[key];
+          if (!current || current.jobId !== jobId) return prev;
+          return { ...prev, [key]: { ...current, cancelling } };
+        });
+      };
       for (const key of keys) {
         const entry = snapshot[key];
         if (!entry) continue;
+        setCancelling(key, entry.jobId, true);
         try {
           await cancelDownload(entry.jobId);
         } catch {
-          // Cancel is best-effort.
+          // Cancel is best-effort; let the user try again.
+          setCancelling(key, entry.jobId, false);
         }
       }
     },

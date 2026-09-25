@@ -572,3 +572,127 @@ def test_queue_runs_one_job_at_a_time_in_fifo_order(monkeypatch, tmp_path):
         assert job_b.status == "complete"
 
     asyncio.run(scenario())
+
+
+def test_cancelling_a_queued_job_settles_it_without_waiting_for_the_slot(
+    monkeypatch, tmp_path
+):
+    """A queued job waits on the worker semaphore behind the in-flight job.
+    Cancelling it must report "cancelled" and free its destination at once,
+    not when the in-flight download eventually finishes."""
+    monkeypatch.setattr(download_service, "_active_jobs", {})
+    monkeypatch.setattr(download_service, "_active_destinations", {})
+    monkeypatch.setattr(download_service, "_job_destinations", {})
+    monkeypatch.setattr(download_service, "_pending_job_ids", [])
+    monkeypatch.setattr(download_service, "_download_semaphore", None)
+
+    started: list[str] = []
+    gate_a = asyncio.Event()
+
+    async def fake_execute(job):
+        started.append(job.label)
+        if job.label == "a":
+            await gate_a.wait()
+        job.status = "complete"
+
+    monkeypatch.setattr(download_service, "_execute_download_job", fake_execute)
+
+    async def scenario():
+        spec_a = DownloadFileSpec(url="x", dest_path=str(tmp_path / "a"), filename="a")
+        spec_b = DownloadFileSpec(url="x", dest_path=str(tmp_path / "b"), filename="b")
+        job_a = download_service.start_download("a", [spec_a])
+        job_b = download_service.start_download("b", [spec_b])
+        await asyncio.sleep(0.05)
+        assert job_b.status == "queued"
+
+        assert download_service.cancel_job(job_b.job_id) is True
+        assert job_b.status == "cancelled"
+        assert download_service._pending_job_ids == []
+        assert download_service.find_active_jobs_for_paths({str(tmp_path / "b")}) == {}
+
+        # The same model can be queued again while "a" is still running.
+        job_b_again = download_service.start_download("b", [spec_b])
+        assert job_b_again is not job_b
+        assert job_b_again.status == "queued"
+
+        gate_a.set()
+        await asyncio.sleep(0.05)
+        assert job_a.status == "complete"
+        assert job_b.status == "cancelled"
+        assert job_b_again.status == "complete"
+        assert started == ["a", "b"]
+
+    asyncio.run(scenario())
+
+
+def test_cancel_from_a_route_thread_notifies_on_the_loop_and_releases_destination(
+    monkeypatch, tmp_path
+):
+    """The cancel route is synchronous, so cancel_job runs on a worker thread.
+    Waking other jobs' progress streams (their queue positions shift) must be
+    scheduled on the event loop — asyncio debug mode rejects a cross-thread
+    Event.set() — and the cancelled job's destination must be released."""
+    import threading
+
+    monkeypatch.setattr(download_service, "_active_jobs", {})
+    monkeypatch.setattr(download_service, "_active_destinations", {})
+    monkeypatch.setattr(download_service, "_job_destinations", {})
+    monkeypatch.setattr(download_service, "_pending_job_ids", [])
+    monkeypatch.setattr(download_service, "_download_semaphore", None)
+
+    gate_a = asyncio.Event()
+
+    async def fake_execute(job):
+        if job.label == "a":
+            await gate_a.wait()
+        job.status = "complete"
+
+    monkeypatch.setattr(download_service, "_execute_download_job", fake_execute)
+
+    async def scenario():
+        specs = {
+            label: DownloadFileSpec(
+                url="x", dest_path=str(tmp_path / label), filename=label
+            )
+            for label in ("a", "b", "c")
+        }
+        download_service.start_download("a", [specs["a"]])
+        job_b = download_service.start_download("b", [specs["b"]])
+        job_c = download_service.start_download("c", [specs["c"]])
+        await asyncio.sleep(0.05)
+        assert job_c.queue_position == 1
+
+        # An open progress stream for "c" is waiting on its event.
+        job_c.progress_event.clear()
+        waiter = asyncio.ensure_future(job_c.progress_event.wait())
+        await asyncio.sleep(0)
+
+        errors: list[BaseException] = []
+
+        def cancel_from_route_thread():
+            try:
+                assert download_service.cancel_job(job_b.job_id) is True
+            except BaseException as exc:  # noqa: BLE001 — surfaced below
+                errors.append(exc)
+
+        thread = threading.Thread(target=cancel_from_route_thread)
+        thread.start()
+        thread.join()
+
+        assert errors == []
+        assert job_b.status == "cancelled"
+        assert download_service.find_active_jobs_for_paths({specs["b"].dest_path}) == {}
+        assert job_c.queue_position == 0
+        await asyncio.wait_for(waiter, timeout=1)
+
+        gate_a.set()
+        await asyncio.sleep(0.05)
+
+    # Not asyncio.run(): on failure the waiter's wakeup is lost, and
+    # asyncio.run's task cancellation at shutdown would then hang forever.
+    loop = asyncio.new_event_loop()
+    loop.set_debug(True)
+    try:
+        loop.run_until_complete(asyncio.wait_for(scenario(), timeout=5))
+    finally:
+        loop.close()

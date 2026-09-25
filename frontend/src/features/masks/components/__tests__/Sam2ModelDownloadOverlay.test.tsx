@@ -1,7 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Sam2ModelDownloadOverlay } from "../Sam2ModelDownloadOverlay";
-import { getAvailableModels, subscribeToProgress } from "../../../../services/downloadApi";
+import {
+  cancelDownload,
+  getAvailableModels,
+  startModelDownload,
+  subscribeToProgress,
+  type DownloadProgressEvent,
+} from "../../../../services/downloadApi";
 
 vi.mock("../../../../services/downloadApi", () => ({
   getAvailableModels: vi.fn(),
@@ -123,5 +129,64 @@ describe("Sam2ModelDownloadOverlay", () => {
     expect(
       screen.queryByText(/showing built-in download options/i),
     ).not.toBeInTheDocument();
+  });
+
+  it("acknowledges cancelling a queued download and restores the Download button", async () => {
+    vi.mocked(getAvailableModels).mockResolvedValue({
+      sam2: [
+        {
+          key: "sam2.1_hiera_small",
+          label: "SAM2.1 Small",
+          description: "Faster",
+          installed: false,
+        },
+      ],
+    });
+    vi.mocked(startModelDownload).mockResolvedValue({
+      jobId: "job-small",
+      label: "SAM2.1 Small",
+      status: "queued",
+    });
+    vi.mocked(cancelDownload).mockResolvedValue(undefined);
+    let emit: ((event: DownloadProgressEvent) => void) | undefined;
+    vi.mocked(subscribeToProgress).mockImplementation((_jobId, onEvent) => {
+      emit = onEvent;
+      return () => undefined;
+    });
+    const event = (status: DownloadProgressEvent["status"]): DownloadProgressEvent => ({
+      jobId: "job-small",
+      label: "SAM2.1 Small",
+      status,
+      progress: {
+        currentFileIndex: 0,
+        totalFiles: 1,
+        currentFileBytes: 0,
+        currentFileTotal: null,
+        overallBytes: 0,
+        overallBytesTotal: null,
+      },
+      error: null,
+      queuePosition: 1,
+    });
+
+    render(<Sam2ModelDownloadOverlay onModelsInstalled={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^download$/i }));
+    await waitFor(() => expect(emit).toBeDefined());
+    act(() => emit?.(event("queued")));
+
+    const cancel = screen.getByRole("button", {
+      name: /cancel sam2\.1 small download/i,
+    });
+    fireEvent.click(cancel);
+
+    expect(await screen.findByText("Cancelling...")).toBeInTheDocument();
+    expect(cancel).toBeDisabled();
+    expect(cancelDownload).toHaveBeenCalledWith("job-small");
+
+    act(() => emit?.(event("cancelled")));
+    expect(
+      await screen.findByRole("button", { name: /^download$/i }),
+    ).toBeEnabled();
+    expect(screen.queryByText("Cancelling...")).not.toBeInTheDocument();
   });
 });

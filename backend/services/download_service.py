@@ -63,8 +63,11 @@ class DownloadJob:
     status: JobStatus = "queued"
     progress: DownloadProgress = field(default_factory=DownloadProgress)
     error: str | None = None
-    cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
+    # Polled, never awaited, and set from the cancel route's worker thread.
+    cancel_event: threading.Event = field(default_factory=threading.Event)
     progress_event: asyncio.Event | None = None
+    # The loop that owns progress_event; wakes from other threads go through it.
+    loop: asyncio.AbstractEventLoop | None = None
     auth_token: str | None = None
     queue_position: int = 0
 
@@ -105,17 +108,17 @@ def _release_job_destinations(job_id: str) -> None:
 def _recompute_queue_positions() -> None:
     """Update each queued job's position so the SSE stream tells clients
     how many jobs are ahead of theirs."""
+    moved: list[DownloadJob] = []
     with _registry_lock:
         for position, job_id in enumerate(_pending_job_ids):
             job = _active_jobs.get(job_id)
             if job is None:
                 continue
-            new_position = position
-            if job.queue_position != new_position:
-                job.queue_position = new_position
-                event = job.progress_event
-                if event is not None:
-                    event.set()
+            if job.queue_position != position:
+                job.queue_position = position
+                moved.append(job)
+    for job in moved:
+        _notify_progress(job)
 
 
 def _remove_from_pending(job_id: str) -> None:
@@ -128,9 +131,25 @@ def _remove_from_pending(job_id: str) -> None:
 
 
 def _notify_progress(job: DownloadJob) -> None:
+    """Wake the job's progress stream. Safe from any thread: cancel_job runs
+    on the sync route's worker thread, and asyncio.Event is loop-affine — a
+    cross-thread set() can drop the waiter's wakeup (or raise in debug mode)."""
     event = job.progress_event
-    if event is not None:
+    loop = job.loop
+    if event is None or loop is None:
+        return
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
+    if running_loop is loop:
         event.set()
+        return
+    try:
+        loop.call_soon_threadsafe(event.set)
+    except RuntimeError:
+        # Loop already closed: no stream is left to wake.
+        pass
 
 
 async def _execute_download_job(job: DownloadJob) -> None:
@@ -206,6 +225,19 @@ async def _execute_download_job(job: DownloadJob) -> None:
     _notify_progress(job)
 
 
+def _claim_for_download(job: DownloadJob) -> bool:
+    """Move a job from queued to downloading, unless it was cancelled while
+    queued. Shares the registry lock with cancel_job (which runs on a route
+    worker thread) so a cancel can never land between the check and the
+    transition."""
+    with _registry_lock:
+        if job.cancel_event.is_set() or job.status == "cancelled":
+            job.status = "cancelled"
+            return False
+        job.status = "downloading"
+        return True
+
+
 async def _process_job(job: DownloadJob) -> None:
     """Wait for the queue slot, then run the job. Always releases the
     destination reservation when the job leaves the queue, regardless of
@@ -222,8 +254,7 @@ async def _process_job(job: DownloadJob) -> None:
 
         async with _download_semaphore:
             _remove_from_pending(job.job_id)
-            if job.cancel_event.is_set():
-                job.status = "cancelled"
+            if not _claim_for_download(job):
                 _notify_progress(job)
                 return
             await _execute_download_job(job)
@@ -286,6 +317,7 @@ def start_download(
     job.progress_event = asyncio.Event()
 
     loop = asyncio.get_running_loop()
+    job.loop = loop
     loop.create_task(_process_job(job))
 
     _recompute_queue_positions()
@@ -320,8 +352,22 @@ def find_active_jobs_for_paths(paths: set[str]) -> dict[str, str]:
 def cancel_job(job_id: str) -> bool:
     with _registry_lock:
         job = _active_jobs.get(job_id)
-    if job is None:
-        return False
-    job.cancel_event.set()
+        if job is None:
+            return False
+        job.cancel_event.set()
+        # A queued job is parked on the worker semaphore until the in-flight
+        # download finishes, so its own cancel check would not run until then.
+        # Settle it now: clients see "cancelled" immediately and the model can
+        # be queued again straight away.
+        cancelled_while_queued = job.status == "queued"
+        if cancelled_while_queued:
+            job.status = "cancelled"
+    if cancelled_while_queued:
+        try:
+            _remove_from_pending(job_id)
+        finally:
+            # Never leave a cancelled queued job holding its destination, even
+            # if waking the other streams fails.
+            _release_job_destinations(job_id)
     _notify_progress(job)
     return True

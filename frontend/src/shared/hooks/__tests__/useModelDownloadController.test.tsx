@@ -240,6 +240,39 @@ describe("useModelDownloadController", () => {
     expect(cancelDownloadMock).toHaveBeenCalledWith("job-b");
   });
 
+  it("flags an entry as cancelling until its terminal event, and clears the flag if the request fails", async () => {
+    const startDownload = vi
+      .fn()
+      .mockResolvedValueOnce({ jobId: "job-a", label: "A", status: "queued" })
+      .mockResolvedValueOnce({ jobId: "job-b", label: "B", status: "queued" });
+    const { result } = renderHook(() =>
+      useModelDownloadController({ startDownload }),
+    );
+    await act(async () => {
+      void result.current.handleDownload("a");
+      void result.current.handleDownload("b");
+      await Promise.resolve();
+    });
+    expect(result.current.activeDownloads.a?.cancelling).toBe(false);
+
+    await act(async () => {
+      await result.current.handleCancel("a");
+    });
+    expect(result.current.activeDownloads.a?.cancelling).toBe(true);
+    expect(result.current.activeDownloads.b?.cancelling).toBe(false);
+
+    act(() => {
+      subscriptions.get("job-a")?.onEvent(progress("job-a", "cancelled"));
+    });
+    expect(result.current.activeDownloads.a).toBeUndefined();
+
+    cancelDownloadMock.mockRejectedValueOnce(new Error("network down"));
+    await act(async () => {
+      await result.current.handleCancel("b");
+    });
+    expect(result.current.activeDownloads.b?.cancelling).toBe(false);
+  });
+
   it("queues batch jobs and summarizes one or many rejected entries", async () => {
     const startBatch = vi
       .fn()

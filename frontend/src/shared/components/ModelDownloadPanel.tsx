@@ -300,6 +300,7 @@ export function ModelDownloadPanel({
             const activeEntry = activeDownloads[model.key] ?? null;
             const isDownloading = activeEntry !== null;
             const isExternal = activeEntry?.external === true;
+            const isCancelling = activeEntry?.cancelling === true;
             const progress = activeEntry?.progress ?? null;
             const isQueued = progress?.status === "queued";
             const queuePosition = progress?.queuePosition ?? 0;
@@ -410,24 +411,32 @@ export function ModelDownloadPanel({
                       }}
                     >
                       <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                        {isQueued
-                          ? "Waiting for queue slot"
-                          : progress?.progress.overallBytes != null
-                            ? `${formatBytes(progress.progress.overallBytes)}${
-                                progress.progress.overallBytesTotal != null
-                                  ? ` / ${formatBytes(progress.progress.overallBytesTotal)}`
-                                  : ""
-                              }${pct !== null ? ` (${pct}%)` : ""}`
-                            : "Starting..."}
+                        {isCancelling
+                          ? "Cancelling..."
+                          : isQueued
+                            ? "Waiting for queue slot"
+                            : progress?.progress.overallBytes != null
+                              ? `${formatBytes(progress.progress.overallBytes)}${
+                                  progress.progress.overallBytesTotal != null
+                                    ? ` / ${formatBytes(progress.progress.overallBytesTotal)}`
+                                    : ""
+                                }${pct !== null ? ` (${pct}%)` : ""}`
+                              : "Starting..."}
                       </Typography>
                       {!isExternal ? (
                         <Button
                           size="small"
                           color="error"
+                          aria-label={`Cancel ${model.label} download`}
+                          disabled={isCancelling}
                           onClick={() => void onCancel(model.key)}
                           sx={{ minWidth: 0, p: 0.5, textTransform: "none" }}
                         >
-                          <Close sx={{ fontSize: 14 }} />
+                          {isCancelling ? (
+                            <CircularProgress size={14} color="inherit" />
+                          ) : (
+                            <Close sx={{ fontSize: 14 }} />
+                          )}
                         </Button>
                       ) : null}
                     </Box>
