@@ -29,6 +29,7 @@ export interface ThumbnailAssetMetadata {
 
 interface AssetCacheEntry {
   metadata: ThumbnailAssetMetadata | null;
+  pendingMetadata: Promise<ThumbnailAssetMetadata | null> | null;
   thumbnails: Map<string, ImageBitmap>;
   lruNodes: Map<string, LRUNode>; // key -> LRU node for O(1) lookup
   refCount: number;
@@ -51,6 +52,7 @@ class ThumbnailCacheServiceClass {
     if (!entry) {
       entry = {
         metadata: null,
+        pendingMetadata: null,
         thumbnails: new Map(),
         lruNodes: new Map(),
         refCount: 0,
@@ -171,6 +173,44 @@ class ThumbnailCacheServiceClass {
     if (entry) {
       entry.metadata = metadata;
     }
+  }
+
+  /**
+   * Resolve an asset's metadata, running `loader` at most once at a time per
+   * asset. Every clip of an asset asks for it when it becomes visible, and a
+   * repeated asset can have dozens of clips mounting together.
+   *
+   * `isComplete` decides whether cached metadata satisfies the caller. The
+   * metadata fields are optional per asset type (image entries carry only an
+   * aspect ratio), so a partial entry must not short-circuit a video probe.
+   */
+  loadMetadata(
+    assetId: string,
+    isComplete: (metadata: ThumbnailAssetMetadata) => boolean,
+    loader: () => Promise<ThumbnailAssetMetadata | null>,
+  ): Promise<ThumbnailAssetMetadata | null> {
+    const entry = this.caches.get(assetId);
+    if (!entry) return loader();
+    if (entry.metadata && isComplete(entry.metadata)) {
+      return Promise.resolve(entry.metadata);
+    }
+    if (entry.pendingMetadata) return entry.pendingMetadata;
+
+    const pending = loader()
+      .then((metadata) => {
+        // The entry may have been released (and recreated) meanwhile.
+        if (metadata && this.caches.get(assetId) === entry) {
+          entry.metadata = metadata;
+        }
+        return metadata;
+      })
+      .finally(() => {
+        if (entry.pendingMetadata === pending) {
+          entry.pendingMetadata = null;
+        }
+      });
+    entry.pendingMetadata = pending;
+    return pending;
   }
 
   /**

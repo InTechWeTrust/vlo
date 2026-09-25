@@ -201,6 +201,7 @@ export function useWaveformRenderer({
     fullCanvasWidth,
     leftWingPx,
     scrollContainer,
+    isNearViewport,
     updateCanvasGeometry,
     updateViewportState,
   } = useClipCanvasWindow({
@@ -254,11 +255,6 @@ export function useWaveformRenderer({
       return;
     }
 
-    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-    if (!ctx) {
-      return;
-    }
-
     const metadata = waveformCacheService.getMetadata(clip.assetId);
     if (!metadata) {
       return;
@@ -266,6 +262,13 @@ export function useWaveformRenderer({
 
     const geometry = updateCanvasGeometry();
     if (!geometry) {
+      return;
+    }
+
+    // Only after the visibility check: a long timeline would otherwise hold a
+    // 2D context for every off-screen clip.
+    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    if (!ctx) {
       return;
     }
 
@@ -362,7 +365,6 @@ export function useWaveformRenderer({
     }
 
     updateCanvasGeometry();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     draw();
   }, [draw, enabled, updateCanvasGeometry]);
 
@@ -574,6 +576,10 @@ export function useWaveformRenderer({
 
     const generateWaveforms = async () => {
       updateViewportState();
+      // Off-screen clips do no analysis work; they fetch on scrolling into view.
+      if (!isNearViewport()) {
+        return;
+      }
 
       try {
         const metadata = await ensureMetadata();
@@ -644,6 +650,11 @@ export function useWaveformRenderer({
       }
 
       updateViewportState();
+      // Every clip listens, so off-screen clips must bail before scheduling
+      // anything; their canvases are not visible to repaint.
+      if (!isNearViewport()) {
+        return;
+      }
       requestAnimationFrame(draw);
 
       const now = Date.now();
@@ -692,6 +703,7 @@ export function useWaveformRenderer({
     fullCanvasWidth,
     height,
     isDragging,
+    isNearViewport,
     leftWingPx,
     mapPresentationOffsetToClipOffset,
     scrollContainer,

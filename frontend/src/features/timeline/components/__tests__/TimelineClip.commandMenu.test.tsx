@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { Profiler } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import {
   afterAll,
   beforeAll,
@@ -148,6 +149,30 @@ describe("TimelineClip command-backed context menu items", () => {
 
     expect(screen.queryByRole("menuitem", { name: "Mute" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "Unmute" })).toBeNull();
+  });
+
+  it("does not re-render a closed-menu clip when context keys change", () => {
+    // A closed menu used to subscribe every clip to the global context-key
+    // revision, re-rendering a whole long timeline on focus/playback changes.
+    let renders = 0;
+    render(
+      <Profiler id="clip" onRender={() => (renders += 1)}>
+        <TimelineClipItem clip={baseClip} isOverlay={false} />
+      </Profiler>,
+    );
+    expect(screen.queryByRole("menu")).toBeNull();
+    const rendersBefore = renders;
+
+    act(() => {
+      hostContextKeys.set("focus.region", "player");
+    });
+    expect(renders).toBe(rendersBefore);
+
+    fireEvent.contextMenu(screen.getByTestId("timeline-clip"));
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    act(() => {
+      hostContextKeys.set("focus.region", undefined);
+    });
   });
 
   it("renders command items disabled when no project is open", () => {

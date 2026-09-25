@@ -16,12 +16,23 @@ import {
   ALL_FORMATS,
 } from "mediabunny";
 import { calculateClipTime } from "../../transformations";
-import { thumbnailCacheService } from "../services/ThumbnailCacheService";
+import {
+  thumbnailCacheService,
+  type ThumbnailAssetMetadata,
+} from "../services/ThumbnailCacheService";
 import {
   clampThumbnailAssetTickToFirstFrame,
   resolveThumbnailBucketRequestSeconds,
 } from "../utils/thumbnailTiming";
 import { useClipCanvasWindow } from "./useClipCanvasWindow";
+
+/** Video thumbnails need both fields; image entries carry only an aspect ratio. */
+function hasVideoThumbnailMetadata(metadata: ThumbnailAssetMetadata): boolean {
+  return (
+    Boolean(metadata.aspectRatio) &&
+    metadata.firstTimestampSeconds !== undefined
+  );
+}
 
 interface UseThumbnailRendererProps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -54,6 +65,7 @@ export function useThumbnailRenderer({
     fullCanvasWidth,
     leftWingPx,
     scrollContainer,
+    isNearViewport,
     updateCanvasGeometry,
     updateViewportState,
   } = useClipCanvasWindow({
@@ -91,8 +103,6 @@ export function useThumbnailRenderer({
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
-    if (!ctx) return;
 
     if (!asset || !clip.assetId) return;
 
@@ -105,6 +115,11 @@ export function useThumbnailRenderer({
     // Ensure geometry is up to date for this draw call
     const geometry = updateCanvasGeometry();
     if (!geometry) return;
+
+    // Only after the visibility check: a long timeline would otherwise hold a
+    // 2D context for every off-screen clip.
+    const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    if (!ctx) return;
 
     const { localStart, localWidth } = geometry;
 
@@ -226,6 +241,10 @@ export function useThumbnailRenderer({
 
     const generateThumbnails = async () => {
       updateViewportState();
+      // Off-screen clips do no work at all — no source hydration, metadata
+      // probe, or image load — so mounting or committing a long timeline
+      // costs only what is near the viewport.
+      if (!isNearViewport()) return;
       try {
         if (asset.type === "image") {
           if (
@@ -260,27 +279,33 @@ export function useThumbnailRenderer({
               : await ensureAssetSourceLoaded(asset.id);
           if (!hydratedVideoAsset) return;
 
-          const cachedMetadata = thumbnailCacheService.getMetadata(
-            clip.assetId!,
-          );
-          let aspectRatio = cachedMetadata?.aspectRatio;
-          let firstTimestampSeconds = cachedMetadata?.firstTimestampSeconds;
+          let metadata = thumbnailCacheService.getMetadata(clip.assetId!);
 
-          if (!aspectRatio || firstTimestampSeconds === undefined) {
-            const source = hydratedVideoAsset.proxyFile
-              ? new BlobSource(hydratedVideoAsset.proxyFile)
-              : new UrlSource(hydratedVideoAsset.src);
-            using input = new Input({ source, formats: ALL_FORMATS });
-            const vt = await input.getPrimaryVideoTrack();
-            if (!vt) return;
-            aspectRatio ??= vt.displayWidth / vt.displayHeight;
-            firstTimestampSeconds ??= await vt.getFirstTimestamp();
-            thumbnailCacheService.setMetadata(clip.assetId!, {
-              aspectRatio,
-              firstTimestampSeconds,
-            });
+          if (!metadata || !hasVideoThumbnailMetadata(metadata)) {
+            const cachedAspectRatio = metadata?.aspectRatio;
+            // Shared per asset: sibling clips await the same probe rather
+            // than each opening the source.
+            metadata = await thumbnailCacheService.loadMetadata(
+              clip.assetId!,
+              hasVideoThumbnailMetadata,
+              async () => {
+                const source = hydratedVideoAsset.proxyFile
+                  ? new BlobSource(hydratedVideoAsset.proxyFile)
+                  : new UrlSource(hydratedVideoAsset.src);
+                using input = new Input({ source, formats: ALL_FORMATS });
+                const vt = await input.getPrimaryVideoTrack();
+                if (!vt) return null;
+                return {
+                  aspectRatio:
+                    cachedAspectRatio || vt.displayWidth / vt.displayHeight,
+                  firstTimestampSeconds: await vt.getFirstTimestamp(),
+                };
+              },
+            );
+            if (!metadata || signal.aborted) return;
             requestAnimationFrame(draw);
           }
+          const { aspectRatio, firstTimestampSeconds } = metadata;
 
           // Calculate missing chunks
           const geometry = updateCanvasGeometry();
@@ -403,6 +428,9 @@ export function useThumbnailRenderer({
     const onScroll = () => {
       if (isDragging) return;
       updateViewportState();
+      // Every clip listens, so off-screen clips must bail before scheduling
+      // anything; their canvases are not visible to repaint.
+      if (!isNearViewport()) return;
 
       // Fast Path: Draw existing cache immediately
       requestAnimationFrame(draw);
@@ -446,6 +474,7 @@ export function useThumbnailRenderer({
     clipSourceDuration,
     clipStart,
     scrollContainer,
+    isNearViewport,
     updateCanvasGeometry,
     updateViewportState,
     enabled,

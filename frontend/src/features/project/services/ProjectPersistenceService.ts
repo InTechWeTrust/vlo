@@ -640,9 +640,13 @@ export class ProjectPersistenceService {
   private async persistTimeline(
     document: TimelineDocument,
   ): Promise<TimelineDocument> {
+    await this.writeTimeline(document);
+    return clone(document);
+  }
+
+  private async writeTimeline(document: TimelineDocument): Promise<void> {
     await writeJson(TIMELINE_PATH, document, timelineDocumentSchema);
     this.timelineCache = document;
-    return clone(document);
   }
 
   private async persistAssetIndex(
@@ -766,12 +770,17 @@ export class ProjectPersistenceService {
     });
   }
 
+  /**
+   * The debounced save path for every timeline edit, so it avoids whole-
+   * document copies that nothing reads: `applyPatches` already copies its
+   * base, and the caller does not need the written document back.
+   */
   async applyTimelinePatches(
     patches: Patch[],
     fallbackSnapshot: TimelineSnapshot,
-  ): Promise<TimelineDocument> {
+  ): Promise<void> {
     return this.enqueue(TIMELINE_PATH, async () => {
-      const current = await this.readTimeline();
+      const current = this.timelineCache ?? (await this.readTimeline());
 
       let next: TimelineDocument;
       try {
@@ -785,7 +794,7 @@ export class ProjectPersistenceService {
         next = createTimelineDocument(fallbackSnapshot);
       }
 
-      return this.persistTimeline(next);
+      await this.writeTimeline(next);
     });
   }
 

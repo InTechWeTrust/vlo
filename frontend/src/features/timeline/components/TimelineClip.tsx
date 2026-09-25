@@ -181,29 +181,35 @@ function TimelineClipComponent({
   const showCompositeLabel = isCompositeClip(timelineClip) && !isOverlay;
   // Detached subject for extension context-menu commands. Non-overlay clips
   // (the only ones whose menu can open) always narrow to a full TimelineClip.
-  const clipMenuContext = useMemo<HostMenuSubject<"timeline.clip.context">>(
-    () => ({
-      slot: "timeline.clip.context",
-      clip:
-        timelineClip !== null
-          ? toExtensionClipSnapshot(timelineClip)
-          : Object.freeze({
-              id: clip.id,
-              type: clip.type,
-              name: clip.name,
-              trackId: "trackId" in clip ? clip.trackId : "",
-              startTicks: startTime,
-              durationTicks: clip.timelineDuration,
-              sourceOffsetTicks: clip.offset,
-              sourceDurationTicks: clip.sourceDuration,
-              croppedSourceDurationTicks: clip.croppedSourceDuration,
-              isMuted: "isMuted" in clip ? clip.isMuted === true : false,
-              rangeMasks: [],
-              transformations: [],
-            }),
-    }),
-    [clip, timelineClip, startTime],
-  );
+  // Built only while the menu is open: the snapshot is per-clip work that a
+  // long timeline would otherwise repeat for every clip on every render.
+  const isContextMenuOpen = contextMenuPos !== null;
+  const clipMenuContext =
+    useMemo<HostMenuSubject<"timeline.clip.context"> | null>(() => {
+      if (!isContextMenuOpen) {
+        return null;
+      }
+      return {
+        slot: "timeline.clip.context",
+        clip:
+          timelineClip !== null
+            ? toExtensionClipSnapshot(timelineClip)
+            : Object.freeze({
+                id: clip.id,
+                type: clip.type,
+                name: clip.name,
+                trackId: "trackId" in clip ? clip.trackId : "",
+                startTicks: startTime,
+                durationTicks: clip.timelineDuration,
+                sourceOffsetTicks: clip.offset,
+                sourceDurationTicks: clip.sourceDuration,
+                croppedSourceDurationTicks: clip.croppedSourceDuration,
+                isMuted: "isMuted" in clip ? clip.isMuted === true : false,
+                rangeMasks: [],
+                transformations: [],
+              }),
+      };
+    }, [clip, isContextMenuOpen, timelineClip, startTime]);
   const extensionProviderId =
     clip.type === "extension"
       ? `${clip.extensionPayload.extensionId}/${clip.extensionPayload.typeId}`
@@ -297,16 +303,18 @@ function TimelineClipComponent({
     Number.isFinite(timelineClip.sourceDuration) &&
     timelineClip.sourceDuration > 0;
 
-  const beatMarkersComponent = useTimelineStore((state) => {
-    const liveClip = state.clips.find((candidate) => candidate.id === clip.id);
-    if (!liveClip || liveClip.type === "mask") return null;
-    const markers = (liveClip.components ?? []).find(
+  // Read from the clip prop, which the container passes straight from the
+  // store: a store selector here would scan every clip, for every clip, on
+  // every store update.
+  const beatMarkersComponent = useMemo(() => {
+    if (!timelineClip || timelineClip.type === "mask") return null;
+    const markers = (timelineClip.components ?? []).find(
       (component): component is MarkersComponent =>
         component.type === "markers",
     );
     if (!markers) return null;
     return markers.parameters.markers.some(isBeatMarker) ? markers : null;
-  });
+  }, [timelineClip]);
   const canRemoveBeats = beatMarkersComponent !== null;
 
   // 2. Vertical Position
@@ -779,23 +787,25 @@ function TimelineClipComponent({
       >
         {tickToMediaSeconds(displayDuration).toFixed(2)}s
       </Typography>
-      <AppMenu
-        menuId="timeline.clip.context"
-        subject={clipMenuContext}
-        items={clipMenuItems}
-        open={contextMenuPos !== null}
-        onClose={closeContextMenu}
-        anchorPosition={
-          contextMenuPos
-            ? { top: contextMenuPos.y, left: contextMenuPos.x }
-            : undefined
-        }
-        onContextMenu={(e) => e.preventDefault()}
-        // Menu clicks bubble through the portal to ClipRoot's onClick and
-        // would re-select a clip the command just deleted.
-        onClick={(e) => e.stopPropagation()}
-        extensionItemTestIdPrefix="extension-clip-menu-item-"
-      />
+      {/* Mounted only while open: a closed AppMenu still subscribes to the
+          global context-key and command-table revisions and validates its
+          subject, which re-renders every clip on a long timeline whenever
+          focus, selection count, or playback state changes. */}
+      {contextMenuPos !== null && clipMenuContext !== null ? (
+        <AppMenu
+          menuId="timeline.clip.context"
+          subject={clipMenuContext}
+          items={clipMenuItems}
+          open
+          onClose={closeContextMenu}
+          anchorPosition={{ top: contextMenuPos.y, left: contextMenuPos.x }}
+          onContextMenu={(e) => e.preventDefault()}
+          // Menu clicks bubble through the portal to ClipRoot's onClick and
+          // would re-select a clip the command just deleted.
+          onClick={(e) => e.stopPropagation()}
+          extensionItemTestIdPrefix="extension-clip-menu-item-"
+        />
+      ) : null}
     </ClipRoot>
   );
 }

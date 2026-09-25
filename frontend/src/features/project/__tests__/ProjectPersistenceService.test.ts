@@ -1243,11 +1243,16 @@ describe("ProjectPersistenceService", () => {
     );
     expect(updatedTimeline.tracks[0]?.label).toBe("Updated Track");
 
-    const patched = await projectPersistenceService.applyTimelinePatches(
+    await projectPersistenceService.applyTimelinePatches(
       [{ op: "replace", path: ["tracks", 0, "label"], value: "Patched" }],
       { tracks: timeline.tracks, clips: [] },
     );
+    const patched = await projectPersistenceService.readTimeline();
     expect(patched.tracks[0]?.label).toBe("Patched");
+    expect(
+      JSON.parse(files.get(".vloproject/timeline.json") as string).tracks[0]
+        .label,
+    ).toBe("Patched");
   });
 
   it("falls back to a full timeline snapshot when patches fail", async () => {
@@ -1257,10 +1262,11 @@ describe("ProjectPersistenceService", () => {
       tracks: [{ ...timeline.tracks[0], label: "Fallback" }],
       clips: [],
     };
-    const result = await projectPersistenceService.applyTimelinePatches(
+    await projectPersistenceService.applyTimelinePatches(
       [{ op: "replace", path: ["missing", 0], value: "bad" }],
       fallback,
     );
+    const result = await projectPersistenceService.readTimeline();
     expect(result.tracks[0]?.label).toBe("Fallback");
     expect(warning).toHaveBeenCalled();
   });

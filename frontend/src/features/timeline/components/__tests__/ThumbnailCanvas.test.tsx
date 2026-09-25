@@ -12,7 +12,7 @@ import { ThumbnailCanvas } from "../ThumbnailCanvas";
 import { useTimelineViewStore } from "../../hooks/useTimelineViewStore";
 import type { TimelineViewState } from "../../hooks/useTimelineViewStore";
 import { useAsset } from "../../../userAssets";
-import { TICKS_PER_SECOND } from "../../constants";
+import { PIXELS_PER_SECOND, TICKS_PER_SECOND } from "../../constants";
 import { thumbnailCacheService } from "../../services/ThumbnailCacheService";
 
 // Polyfill Symbol.dispose if missing (for 'using' keyword support in tests)
@@ -278,6 +278,83 @@ describe("ThumbnailCanvas Virtualization", () => {
 
     // Should not draw anything because clip (at 0) is far from viewport (at 5000)
     expect(mockContext.drawImage).not.toHaveBeenCalled();
+  });
+
+  it("does no probing or context work for an off-screen clip until it scrolls into view", async () => {
+    // Long timelines mount hundreds of off-screen clips; each used to probe
+    // its source and hold a 2D context on mount and on every scroll event.
+    const startSeconds = 600;
+    const clipStartPx = startSeconds * PIXELS_PER_SECOND;
+    const clip = {
+      id: "clip-far",
+      assetId: "asset-1",
+      start: startSeconds * TICKS_PER_SECOND,
+      offset: 0,
+      timelineDuration: 10 * TICKS_PER_SECOND,
+      transformedOffset: 0,
+      transformedDuration: 10 * TICKS_PER_SECOND,
+      type: "video",
+    };
+    const loadMetadata = vi.spyOn(thumbnailCacheService, "loadMetadata");
+    const getContext = vi.mocked(HTMLCanvasElement.prototype.getContext);
+
+    render(
+      <ThumbnailCanvas
+        clip={
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
+        }
+      />,
+    );
+    await act(async () => {
+      if (scrollListener) scrollListener(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    expect(loadMetadata).not.toHaveBeenCalled();
+    expect(getContext).not.toHaveBeenCalled();
+
+    mockScrollContainer.scrollLeft = clipStartPx - 200;
+    await act(async () => {
+      if (scrollListener) scrollListener(new Event("scroll"));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    });
+
+    expect(loadMetadata).toHaveBeenCalledTimes(1);
+    expect(mockContext.drawImage).toHaveBeenCalled();
+  });
+
+  it("probes a video whose cached metadata lacks a first timestamp", async () => {
+    thumbnailCacheService.acquire("asset-1");
+    thumbnailCacheService.setMetadata("asset-1", { aspectRatio: 2 });
+    const loadMetadata = vi.spyOn(thumbnailCacheService, "loadMetadata");
+    const clip = {
+      id: "clip-partial",
+      assetId: "asset-1",
+      start: 0,
+      offset: 0,
+      timelineDuration: 10 * TICKS_PER_SECOND,
+      transformedOffset: 0,
+      transformedDuration: 10 * TICKS_PER_SECOND,
+      type: "video",
+    };
+
+    render(
+      <ThumbnailCanvas
+        clip={
+          clip as unknown as import("../../../../types/TimelineTypes").AssetBackedBaseClip
+        }
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    expect(loadMetadata).toHaveBeenCalledTimes(1);
+    // The cached aspect ratio is kept; the probe fills in the timestamp.
+    expect(thumbnailCacheService.getMetadata("asset-1")).toEqual({
+      aspectRatio: 2,
+      firstTimestampSeconds: 0,
+    });
   });
 
   it("pre-renders image thumbnails beyond the initial clip duration for live extension", async () => {

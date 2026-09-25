@@ -275,11 +275,12 @@ export function createTimelineMutationPipeline<State extends TimelineMutationSta
     const patchesToApply = pendingDocumentPatches;
     pendingDocumentPatches = [];
 
-    const fallbackSnapshot: TimelineSnapshot = {
-      tracks: structuredClone(get().tracks),
-      clips: structuredClone(get().clips),
-      transitions: structuredClone(get().transitions),
-    };
+    // References, not copies: commits replace these arrays rather than
+    // mutating them, and both fallback writers copy before persisting. Deep
+    // copying here cost three whole-timeline clones per save, even though
+    // the fallback is only read when patching fails.
+    const { tracks, clips, transitions } = get();
+    const fallbackSnapshot: TimelineSnapshot = { tracks, clips, transitions };
 
     const previousFlush = flushInFlight;
     const write = (async () => {

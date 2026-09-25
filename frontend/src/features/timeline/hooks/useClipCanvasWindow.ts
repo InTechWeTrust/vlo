@@ -42,6 +42,11 @@ interface UseClipCanvasWindowResult {
   fullCanvasWidth: number;
   leftWingPx: number;
   scrollContainer: HTMLElement | null;
+  /**
+   * Whether the clip's canvas window overlaps the buffered viewport, as of
+   * the last `updateViewportState`. Pure: never touches the canvas.
+   */
+  isNearViewport: () => boolean;
   updateCanvasGeometry: () => ClipCanvasGeometry | null;
   updateViewportState: () => void;
 }
@@ -159,37 +164,62 @@ export function useClipCanvasWindow({
     : Math.min(Math.max(0, maxRightPx), dynamicWings.right);
   const fullCanvasWidth = leftWingPx + visibleDurationPx + rightWingPx;
 
+  // The slice of the canvas window inside the buffered viewport, or null when
+  // the clip is entirely off-screen. Dragged/unplaced clips always use the
+  // whole (capped) window.
+  const resolveVisibleSpan = useCallback((): ClipCanvasGeometry | null => {
+    if (isDragging || clipStart === null) {
+      return {
+        localStart: 0,
+        localWidth: Math.min(
+          MAX_DRAGGING_CANVAS_WIDTH,
+          Math.ceil(fullCanvasWidth),
+        ),
+      };
+    }
+
+    const { scrollLeft, containerWidth } = viewportRef.current;
+    const layoutStart = presentationStart ?? clipStart;
+    const clipGlobalStart = ticksToPx(layoutStart, zoomScale);
+    const virtualGlobalStart = clipGlobalStart - leftWingPx;
+    const viewStart = scrollLeft - VIEWPORT_BUFFER_PX;
+    const viewEnd = scrollLeft + containerWidth + VIEWPORT_BUFFER_PX;
+    const localStart = Math.max(0, viewStart - virtualGlobalStart);
+    const localEnd = Math.min(fullCanvasWidth, viewEnd - virtualGlobalStart);
+
+    if (localEnd <= localStart) {
+      return null;
+    }
+
+    return {
+      localStart: Math.floor(localStart),
+      localWidth: Math.ceil(localEnd - localStart),
+    };
+  }, [
+    clipStart,
+    fullCanvasWidth,
+    isDragging,
+    leftWingPx,
+    presentationStart,
+    zoomScale,
+  ]);
+
+  const isNearViewport = useCallback(
+    () => scrollContainer !== null && resolveVisibleSpan() !== null,
+    [resolveVisibleSpan, scrollContainer],
+  );
+
   const updateCanvasGeometry = useCallback((): ClipCanvasGeometry | null => {
     if (!scrollContainer || !canvasRef.current) {
       return null;
     }
 
-    let intLocalStart = 0;
-    let intWidth = 0;
-
-    if (isDragging || clipStart === null) {
-      intLocalStart = 0;
-      intWidth = Math.min(
-        MAX_DRAGGING_CANVAS_WIDTH,
-        Math.ceil(fullCanvasWidth),
-      );
-    } else {
-      const { scrollLeft, containerWidth } = viewportRef.current;
-      const layoutStart = presentationStart ?? clipStart;
-      const clipGlobalStart = ticksToPx(layoutStart, zoomScale);
-      const virtualGlobalStart = clipGlobalStart - leftWingPx;
-      const viewStart = scrollLeft - VIEWPORT_BUFFER_PX;
-      const viewEnd = scrollLeft + containerWidth + VIEWPORT_BUFFER_PX;
-      const localStart = Math.max(0, viewStart - virtualGlobalStart);
-      const localEnd = Math.min(fullCanvasWidth, viewEnd - virtualGlobalStart);
-
-      if (localEnd <= localStart) {
-        return null;
-      }
-
-      intWidth = Math.ceil(localEnd - localStart);
-      intLocalStart = Math.floor(localStart);
+    const span = resolveVisibleSpan();
+    if (!span) {
+      return null;
     }
+    const intLocalStart = span.localStart;
+    const intWidth = span.localWidth;
 
     const canvas = canvasRef.current;
     const baseLeft = -leftWingPx + intLocalStart;
@@ -218,14 +248,10 @@ export function useClipCanvasWindow({
     return { localStart: intLocalStart, localWidth: intWidth };
   }, [
     canvasRef,
-    clipStart,
-    fullCanvasWidth,
     height,
-    isDragging,
     leftWingPx,
-    presentationStart,
+    resolveVisibleSpan,
     scrollContainer,
-    zoomScale,
   ]);
 
   return {
@@ -233,6 +259,7 @@ export function useClipCanvasWindow({
     fullCanvasWidth,
     leftWingPx,
     scrollContainer,
+    isNearViewport,
     updateCanvasGeometry,
     updateViewportState,
   };
