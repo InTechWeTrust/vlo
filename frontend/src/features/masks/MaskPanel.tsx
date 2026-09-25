@@ -197,6 +197,7 @@ export const MaskPanel = memo(function MaskPanel() {
     sam2GenerateError,
     isSam2Dirty,
     hasSam2MaskAsset,
+    discardUncommittedSam2Mask,
   } = sam2;
   const {
     brushTool,
@@ -635,7 +636,68 @@ export const MaskPanel = memo(function MaskPanel() {
   const selectedMaskNameValue =
     selectedMask?.type === "mask" ? selectedMask.name : selectedMaskLabel;
   const isDetailView = panelView === "mask" && !!selectedMask;
+  const activeSam2DetailRef = useRef<{
+    clipId: string;
+    maskId: string;
+  } | null>(null);
+  const sam2GeneratingRef = useRef(isSam2Generating);
   const activeSam2EditorClipIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    sam2GeneratingRef.current = isSam2Generating;
+  }, [isSam2Generating]);
+
+  useEffect(() => {
+    const nextDetail =
+      isDetailView &&
+      selectedMaskIsSam2 &&
+      selectedClipId &&
+      selectedMask &&
+      parseMaskClipId(selectedMask.id)?.maskId === selectedMaskId &&
+      selectedMaskId
+        ? { clipId: selectedClipId, maskId: selectedMaskId }
+        : null;
+    const previousDetail = activeSam2DetailRef.current;
+    if (
+      previousDetail &&
+      !isSam2Generating &&
+      (previousDetail.clipId !== nextDetail?.clipId ||
+        previousDetail.maskId !== nextDetail?.maskId)
+    ) {
+      discardUncommittedSam2Mask(
+        previousDetail.clipId,
+        previousDetail.maskId,
+      );
+    }
+    activeSam2DetailRef.current = nextDetail;
+  }, [
+    discardUncommittedSam2Mask,
+    isDetailView,
+    isSam2Generating,
+    selectedClipId,
+    selectedMask,
+    selectedMaskId,
+    selectedMaskIsSam2,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      const activeDetail = activeSam2DetailRef.current;
+      const wasGenerating = sam2GeneratingRef.current;
+      if (!activeDetail || wasGenerating) return;
+
+      // The docking kernel can remount an active panel, and project teardown
+      // can unmount it before the timeline is replaced. Defer until the shell
+      // has published whether this was an actual tab exit.
+      queueMicrotask(() => {
+        if (useMaskViewStore.getState().isMaskTabActive) return;
+        discardUncommittedSam2Mask(
+          activeDetail.clipId,
+          activeDetail.maskId,
+        );
+      });
+    };
+  }, [discardUncommittedSam2Mask]);
 
   useEffect(() => {
     const nextClipId =

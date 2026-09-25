@@ -1121,6 +1121,13 @@ export function removeTimelineClipMask(
   useTimelineStore.getState().removeClipMask(clipId, maskId);
 }
 
+export function discardTimelineClipMask(
+  clipId: string,
+  maskId: string,
+): void {
+  useTimelineStore.getState().discardClipMask(clipId, maskId);
+}
+
 export function setTimelineClipMaskBooleanExpression(
   clipId: string,
   expression: MaskBooleanExpression | null,

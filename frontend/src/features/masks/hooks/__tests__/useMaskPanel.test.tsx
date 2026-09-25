@@ -536,6 +536,63 @@ describe("useMaskPanel", () => {
     });
   });
 
+  it("discards only empty SAM2 masks without generated assets", () => {
+    const parent = createParentClip("clip_discard");
+    const draftMask = createSam2MaskClip(parent, "mask_draft");
+    const maskWithPoints = createSam2MaskClip(parent, "mask_with_points");
+    maskWithPoints.maskPoints = [
+      { x: 0.5, y: 0.5, label: 1, timeTicks: 0 },
+    ];
+    const committedMask = createSam2MaskClip(parent, "mask_committed");
+    committedMask.sam2MaskAssetId = "sam2_asset";
+
+    useTimelineStore.getState().replaceTimelineSnapshot({
+      tracks: useTimelineStore.getState().tracks,
+      clips: [parent, draftMask, maskWithPoints, committedMask],
+    });
+    useTimelineStore.setState({ selectedClipIds: [parent.id] });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { [parent.id]: "mask_draft" },
+      sam2EditorMaskByClipId: { [parent.id]: "mask_draft" },
+      isMaskTabActive: true,
+    });
+
+    const { result } = renderHook(() => useMaskPanel());
+
+    act(() => {
+      useTimelineStore.getState().updateClipPosition(parent.id, 1);
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+    const redoLabel = useTimelineStore.getState().redoLabel;
+    expect(useTimelineStore.getState().canRedo).toBe(true);
+
+    act(() => {
+      result.current.sam2.discardUncommittedSam2Mask(
+        parent.id,
+        "mask_draft",
+      );
+      result.current.sam2.discardUncommittedSam2Mask(
+        parent.id,
+        "mask_with_points",
+      );
+      result.current.sam2.discardUncommittedSam2Mask(
+        parent.id,
+        "mask_committed",
+      );
+    });
+
+    const clips = useTimelineStore.getState().clips;
+    expect(clips.some((clip) => clip.id === draftMask.id)).toBe(false);
+    expect(clips.some((clip) => clip.id === maskWithPoints.id)).toBe(true);
+    expect(clips.some((clip) => clip.id === committedMask.id)).toBe(true);
+    expect(useTimelineStore.getState().canUndo).toBe(false);
+    expect(useTimelineStore.getState().canRedo).toBe(true);
+    expect(useTimelineStore.getState().redoLabel).toBe(redoLabel);
+    expect(
+      useMaskViewStore.getState().sam2EditorMaskByClipId[parent.id],
+    ).toBeUndefined();
+  });
+
   it("cancels video mask generation when the selected clip changes", async () => {
     const parent = createParentClip("clip_video", "video");
     const mask = createSam2MaskClip(parent, "mask_video", "apply");
@@ -599,6 +656,103 @@ describe("useMaskPanel", () => {
     expect(generationSignal?.aborted).toBe(true);
     expect(result.current.sam2.sam2GenerateError).toBeNull();
     expect(result.current.sam2.isSam2Generating).toBe(false);
+  });
+
+  it("cleans up an asset imported after SAM2 generation is aborted", async () => {
+    const parent = createParentClip("clip_video_late_abort", "video");
+    const mask = createSam2MaskClip(parent, "mask_video_late_abort", "apply");
+    mask.maskPoints = [{ x: 0.5, y: 0.5, label: 1, timeTicks: 0 }];
+    const sourceFile = new File(["video-bytes"], "source.mp4", {
+      type: "video/mp4",
+    });
+    const parentAsset = {
+      id: parent.assetId,
+      type: "video" as const,
+      name: "source.mp4",
+      src: "source.mp4",
+      hash: "sam2-video-late-abort-parent-hash",
+      file: sourceFile,
+      createdAt: 0,
+    };
+    const importedMaskAsset = {
+      id: "sam2_aborted_asset",
+      type: "video" as const,
+      name: "aborted-mask.mp4",
+      src: "aborted-mask.mp4",
+      hash: "sam2-aborted-mask-hash",
+      file: new File(["mask-video"], "aborted-mask.mp4", {
+        type: "video/mp4",
+      }),
+      createdAt: 0,
+    };
+    let resolveAssetImport: () => void = () => undefined;
+    const addLocalAsset = vi.fn(
+      () =>
+        new Promise<typeof importedMaskAsset>((resolve) => {
+          resolveAssetImport = () => resolve(importedMaskAsset);
+        }),
+    );
+    const deleteAsset = vi.fn(async () => undefined);
+    const updateAsset = vi.fn(async () => undefined);
+
+    useTimelineStore.setState({
+      clips: [parent, mask],
+      selectedClipIds: [parent.id],
+    });
+    useMaskViewStore.setState({
+      selectedMaskByClipId: { [parent.id]: "mask_video_late_abort" },
+      isMaskTabActive: true,
+    });
+    useAssetStore.setState({
+      assets: [parentAsset],
+      addLocalAsset,
+      deleteAsset,
+      updateAsset,
+    });
+    vi.mocked(registerSourceVideo).mockResolvedValue({
+      sourceId: "sam2_source_video_late_abort",
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      frameCount: 300,
+      durationSec: 10,
+    });
+    let generationSignal: AbortSignal | undefined;
+    vi.mocked(generateMaskVideo).mockImplementation(async (_request, options) => {
+      generationSignal = options?.signal;
+      return {
+        blob: new Blob(["mask-mp4"], { type: "video/mp4" }),
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        frameCount: 300,
+      };
+    });
+
+    const { result } = renderHook(() => useMaskPanel());
+    let generationPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      generationPromise = result.current.sam2.generateSam2Mask();
+    });
+    await waitFor(() => expect(addLocalAsset).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      useTimelineStore.setState({ selectedClipIds: [] });
+    });
+    expect(generationSignal?.aborted).toBe(true);
+
+    await act(async () => {
+      resolveAssetImport();
+      await generationPromise;
+    });
+
+    expect(deleteAsset).toHaveBeenCalledWith(importedMaskAsset.id);
+    expect(updateAsset).not.toHaveBeenCalled();
+    const currentMask = useTimelineStore
+      .getState()
+      .clips.find((clip) => clip.id === mask.id);
+    expect(currentMask).not.toHaveProperty("sam2MaskAssetId");
+    expect(result.current.sam2.sam2GenerateError).toBeNull();
   });
 
   it("stamps the source frame rate on sparse SAM2 mask video assets", async () => {

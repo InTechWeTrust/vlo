@@ -23,6 +23,8 @@ import {
   parseMaskClipId,
   addTimelineClipMask,
   duplicateTimelineClipMask,
+  getTimelineMaskClipForParent,
+  discardTimelineClipMask,
   removeTimelineClipMask,
   setTimelineClipMaskBooleanExpression,
   setTimelineClipMaskCompositionAlgebra,
@@ -102,6 +104,7 @@ export interface UseMaskPanelResult {
     sam2GenerateError: string | null;
     isSam2Dirty: boolean;
     hasSam2MaskAsset: boolean;
+    discardUncommittedSam2Mask: (clipId: string, maskId: string) => void;
   };
   brush: {
     brushTool: "paint" | "erase" | "gizmo";
@@ -427,6 +430,28 @@ export function useMaskPanel(): UseMaskPanelResult {
     deleteMask(selectedMaskId);
   }, [deleteMask, selectedMaskId]);
 
+  const discardUncommittedSam2Mask = useCallback(
+    (clipId: string, maskId: string) => {
+      const currentMask = getTimelineMaskClipForParent(clipId, maskId);
+      if (
+        currentMask?.maskType !== "sam2" ||
+        currentMask.sam2MaskAssetId ||
+        (currentMask.maskPoints?.length ?? 0) > 0
+      ) {
+        return;
+      }
+
+      discardTimelineClipMask(clipId, maskId);
+      const viewState = useMaskViewStore.getState();
+      if (viewState.selectedMaskByClipId[clipId] === maskId) {
+        viewState.setSelectedMask(clipId, null);
+      }
+      viewState.setSam2EditorMask(clipId, null);
+      viewState.clearSam2LivePreview(clipId);
+    },
+    [],
+  );
+
   return {
     selection: {
       selectedClipId,
@@ -487,6 +512,7 @@ export function useMaskPanel(): UseMaskPanelResult {
       sam2GenerateError,
       isSam2Dirty,
       hasSam2MaskAsset,
+      discardUncommittedSam2Mask,
     },
     brush: {
       brushTool,

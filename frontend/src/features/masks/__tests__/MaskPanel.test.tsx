@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { MaskPanel } from "../MaskPanel";
 import {
@@ -6,6 +6,7 @@ import {
   type UseMaskPanelResult,
 } from "../hooks/useMaskPanel";
 import type { ClipTransform, MaskTimelineClip } from "../../../types/TimelineTypes";
+import { useMaskViewStore } from "../store/useMaskViewStore";
 
 const {
   mockBeginBrushBufferEdit,
@@ -174,6 +175,7 @@ describe("MaskPanel", () => {
   const mockClearSam2CurrentFramePoints = vi.fn();
   const mockGenerateSam2FramePreview = vi.fn();
   const mockGenerateSam2Mask = vi.fn();
+  const mockDiscardUncommittedSam2Mask = vi.fn();
   const mockDuplicateMask = vi.fn();
   const mockDeleteMask = vi.fn();
   const mockDeleteSelectedMask = vi.fn();
@@ -235,6 +237,7 @@ describe("MaskPanel", () => {
     "sam2GenerateError",
     "isSam2Dirty",
     "hasSam2MaskAsset",
+    "discardUncommittedSam2Mask",
   ] as const;
   const brushOverrideKeys = [
     "brushTool",
@@ -347,6 +350,7 @@ describe("MaskPanel", () => {
         sam2GenerateError: null,
         isSam2Dirty: false,
         hasSam2MaskAsset: false,
+        discardUncommittedSam2Mask: mockDiscardUncommittedSam2Mask,
       },
       brush: {
         brushTool: "paint",
@@ -853,6 +857,135 @@ describe("MaskPanel", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back To Masks" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete Mask" })).toBeInTheDocument();
+  });
+
+  it("discards an uncommitted SAM2 mask when returning to the masks view", () => {
+    const sam2Mask = createMaskClip("clip_1", "mask_sam2", "sam2");
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
+      masks: [sam2Mask],
+      selectedMaskId: "mask_sam2",
+      selectedMask: sam2Mask,
+      hasSam2MaskAsset: false,
+    }));
+
+    render(<MaskPanel />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Mask 1" }),
+    );
+    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Back To Masks" }));
+
+    expect(mockDiscardUncommittedSam2Mask).toHaveBeenCalledWith(
+      "clip_1",
+      "mask_sam2",
+    );
+  });
+
+  it("does not discard a SAM2 mask while generation is running", () => {
+    const sam2Mask = createMaskClip("clip_1", "mask_sam2", "sam2");
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
+      masks: [sam2Mask],
+      selectedMaskId: "mask_sam2",
+      selectedMask: sam2Mask,
+      isSam2Generating: true,
+    }));
+
+    render(<MaskPanel />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Mask 1" }),
+    );
+    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    fireEvent.click(screen.getByRole("button", { name: "Back To Masks" }));
+
+    expect(mockDiscardUncommittedSam2Mask).not.toHaveBeenCalled();
+  });
+
+  it("discards an empty SAM2 mask when another clip is selected", () => {
+    const sam2Mask = createMaskClip("clip_1", "mask_sam2", "sam2");
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
+      masks: [sam2Mask],
+      selectedMaskId: "mask_sam2",
+      selectedMask: sam2Mask,
+    }));
+
+    render(<MaskPanel />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Mask 1" }),
+    );
+    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
+      selectedClipId: "clip_2",
+      masks: [],
+      selectedMaskId: null,
+      selectedMask: null,
+    }));
+    const originalSetSam2EditorMask =
+      useMaskViewStore.getState().setSam2EditorMask;
+    act(() => {
+      useMaskViewStore.setState({ setSam2EditorMask: vi.fn() });
+    });
+
+    expect(mockDiscardUncommittedSam2Mask).toHaveBeenCalledWith(
+      "clip_1",
+      "mask_sam2",
+    );
+    act(() => {
+      useMaskViewStore.setState({
+        setSam2EditorMask: originalSetSam2EditorMask,
+      });
+    });
+  });
+
+  it("discards an uncommitted SAM2 mask when the mask tab unmounts", async () => {
+    const sam2Mask = createMaskClip("clip_1", "mask_sam2", "sam2");
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
+      masks: [sam2Mask],
+      selectedMaskId: "mask_sam2",
+      selectedMask: sam2Mask,
+      hasSam2MaskAsset: false,
+    }));
+
+    const { unmount } = render(<MaskPanel />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Mask 1" }),
+    );
+    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    unmount();
+
+    await waitFor(() => {
+      expect(mockDiscardUncommittedSam2Mask).toHaveBeenCalledWith(
+        "clip_1",
+        "mask_sam2",
+      );
+    });
+  });
+
+  it("does not discard an empty SAM2 mask during an active dock remount", async () => {
+    const sam2Mask = createMaskClip("clip_1", "mask_sam2", "sam2");
+    vi.mocked(useMaskPanel).mockReturnValue(createHookValueFromFlat({
+      masks: [sam2Mask],
+      selectedMaskId: "mask_sam2",
+      selectedMask: sam2Mask,
+    }));
+    act(() => {
+      useMaskViewStore.getState().setMaskTabActive(true);
+    });
+
+    const { unmount } = render(<MaskPanel />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Actions for Mask 1" }),
+    );
+    fireEvent.click(screen.getByTestId("mask-actions-menu-edit"));
+    unmount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockDiscardUncommittedSam2Mask).not.toHaveBeenCalled();
+    act(() => {
+      useMaskViewStore.getState().setMaskTabActive(false);
+    });
   });
 
   it("adds a mask to the equation by dragging its chip onto the equation area", () => {

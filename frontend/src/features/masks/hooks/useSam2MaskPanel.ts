@@ -859,6 +859,7 @@ export function useSam2MaskPanel({
       }
 
       const maskClipId = `${selectedClipId}::mask::${selectedMaskId}`;
+      generationController.signal.throwIfAborted();
       const createdAsset = await addLocalAsset(outputFile, {
         source: "sam2_mask",
         parentAssetId: parentAsset.id,
@@ -871,10 +872,26 @@ export function useSam2MaskPanel({
       if (!createdAsset) {
         throw new Error("Failed to create generated SAM2 mask asset.");
       }
+
+      const throwIfAbortedAfterAssetImport = async (): Promise<void> => {
+        if (!generationController.signal.aborted) return;
+
+        try {
+          if (getTimelineSam2MaskAssetConsumerCount(createdAsset.id) === 0) {
+            await deleteAsset(createdAsset.id);
+          }
+        } catch (error) {
+          console.warn("Failed to clean up aborted SAM2 asset", error);
+        }
+        generationController.signal.throwIfAborted();
+      };
+
+      await throwIfAbortedAfterAssetImport();
       if (generatedVideoFps !== null && generatedVideoFps > 0) {
         // Sparse mask packet cadence is intentionally not the source cadence,
         // so media probing cannot infer the logical frame grid correctly.
         await updateAsset(createdAsset.id, { fps: generatedVideoFps });
+        await throwIfAbortedAfterAssetImport();
       }
 
       const pointsHash = hashSam2Points(normalizedSam2Points);

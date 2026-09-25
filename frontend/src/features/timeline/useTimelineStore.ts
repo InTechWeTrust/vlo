@@ -283,6 +283,8 @@ interface TimelineState extends TimelineModelState {
   ) => void;
 
   removeClipMask: (clipId: string, maskId: string) => void;
+  /** Removes an abandoned provisional mask without consuming user undo/redo. */
+  discardClipMask: (clipId: string, maskId: string) => void;
 
   addClipComponent: (clipId: string, component: Component) => void;
   updateClipComponent: (
@@ -974,6 +976,21 @@ export const useTimelineStore = create<TimelineState>((set, get) => {
       const didCommit = mutationPipeline.commitModelMutation((draft) => {
         removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
       });
+
+      if (didCommit) {
+        mutationPipeline.runPostCommitEffects(removalPlan);
+      }
+    },
+
+    discardClipMask: (clipId, maskId) => {
+      const maskClipId = makeMaskClipId(clipId, maskId);
+      const removalPlan = planTimelineRemoval(get().clips, [maskClipId]);
+      const didCommit = mutationPipeline.commitModelMutation(
+        (draft) => {
+          removeClipIdsFromDraft(draft, removalPlan.clipIdsToRemove);
+        },
+        { recordHistory: false },
+      );
 
       if (didCommit) {
         mutationPipeline.runPostCommitEffects(removalPlan);

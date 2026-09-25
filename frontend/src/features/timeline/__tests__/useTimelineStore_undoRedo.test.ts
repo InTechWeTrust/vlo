@@ -381,6 +381,51 @@ describe("useTimelineStore undo/redo", () => {
     );
   });
 
+  it("discards a provisional mask without changing undo or redo history", () => {
+    const clip = createClip("parent", "track_current", 0, 120);
+    const mask: ClipMask = {
+      id: "mask-draft",
+      isEnabled: true,
+      type: "sam2",
+      mode: "apply",
+      inverted: false,
+      parameters: {
+        baseWidth: 1,
+        baseHeight: 1,
+      },
+      transformations: [],
+      maskPoints: [],
+    };
+
+    act(() => {
+      useTimelineStore.getState().addClip(clip);
+      useTimelineStore.getState().addClipMask(clip.id, mask);
+    });
+    const { tracks, clips } = useTimelineStore.getState();
+    act(() => {
+      useTimelineStore.getState().replaceTimelineSnapshot({ tracks, clips });
+      useTimelineStore.getState().updateClipPosition(clip.id, 10);
+      expect(useTimelineStore.getState().undo()).toBe(true);
+    });
+
+    const redoLabel = useTimelineStore.getState().redoLabel;
+    expect(useTimelineStore.getState().canUndo).toBe(false);
+    expect(useTimelineStore.getState().canRedo).toBe(true);
+
+    act(() => {
+      useTimelineStore.getState().discardClipMask(clip.id, mask.id);
+    });
+
+    expect(
+      useTimelineStore
+        .getState()
+        .clips.some((candidate) => candidate.id.includes(mask.id)),
+    ).toBe(false);
+    expect(useTimelineStore.getState().canUndo).toBe(false);
+    expect(useTimelineStore.getState().canRedo).toBe(true);
+    expect(useTimelineStore.getState().redoLabel).toBe(redoLabel);
+  });
+
   it("hot-swaps a clip asset and records the change in undo history", () => {
     const baseClip = createClip("clip-family", "track_current", 0, 120);
     const clip: TimelineClip = {
