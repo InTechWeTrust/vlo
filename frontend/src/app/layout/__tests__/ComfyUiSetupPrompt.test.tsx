@@ -39,12 +39,13 @@ describe("ComfyUiSetupPrompt", () => {
     expect(
       await screen.findByRole("heading", { name: "Connect vlo to ComfyUI" }),
     ).toBeInTheDocument();
+    const actions = screen.getAllByRole("button");
+    expect(actions[0]).toHaveAccessibleName("Install ComfyUI For Me");
+    expect(actions[1]).toHaveAccessibleName("Choose Existing Install");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Choose ComfyUI folder" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Install ComfyUI" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Verify" }),
+    ).not.toBeInTheDocument();
   });
 
   it("persists a declined generative AI choice and closes", async () => {

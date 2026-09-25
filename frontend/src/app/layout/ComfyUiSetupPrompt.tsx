@@ -9,7 +9,6 @@ import {
   DialogContent,
   DialogTitle,
   LinearProgress,
-  TextField,
   Typography,
 } from "@mui/material";
 import {
@@ -18,13 +17,11 @@ import {
   installComfyui,
   pickComfyuiDirectory,
   updateRuntimeSettings,
-  verifyComfyuiInstall,
   type ComfyuiInstallStatus,
 } from "../../services/runtimeApi";
 
 export function ComfyUiSetupPrompt() {
   const [open, setOpen] = useState(false);
-  const [manualPath, setManualPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [installStatus, setInstallStatus] =
@@ -77,21 +74,6 @@ export function ComfyUiSetupPrompt() {
     return () => window.clearInterval(interval);
   }, [installStatus?.running]);
 
-  const saveExistingInstall = async (path: string) => {
-    const verification = await verifyComfyuiInstall(path);
-    if (!verification.valid || !verification.installPath) {
-      throw new Error(
-        verification.warnings[0] ??
-          "The selected folder is not a recognized ComfyUI install",
-      );
-    }
-    await updateRuntimeSettings({
-      comfyuiInstallDir: verification.installPath,
-      comfyuiInstallDirPromptStatus: "accepted",
-    });
-    setOpen(false);
-  };
-
   const handleChooseExisting = async () => {
     setBusy(true);
     setError(null);
@@ -129,21 +111,6 @@ export function ComfyUiSetupPrompt() {
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to start installation",
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleManualPath = async () => {
-    if (!manualPath.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await saveExistingInstall(manualPath.trim());
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to verify ComfyUI",
       );
     } finally {
       setBusy(false);
@@ -197,43 +164,23 @@ export function ComfyUiSetupPrompt() {
           ) : null}
           {installing ? <LinearProgress /> : null}
           {!installing ? (
-            <>
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <Button
-                  variant="contained"
-                  onClick={() => void handleChooseExisting()}
-                  disabled={busy}
-                >
-                  Choose ComfyUI folder
-                </Button>
-                <Button
-                  variant="outlined"
-                  onClick={() => void handleInstall()}
-                  disabled={busy}
-                >
-                  Install ComfyUI
-                </Button>
-                {busy ? <CircularProgress size={24} /> : null}
-              </Box>
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <TextField
-                  size="small"
-                  fullWidth
-                  label="Or enter an install path"
-                  value={manualPath}
-                  onChange={(event) => setManualPath(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void handleManualPath();
-                  }}
-                />
-                <Button
-                  onClick={() => void handleManualPath()}
-                  disabled={busy || !manualPath.trim()}
-                >
-                  Verify
-                </Button>
-              </Box>
-            </>
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <Button
+                variant="contained"
+                onClick={() => void handleInstall()}
+                disabled={busy}
+              >
+                Install ComfyUI For Me
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => void handleChooseExisting()}
+                disabled={busy}
+              >
+                Choose Existing Install
+              </Button>
+              {busy ? <CircularProgress size={24} /> : null}
+            </Box>
           ) : null}
         </Box>
       </DialogContent>
