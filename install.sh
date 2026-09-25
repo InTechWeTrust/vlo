@@ -197,17 +197,20 @@ MARKER
 # it. `|| true` covers the same EOF case for an interactive run whose terminal
 # goes away mid-question.
 ask_yes_no() {
-    local prompt="$1" default="$2" __outvar="$3" answer=""
+    # Locals are __-prefixed because bash scoping is dynamic: a local named like
+    # the caller's output variable (e.g. `answer`) would capture the printf -v
+    # below, leaving the caller's variable unset and tripping `set -u`.
+    local __prompt="$1" __default="$2" __outvar="$3" __reply=""
 
     if [ "$INTERACTIVE" -eq 0 ] || [ "$ASSUME_YES" -eq 1 ]; then
-        answer="$default"
-        info "${prompt}${answer} (non-interactive)"
+        __reply="$__default"
+        info "${__prompt}${__reply} (non-interactive)"
     else
-        read -r -p "$prompt" answer || answer=""
-        answer="${answer:-$default}"
+        read -r -p "$__prompt" __reply || __reply=""
+        __reply="${__reply:-$__default}"
     fi
 
-    case "$answer" in
+    case "$__reply" in
         y|Y|yes|YES) printf -v "$__outvar" 'yes' ;;
         *) printf -v "$__outvar" 'no' ;;
     esac
