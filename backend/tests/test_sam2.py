@@ -446,6 +446,54 @@ def test_initialize_inference_state_falls_back_to_jpeg_frames_when_prepare_fails
     assert not extracted_paths[0].exists()
 
 
+def test_initialize_inference_state_windowed_extracts_original_when_prepare_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    # An odd-sized still cannot be transcoded with libx264/yuv420p, but PyAV
+    # can still decode it into the window's JPEG frames.
+    source_path = tmp_path / "source.png"
+    Image.new("RGB", (5, 3), (200, 10, 10)).save(source_path)
+    source = Sam2SourceMetadata(
+        source_id="source_1",
+        source_hash="source_1",
+        path=source_path,
+        width=5,
+        height=3,
+        fps=25.0,
+        frame_count=1,
+        duration_sec=1 / 25.0,
+    )
+
+    def fail_prepare(_source: Sam2SourceMetadata, normalized_mp4: bool) -> Path:
+        del normalized_mp4
+        raise Sam2RuntimeError("avcodec_open2(libx264)")
+
+    monkeypatch.setattr(sam2_service, "_ensure_prepared_video", fail_prepare)
+    extracted_frames: list[list[str]] = []
+
+    class FakePredictor:
+        def init_state(self, video_path: str, offload_video_to_cpu: bool = False):
+            del offload_video_to_cpu
+            extracted_frames.append(
+                sorted(path.name for path in Path(video_path).iterdir())
+            )
+            return {"video_path": video_path}
+
+    _, used_path, frame_index_offset, frame_count = (
+        sam2_service._initialize_inference_state(
+            predictor=FakePredictor(),
+            source=source,
+            frame_window=(0, 0),
+        )
+    )
+
+    assert used_path == source_path
+    assert frame_index_offset == 0
+    assert frame_count == 1
+    assert extracted_frames == [["00000.jpg"]]
+
+
 def test_encode_png_frame_returns_valid_grayscale_png() -> None:
     frame = np.array(
         [

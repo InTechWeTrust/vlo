@@ -1163,13 +1163,18 @@ def _initialize_inference_state(
     # original MP4 to SAM2 here: its native loader eagerly materializes every
     # source frame before propagation limits are applied.
     if frame_window is not None:
-        try:
-            extraction_source = source_path
-            if source_suffix != ".mp4":
+        extraction_source = source_path
+        if source_suffix != ".mp4":
+            try:
                 extraction_source = _ensure_prepared_video(
                     source,
                     normalized_mp4=False,
                 )
+            except Exception as exc:
+                # libx264 rejects some sources PyAV still decodes (odd-sized
+                # stills such as a 1672x941 PNG), so extract from the original.
+                errors.append(f"{source_path.name}/(prepared-mp4): {exc}")
+        try:
             return _init_from_temporary_jpegs(extraction_source)
         except Sam2CancelledError:
             raise
