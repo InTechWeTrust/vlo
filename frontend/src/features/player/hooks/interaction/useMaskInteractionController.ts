@@ -5,7 +5,7 @@ import type {
   FederatedPointerEvent,
   Sprite,
 } from "pixi.js";
-import { Texture } from "pixi.js";
+import { Matrix, Texture } from "pixi.js";
 import type {
   ClipMaskPoint,
   ClipTransform,
@@ -116,9 +116,13 @@ const MIN_DRAW_SIZE = 3;
 const MIN_SCALE = 0.05;
 const DRAG_MOVE_EPSILON = 0.01;
 const KEYFRAME_POINT_EPSILON_TICKS = 1;
-const SAM2_POINT_RADIUS = 8;
-const SAM2_POINT_HIT_RADIUS = 12;
-const SAM2_POINT_BORDER_WIDTH = 2;
+// SAM2 point sizes are in screen pixels; they are divided by the clip
+// overlay's global scale so they don't grow with low-resolution assets.
+const SAM2_POINT_RADIUS = 5.5;
+const SAM2_POINT_HIT_RADIUS = 8;
+const SAM2_POINT_BORDER_WIDTH = 1.5;
+const SAM2_FRAME_BORDER_WIDTH = 1;
+const SAM2_OVERLAY_GLOBAL_MATRIX = new Matrix();
 const SAM2_BORDER_COLOR = 0x60a5fa;
 const PATH_PROGRESS_EPSILON = 0.02;
 const PATH_RECORDING_SPATIAL_EPSILON = 6;
@@ -659,6 +663,21 @@ export function useMaskInteractionController(
     liveMaskLayoutPreviewRef.current = null;
   }, []);
 
+  /**
+   * Screen pixels per clipOverlay-local unit on each axis. The overlay mirrors
+   * the sprite, so this folds together the asset's native size, the clip
+   * transform and the viewport zoom.
+   */
+  const resolveClipOverlayScreenScale = useCallback(() => {
+    const clipOverlay = clipOverlayRef.current;
+    if (!clipOverlay) return { x: 1, y: 1 };
+    const m = clipOverlay.getGlobalTransform(SAM2_OVERLAY_GLOBAL_MATRIX, false);
+    return {
+      x: Math.max(Math.hypot(m.a, m.b), 0.0001),
+      y: Math.max(Math.hypot(m.c, m.d), 0.0001),
+    };
+  }, [clipOverlayRef]);
+
   const toSam2NormalizedPoint = useCallback(
     (
       local: { x: number; y: number },
@@ -760,6 +779,11 @@ export function useMaskInteractionController(
       );
       const halfWidth = contentSize.width / 2;
       const halfHeight = contentSize.height / 2;
+      const screenScale = resolveClipOverlayScreenScale();
+      const radiusX = SAM2_POINT_RADIUS / screenScale.x;
+      const radiusY = SAM2_POINT_RADIUS / screenScale.y;
+      // Strokes take a uniform width; average both axes (as SelectionGizmo does).
+      const invStrokeScale = (1 / screenScale.x + 1 / screenScale.y) / 2;
 
       pointsGraphics.visible = true;
       clipOverlay.visible = true;
@@ -767,22 +791,31 @@ export function useMaskInteractionController(
       pointsGraphics.alpha = 1;
       pointsGraphics
         .rect(-halfWidth, -halfHeight, contentSize.width, contentSize.height)
-        .stroke({ width: 1, color: SAM2_BORDER_COLOR, alpha: 0.45 });
+        .stroke({
+          width: SAM2_FRAME_BORDER_WIDTH * invStrokeScale,
+          color: SAM2_BORDER_COLOR,
+          alpha: 0.45,
+        });
 
       points.forEach((point) => {
         const local = toSam2LocalPoint(point, contentSize);
         const fill = point.label === 1 ? 0x22c55e : 0xef4444;
         const border = point.label === 1 ? 0x16a34a : 0xdc2626;
         pointsGraphics
-          .circle(local.x, local.y, SAM2_POINT_RADIUS)
+          .ellipse(local.x, local.y, radiusX, radiusY)
           .fill(fill)
-          .stroke({ width: SAM2_POINT_BORDER_WIDTH, color: border, alpha: 1 });
+          .stroke({
+            width: SAM2_POINT_BORDER_WIDTH * invStrokeScale,
+            color: border,
+            alpha: 1,
+          });
       });
     },
     [
       clipOverlayRef,
       isSam2PointOnSourceFrame,
       resolveActiveClipContentSize,
+      resolveClipOverlayScreenScale,
       resolveSam2SourceFrameAtPlayhead,
       sam2PointsGraphicsRef,
       toSam2LocalPoint,
@@ -1704,6 +1737,7 @@ export function useMaskInteractionController(
       if (!currentSourceFrame) return false;
       const label: 0 | 1 =
         button === 2 ? 0 : sam2PointMode === "remove" ? 0 : 1;
+      const screenScale = resolveClipOverlayScreenScale();
       const nextPoint = toSam2NormalizedPoint(
         local,
         contentSize,
@@ -1727,8 +1761,9 @@ export function useMaskInteractionController(
           (acc, entry) => {
             const { point, index } = entry;
             const localPoint = toSam2LocalPoint(point, contentSize);
-            const dx = local.x - localPoint.x;
-            const dy = local.y - localPoint.y;
+            // Measure in screen pixels so the hit radius matches the drawn point.
+            const dx = (local.x - localPoint.x) * screenScale.x;
+            const dy = (local.y - localPoint.y) * screenScale.y;
             const distanceSq = dx * dx + dy * dy;
             if (distanceSq < acc.distanceSq) {
               return { index, distanceSq };
@@ -1898,6 +1933,7 @@ export function useMaskInteractionController(
     resolveMaskLayoutAtPlayhead,
     resolveMaskLayoutBaseSize,
     resolveActiveClipContentSize,
+    resolveClipOverlayScreenScale,
     selectCanvasClip,
     selectCanvasMask,
     setActivePathEditor,
