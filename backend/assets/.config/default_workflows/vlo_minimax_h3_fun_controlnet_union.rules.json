@@ -381,22 +381,6 @@
       "group_id": "model_patches",
       "group_title": "Model",
       "group_order": 1
-    },
-    "controlnet_inpaint_mask": {
-      "label": "Pass mask to ControlNet",
-      "value_type": "boolean",
-      "default": true,
-      "group_id": "retake",
-      "group_title": "Retake",
-      "group_order": 1
-    },
-    "latent_retake": {
-      "label": "Keep unmasked source latents",
-      "value_type": "boolean",
-      "default": true,
-      "group_id": "retake",
-      "group_title": "Retake",
-      "group_order": 2
     }
   },
   "validation": {
@@ -429,25 +413,7 @@
       }
     ]
   },
-  "derived_widgets": [
-    {
-      "id": "retake_mode",
-      "kind": "video_audio_retake",
-      "label": "Retake",
-      "group_id": "retake",
-      "group_title": "Retake",
-      "group_order": 0,
-      "default": "Video & Audio",
-      "video_bypass": {
-        "node_id": "28",
-        "param": "switch"
-      },
-      "audio_bypass": {
-        "node_id": "27",
-        "param": "switch"
-      }
-    }
-  ],
+  "derived_widgets": [],
   "rewrites": [
     {
       "when": {
@@ -482,41 +448,6 @@
         "97",
         "109",
         "110"
-      ]
-    },
-    {
-      "when": {
-        "kind": "compare",
-        "ref": {
-          "kind": "frontend_control",
-          "control_id": "controlnet_inpaint_mask"
-        },
-        "operator": "eq",
-        "value": false
-      },
-      "bypass": [
-        "109",
-        "110"
-      ]
-    },
-    {
-      "when": {
-        "kind": "compare",
-        "ref": {
-          "kind": "frontend_control",
-          "control_id": "latent_retake"
-        },
-        "operator": "eq",
-        "value": false
-      },
-      "bypass": [
-        "66",
-        "67",
-        "68",
-        "79",
-        "25",
-        "29",
-        "97"
       ]
     },
     {
@@ -647,7 +578,11 @@
             "crop",
             "full"
           ],
-          "default": "crop"
+          "default": "crop",
+          "section_id": "advanced_settings",
+          "group_id": "masking",
+          "group_title": "Masking",
+          "group_order": 0
         },
         {
           "key": "crop_dilation",
@@ -659,7 +594,11 @@
           "min": 0,
           "max": 0.5,
           "step": 0.01,
-          "default": 0.1
+          "default": 0.1,
+          "section_id": "advanced_settings",
+          "group_id": "masking",
+          "group_title": "Masking",
+          "group_order": 1
         }
       ]
     },

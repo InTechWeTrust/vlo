@@ -71,3 +71,28 @@ def test_fun_controlnet_turbo_lora_starts_bypassed():
         lora = _node(workflow, TURBO_LORA_NODE_ID)
         assert lora["type"] == "LoraLoaderModelOnly"
         assert lora["mode"] == BYPASS_MODE
+
+
+def test_fun_controlnet_retake_options_are_not_presented():
+    # Retake always runs at its defaults: both masks retaken, the mask passed to
+    # the ControlNet, and unmasked source latents kept. The graph's switches
+    # stay hidden at those values and nothing in the panel can change them.
+    rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
+    assert rules["derived_widgets"] == []
+    assert set(rules["frontend_controls"]) == {"spectrum_enabled"}
+    for node_id, value in (("27", False), ("28", False), ("29", True)):
+        switch = rules["nodes"][node_id]["widgets"]["switch"]
+        assert switch["hidden"] is True
+        assert switch["default"] is value
+
+    workflow = _load_json(WORKFLOW_DIRS[0] / WORKFLOW_NAME)
+    for node_id, value in ((27, False), (28, False), (29, True)):
+        assert _node(workflow, node_id)["widgets_values"] == [value]
+
+
+def test_fun_controlnet_mask_controls_sit_in_advanced_settings():
+    rules = _load_json(WORKFLOW_DIRS[0] / RULES_NAME)
+    (stage,) = [s for s in rules["pipeline"] if s["kind"] == "mask_processing"]
+    assert {control["section_id"] for control in stage["controls"]} == {
+        "advanced_settings"
+    }

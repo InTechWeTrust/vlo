@@ -202,6 +202,7 @@ describe("shipped MiniMax workflow section order", () => {
       "vlo_minimax_h3_r2v",
       "vlo_minimax_h3_inpaint",
       "vlo_minimax_h3_inpaint_flf2va",
+      "vlo_minimax_h3_fun_controlnet_union",
     ]) {
       const sections = loadSections(dir, workflow);
       const advanced = sections.find((s) => s.id === "advanced_settings");
