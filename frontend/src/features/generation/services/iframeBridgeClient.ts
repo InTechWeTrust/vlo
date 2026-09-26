@@ -234,6 +234,7 @@ export class IframeBridgeClient {
   private outgoingDocumentId: string | null = null;
   private peerClientId: string | null = null;
   private lastBootingAt = 0;
+  private helloTimer: ReturnType<typeof setInterval> | null = null;
   private readonly pending = new Map<string, PendingRequest>();
   private readonly readyHandlers = new Set<() => void>();
   private readonly statusHandlers = new Set<
@@ -720,7 +721,34 @@ export class IframeBridgeClient {
     if (this.status === status && this.statusError === error) return;
     this.status = status;
     this.statusError = error;
+    this.syncHelloPump();
     for (const handler of this.statusHandlers) handler(status, error);
+  }
+
+  /**
+   * The runtime only ever answers a `hello`; it never announces itself. A
+   * single `hello` is easily lost — sent before the runtime installs its
+   * listener, or answered by the outgoing document of a reload we just
+   * triggered, whose reply is fenced off. Keep asking until a document answers
+   * rather than relying on a caller to be awaiting readiness: a closed editor
+   * has no such caller, and would otherwise sit in "handshaking" indefinitely.
+   */
+  private syncHelloPump(): void {
+    const shouldPump =
+      this.iframe !== null &&
+      (this.status === "handshaking" || this.status === "unavailable");
+    if (shouldPump && this.helloTimer === null) {
+      this.helloTimer = globalThis.setInterval(() => {
+        try {
+          this.sendHello();
+        } catch {
+          // A failed post is retried on the next tick.
+        }
+      }, HELLO_RETRY_MS);
+    } else if (!shouldPump && this.helloTimer !== null) {
+      globalThis.clearInterval(this.helloTimer);
+      this.helloTimer = null;
+    }
   }
 
   private requireStatusError(): IframeBridgeError {

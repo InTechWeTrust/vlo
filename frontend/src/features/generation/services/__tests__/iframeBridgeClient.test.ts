@@ -168,6 +168,71 @@ describe("IframeBridgeClient", () => {
     expect(client.currentStatus).toBe("ready");
   });
 
+  it("keeps saying hello until the reloaded document answers, with no waiter", async () => {
+    vi.useFakeTimers();
+    const { client, contentWindow, postMessage, hello } = setupClient();
+    announceReady(contentWindow, hello);
+
+    // A closed editor's recovery: nothing awaits readiness afterwards, and
+    // the only immediate hello is answered by the document being unloaded.
+    client.notifyIframeReloaded();
+    const rehello = postMessage.mock.calls.at(-1)?.[0] as PostedMessage;
+    announceReady(contentWindow, rehello);
+    expect(client.currentStatus).toBe("handshaking");
+
+    // The replacement document installs its listener later and answers the
+    // next hello it hears.
+    const sentBefore = postMessage.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(500);
+    const laterHello = postMessage.mock.calls.at(-1)?.[0] as PostedMessage;
+    expect(postMessage.mock.calls.length).toBeGreaterThan(sentBefore);
+    expect(laterHello).toMatchObject({ type: "hello", channelId: rehello.channelId });
+
+    const onReady = vi.fn();
+    client.onReady(onReady);
+    announceReady(contentWindow, laterHello, { documentId: "document-2" });
+    expect(client.currentStatus).toBe("ready");
+    expect(onReady).toHaveBeenCalledTimes(1);
+
+    // Once bound, the pump stops.
+    const sentAtReady = postMessage.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(postMessage.mock.calls.length).toBe(sentAtReady);
+  });
+
+  it("keeps saying hello after a readiness wait gives up", async () => {
+    vi.useFakeTimers();
+    const { client, contentWindow, postMessage } = setupClient();
+
+    const waited = client.waitForReady(1_000);
+    await vi.advanceTimersByTimeAsync(1_500);
+    await expect(waited).resolves.toBe(false);
+    expect(client.currentStatus).toBe("unavailable");
+
+    const sentAtGiveUp = postMessage.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(postMessage.mock.calls.length).toBeGreaterThan(sentAtGiveUp);
+    const hello = postMessage.mock.calls.at(-1)?.[0] as PostedMessage;
+    expect(hello.type).toBe("hello");
+    announceReady(contentWindow, hello);
+    expect(client.currentStatus).toBe("ready");
+  });
+
+  it("stops saying hello once unbound or incompatible", async () => {
+    vi.useFakeTimers();
+    const unbound = setupClient();
+    unbound.client.bindIframe(null);
+    const sentAtUnbind = unbound.postMessage.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(unbound.postMessage.mock.calls.length).toBe(sentAtUnbind);
+
+    const incompatible = setupClient();
+    announceReady(incompatible.contentWindow, incompatible.hello, { version: 1 });
+    const sentAtRejection = incompatible.postMessage.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(incompatible.postMessage.mock.calls.length).toBe(sentAtRejection);
+  });
+
   it("rejects a runtime that does not identify its document", () => {
     const { client, contentWindow, hello } = setupClient();
     announceReady(contentWindow, hello, { documentId: undefined });
