@@ -1,10 +1,11 @@
 """Shared helpers for the MiniMax H3 packaged-workflow tests.
 
 The two VRAM profiles ship the same graph against different weights of the same
-checkpoints: the default profile loads the pruned int8 files, the high-VRAM
-profile the pruned bf16 ones. The parity tests therefore compare the high-VRAM
-copy with its weight filenames mapped back to the default ones, so any *other*
-drift between the profiles still fails.
+checkpoints: the default profile loads the pruned int8 files and the int8 video
+VAE, the high-VRAM profile the pruned bf16 ones and the fp16 video VAE. The
+parity tests therefore compare the high-VRAM copy with its weight filenames
+mapped back to the default ones, so any *other* drift between the profiles
+still fails.
 """
 
 from __future__ import annotations
@@ -33,6 +34,12 @@ H3_DIFFUSION_WEIGHTS = {
     ),
 }
 
+# Every H3 workflow loads the video VAE: (default weights, high-VRAM weights).
+H3_VIDEO_VAE_WEIGHTS = (
+    "minimax_h3_video_vae_int8_convrot.safetensors",
+    "minimax_h3_video_vae_fp16.safetensors",
+)
+
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -55,4 +62,12 @@ def assert_profiles_agree_apart_from_weights(workflow_name: str) -> None:
         normalized = normalized.replace(high_vram_weights, default_weights)
 
     assert tasks, f"{workflow_name} loads no known MiniMax H3 checkpoint"
+
+    default_vae, high_vram_vae = H3_VIDEO_VAE_WEIGHTS
+    assert default_vae in default_text
+    assert high_vram_vae in high_vram_text
+    assert high_vram_vae not in default_text
+    assert default_vae not in high_vram_text
+    normalized = normalized.replace(high_vram_vae, default_vae)
+
     assert json.loads(normalized) == json.loads(default_text)
