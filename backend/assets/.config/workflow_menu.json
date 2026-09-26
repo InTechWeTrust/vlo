@@ -131,6 +131,11 @@
       "order": 2
     },
     {
+      "workflow_id": "vlo_minimax_h3_fun_controlnet_union.json",
+      "parent_id": "video.control",
+      "order": 3
+    },
+    {
       "workflow_id": "vlo_SeedVR2_video.json",
       "parent_id": "video.enhance",
       "order": 0

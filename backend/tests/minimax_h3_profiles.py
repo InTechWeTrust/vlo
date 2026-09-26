@@ -40,6 +40,15 @@ H3_VIDEO_VAE_WEIGHTS = (
     "minimax_h3_video_vae_fp16.safetensors",
 )
 
+# Model patches layered on the H3 checkpoint: (default weights, high-VRAM
+# weights). Only workflows that load the patch are checked for it.
+H3_MODEL_PATCH_WEIGHTS = (
+    (
+        "minimax_h3_fun_controlnet_union_2.0_pruned_int8_convrot.safetensors",
+        "minimax_h3_fun_controlnet_union_2.0_pruned_bf16.safetensors",
+    ),
+)
+
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -69,5 +78,13 @@ def assert_profiles_agree_apart_from_weights(workflow_name: str) -> None:
     assert high_vram_vae not in default_text
     assert default_vae not in high_vram_text
     normalized = normalized.replace(high_vram_vae, default_vae)
+
+    for default_patch, high_vram_patch in H3_MODEL_PATCH_WEIGHTS:
+        if default_patch not in default_text:
+            continue
+        assert high_vram_patch in high_vram_text
+        assert high_vram_patch not in default_text
+        assert default_patch not in high_vram_text
+        normalized = normalized.replace(high_vram_patch, default_patch)
 
     assert json.loads(normalized) == json.loads(default_text)

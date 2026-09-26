@@ -1,0 +1,732 @@
+{
+  "version": 3,
+  "name": "MiniMax H3 Fun ControlNet (Reference)",
+  "sections": [
+    {
+      "id": "lora_loaders",
+      "title": "LoRA loaders",
+      "order": 3,
+      "default_open": true
+    },
+    {
+      "id": "references",
+      "title": "References",
+      "order": 4,
+      "default_open": true
+    },
+    {
+      "id": "pose_detection",
+      "title": "Pose Detection",
+      "order": 5,
+      "default_open": false
+    },
+    {
+      "id": "advanced_settings",
+      "title": "Advanced Settings",
+      "order": 6,
+      "default_open": false
+    }
+  ],
+  "nodes": {
+    "53": {
+      "present": {
+        "label": "Source video",
+        "input_type": "video",
+        "param": "file",
+        "class_type": "vloMemoryLoadVideo"
+      },
+      "selection": {
+        "export_fps": 24,
+        "frame_step": 17,
+        "frame_offset": 5,
+        "max_frames": 719
+      }
+    },
+    "1": {
+      "present": {
+        "required": false
+      }
+    },
+    "81": {
+      "present": {
+        "label": "Prompt",
+        "input_type": "text",
+        "param": "prompt"
+      },
+      "widgets": {
+        "ref_image_size": {
+          "label": "Reference image size",
+          "value_type": "enum",
+          "options": [
+            "match",
+            "max"
+          ],
+          "default": "match",
+          "section_id": "references",
+          "group_id": "reference_options",
+          "group_title": "Reference Options",
+          "group_order": 3
+        }
+      }
+    },
+    "83": {
+      "present": {
+        "label": "Image inputs",
+        "input_type": "image",
+        "param": "images",
+        "class_type": "vloMemoryLoadImageBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 9
+        },
+        "required": false
+      }
+    },
+    "84": {
+      "present": {
+        "label": "Video inputs",
+        "input_type": "video",
+        "param": "files",
+        "class_type": "vloMemoryLoadVideoBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 3,
+          "item_options": [
+            "audio"
+          ]
+        },
+        "required": false
+      },
+      "selection": {
+        "export_fps": "project",
+        "frame_step": 4,
+        "max_frames": 360,
+        "message": "Select and prepare the reference video in vlo",
+        "include_tracks": true
+      }
+    },
+    "85": {
+      "present": {
+        "label": "Audio inputs",
+        "input_type": "audio",
+        "param": "audios",
+        "class_type": "vloMemoryLoadAudioBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 3
+        },
+        "required": false
+      }
+    },
+    "43": {
+      "widgets": {
+        "noise_seed": {
+          "label": "Noise seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 3
+        }
+      }
+    },
+    "37": {
+      "widgets": {
+        "steps": {
+          "label": "Steps",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "default": 20,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 1
+        },
+        "denoise": {
+          "label": "Denoise",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "default": 1,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 2
+        },
+        "scheduler": {
+          "label": "Scheduler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 1
+        }
+      }
+    },
+    "36": {
+      "widgets": {
+        "sampler_name": {
+          "label": "Sampler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 0
+        }
+      }
+    },
+    "99": {
+      "widgets": {
+        "lora_name": {
+          "label": "Model",
+          "discover_when_bypassed": true,
+          "default_node_bypass": true,
+          "section_id": "lora_loaders",
+          "group_id": "lora_model",
+          "group_title": "Model LoRA"
+        }
+      }
+    },
+    "47": {
+      "widgets": {
+        "attention": {
+          "label": "Attention backend",
+          "section_id": "advanced_settings",
+          "group_id": "model_patches",
+          "group_title": "Model",
+          "group_order": 0
+        }
+      }
+    },
+    "29": {
+      "widgets": {
+        "switch": {
+          "label": "Blank the masked area first",
+          "value_type": "boolean",
+          "default": true,
+          "hidden": true
+        }
+      }
+    },
+    "28": {
+      "widgets": {
+        "switch": {
+          "label": "Bypass video retake",
+          "value_type": "boolean",
+          "default": false,
+          "hidden": true
+        }
+      }
+    },
+    "27": {
+      "widgets": {
+        "switch": {
+          "label": "Bypass audio retake",
+          "value_type": "boolean",
+          "default": false,
+          "hidden": true
+        }
+      }
+    },
+    "101": {
+      "widgets": {
+        "strength": {
+          "label": "ControlNet strength",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 2,
+          "step": 0.05,
+          "default": 1,
+          "group_id": "controlnet",
+          "group_title": "ControlNet",
+          "group_order": 2
+        },
+        "start_percent": {
+          "label": "Start",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "default": 0,
+          "section_id": "advanced_settings",
+          "group_id": "controlnet_timing",
+          "group_title": "ControlNet Timing",
+          "group_order": 0
+        },
+        "end_percent": {
+          "label": "End",
+          "value_type": "float",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "default": 1,
+          "section_id": "advanced_settings",
+          "group_id": "controlnet_timing",
+          "group_title": "ControlNet Timing",
+          "group_order": 1
+        }
+      }
+    },
+    "108": {
+      "widgets": {
+        "draw_body": {
+          "label": "Draw body",
+          "value_type": "boolean",
+          "section_id": "pose_detection",
+          "group_id": "pose",
+          "group_title": "Pose",
+          "group_order": 0,
+          "default": true
+        },
+        "draw_hands": {
+          "label": "Draw hands",
+          "value_type": "boolean",
+          "section_id": "pose_detection",
+          "group_id": "pose",
+          "group_title": "Pose",
+          "group_order": 1,
+          "default": true
+        },
+        "draw_face": {
+          "label": "Draw face",
+          "value_type": "boolean",
+          "section_id": "pose_detection",
+          "group_id": "pose",
+          "group_title": "Pose",
+          "group_order": 2,
+          "default": true
+        },
+        "draw_feet": {
+          "label": "Draw feet",
+          "value_type": "boolean",
+          "section_id": "pose_detection",
+          "group_id": "pose",
+          "group_title": "Pose",
+          "group_order": 3,
+          "default": true
+        },
+        "draw_head": {
+          "label": "Draw head",
+          "value_type": "boolean",
+          "section_id": "pose_detection",
+          "group_id": "pose",
+          "group_title": "Pose",
+          "group_order": 4,
+          "default": true
+        },
+        "score_threshold": {
+          "label": "Keypoint confidence",
+          "value_type": "float",
+          "section_id": "pose_detection",
+          "group_id": "pose",
+          "group_title": "Pose",
+          "group_order": 5,
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "default": 0.51
+        }
+      }
+    },
+    "106": {
+      "widgets": {
+        "threshold": {
+          "label": "Person detection threshold",
+          "value_type": "float",
+          "section_id": "pose_detection",
+          "group_id": "pose",
+          "group_title": "Pose",
+          "group_order": 6,
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "default": 0.5
+        },
+        "max_detections": {
+          "label": "Max people",
+          "value_type": "int",
+          "section_id": "pose_detection",
+          "group_id": "pose",
+          "group_title": "Pose",
+          "group_order": 7,
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 10,
+          "step": 1,
+          "default": 2
+        }
+      }
+    }
+  },
+  "frontend_controls": {
+    "spectrum_enabled": {
+      "label": "MiniMax Spectrum",
+      "value_type": "boolean",
+      "default": true,
+      "section_id": "advanced_settings",
+      "group_id": "model_patches",
+      "group_title": "Model",
+      "group_order": 1
+    },
+    "controlnet_inpaint_mask": {
+      "label": "Pass mask to ControlNet",
+      "value_type": "boolean",
+      "default": true,
+      "group_id": "retake",
+      "group_title": "Retake",
+      "group_order": 1
+    },
+    "latent_retake": {
+      "label": "Keep unmasked source latents",
+      "value_type": "boolean",
+      "default": true,
+      "group_id": "retake",
+      "group_title": "Retake",
+      "group_order": 2
+    }
+  },
+  "validation": {
+    "inputs": [
+      {
+        "kind": "required",
+        "input": "53",
+        "message": "A source video is required."
+      },
+      {
+        "kind": "required",
+        "input": "81:prompt",
+        "message": "A prompt is required."
+      },
+      {
+        "kind": "optional",
+        "input": "1"
+      },
+      {
+        "kind": "optional",
+        "input": "83"
+      },
+      {
+        "kind": "optional",
+        "input": "84"
+      },
+      {
+        "kind": "optional",
+        "input": "85"
+      }
+    ]
+  },
+  "derived_widgets": [
+    {
+      "id": "retake_mode",
+      "kind": "video_audio_retake",
+      "label": "Retake",
+      "group_id": "retake",
+      "group_title": "Retake",
+      "group_order": 0,
+      "default": "Video & Audio",
+      "video_bypass": {
+        "node_id": "28",
+        "param": "switch"
+      },
+      "audio_bypass": {
+        "node_id": "27",
+        "param": "switch"
+      }
+    }
+  ],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": [
+          "1"
+        ],
+        "match": "all_missing"
+      },
+      "bypass": [
+        "1",
+        "5",
+        "8",
+        "77",
+        "9",
+        "20",
+        "21",
+        "24",
+        "28",
+        "78",
+        "7",
+        "10",
+        "22",
+        "26",
+        "27",
+        "66",
+        "67",
+        "68",
+        "79",
+        "25",
+        "29",
+        "97",
+        "109",
+        "110"
+      ]
+    },
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "controlnet_inpaint_mask"
+        },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": [
+        "109",
+        "110"
+      ]
+    },
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "latent_retake"
+        },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": [
+        "66",
+        "67",
+        "68",
+        "79",
+        "25",
+        "29",
+        "97"
+      ]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": [
+          "83"
+        ],
+        "match": "all_missing"
+      },
+      "bypass": [
+        "83"
+      ]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": [
+          "84"
+        ],
+        "match": "all_missing"
+      },
+      "bypass": [
+        "84"
+      ]
+    },
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": [
+          "85"
+        ],
+        "match": "all_missing"
+      },
+      "bypass": [
+        "85"
+      ]
+    },
+    {
+      "when": {
+        "kind": "compare",
+        "ref": {
+          "kind": "frontend_control",
+          "control_id": "spectrum_enabled"
+        },
+        "operator": "eq",
+        "value": false
+      },
+      "bypass": [
+        "45"
+      ]
+    }
+  ],
+  "effect_switches": [
+    {
+      "id": "blank_masked_area_on_full_denoise",
+      "cases": [
+        {
+          "when": {
+            "kind": "compare",
+            "ref": {
+              "kind": "workflow_param",
+              "node_id": "37",
+              "param": "denoise"
+            },
+            "operator": "eq",
+            "value": 1
+          },
+          "set_widgets": [
+            {
+              "node_id": "29",
+              "widget": "switch",
+              "value": true
+            }
+          ]
+        },
+        {
+          "when": {
+            "kind": "compare",
+            "ref": {
+              "kind": "workflow_param",
+              "node_id": "37",
+              "param": "denoise"
+            },
+            "operator": "lt",
+            "value": 1
+          },
+          "set_widgets": [
+            {
+              "node_id": "29",
+              "widget": "switch",
+              "value": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "slots": {},
+  "pipeline": [
+    {
+      "id": "mask_processing",
+      "kind": "mask_processing",
+      "after": [
+        "aspect_ratio"
+      ],
+      "targets": [
+        {
+          "source": {
+            "node_id": "53",
+            "param": "file"
+          },
+          "mask": {
+            "node_id": "1",
+            "param": "file"
+          },
+          "mask_type": "binary",
+          "purpose": "video"
+        }
+      ],
+      "controls": [
+        {
+          "key": "crop_mode",
+          "label": "Mask crop mode",
+          "value_type": "enum",
+          "expose": "widget",
+          "options": [
+            "crop",
+            "full"
+          ],
+          "default": "crop"
+        },
+        {
+          "key": "crop_dilation",
+          "label": "Mask crop padding",
+          "value_type": "float",
+          "expose": "widget",
+          "control": "slider",
+          "slider_display": "percent",
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "default": 0.1
+        }
+      ]
+    },
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "resolution_ladder": {
+          "min": 240,
+          "max": 720,
+          "steps": 5
+        },
+        "postprocess": {
+          "enabled": true,
+          "mode": "stretch_exact",
+          "apply_to": "all_visual_outputs",
+          "targets": [
+            {
+              "width": {
+                "node_id": "96",
+                "param": "width"
+              },
+              "height": {
+                "node_id": "96",
+                "param": "height"
+              }
+            }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "width": {
+            "node_id": "60",
+            "param": "resize_type.width"
+          },
+          "height": {
+            "node_id": "60",
+            "param": "resize_type.height"
+          }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "default": 720,
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0
+        },
+        {
+          "key": "target_aspect_ratio",
+          "value_type": "string",
+          "group_id": "video_generation",
+          "group_title": "Video Generation",
+          "group_order": 0,
+          "label": "Aspect ratio",
+          "expose": "widget",
+          "source": "client"
+        }
+      ]
+    }
+  ]
+}

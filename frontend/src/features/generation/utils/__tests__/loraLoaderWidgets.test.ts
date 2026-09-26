@@ -609,6 +609,7 @@ describe("shipped MiniMax LoRA loaders", () => {
     ["vlo_minimax_h3_i2v", "150"],
     ["vlo_minimax_h3_r2v", "148"],
     ["vlo_minimax_h3_ttm", "23"],
+    ["vlo_minimax_h3_fun_controlnet_union", "99"],
   ] as const;
 
   // object_info is runtime data; only the loader's shape matters here.
