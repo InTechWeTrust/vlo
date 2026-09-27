@@ -1023,11 +1023,13 @@ export function createDefaultGeneratedMaskTransforms(): ClipTransform[] {
  * without it renders differently from the same asset placed by the host. The
  * store-based `attachGenerationMask` in utils/insertAssetToTimeline.ts is the
  * drag-and-drop path and must stay behaviourally identical to this one.
+ * `enabled: false` attaches the mask with the equation switched off.
  */
 export function attachGenerationMaskToDraft(
   draft: TimelineModelState,
   clipId: string,
   generationMaskAssetId: string,
+  { enabled = true }: { enabled?: boolean } = {},
 ): void {
   addClipMaskToDraft(draft, clipId, {
     id: crypto.randomUUID(),
@@ -1059,6 +1061,10 @@ export function attachGenerationMaskToDraft(
       clipId,
       createDefaultGeneratedMaskTransforms(),
     );
+  }
+
+  if (!enabled) {
+    setClipMaskExpressionEnabledInDraft(draft, clipId, false);
   }
 }
 

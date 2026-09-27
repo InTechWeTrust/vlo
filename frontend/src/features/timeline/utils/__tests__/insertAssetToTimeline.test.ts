@@ -4,6 +4,9 @@ import type { BaseClip, TimelineTrack } from "../../../../types/TimelineTypes";
 import type { StandardTimelineClip } from "../../../../types/TimelineTypes";
 import type { MaskCompositionComponent } from "../../../../types/Components";
 import { useTimelineStore } from "../../useTimelineStore";
+import { attachGenerationMaskToDraft } from "../../model/timelineCommands";
+import { getOrderedChildMaskClips } from "../../model/maskClipModel";
+import { resolveMaskBooleanExpression } from "../../../masks/model/maskBooleanExpression";
 import {
   attachGenerationMask,
   insertBaseClipAtTime,
@@ -129,6 +132,83 @@ describe("insertAssetToTimeline", () => {
       }),
     ]);
   });
+
+  it("attaches generated masks switched off for disabled placement", () => {
+    const asset: Asset = {
+      id: "generated_asset",
+      hash: "hash-generated",
+      name: "generated.mp4",
+      type: "video",
+      src: "blob:generated",
+      createdAt: 0,
+      creationMetadata: {
+        source: "generated",
+        workflowName: "MaskLoadTest",
+        inputs: [],
+        generationMaskAssetId: "generation-mask-asset",
+      },
+    };
+
+    attachGenerationMask("clip_1", asset, { metadataPlacement: "disabled" });
+
+    const { clips } = useTimelineStore.getState();
+    const parentClip = clips.find(
+      (clip): clip is StandardTimelineClip =>
+        clip.id === "clip_1" && clip.type !== "mask",
+    );
+    const maskClips = getOrderedChildMaskClips(clips, parentClip!);
+    const composition = (parentClip?.components ?? []).find(
+      (component): component is MaskCompositionComponent =>
+        component.type === "mask_composition",
+    );
+
+    // The mask and its feathering stay attached; only the equation is off.
+    expect(maskClips).toHaveLength(1);
+    expect(maskClips[0].generationMaskAssetId).toBe("generation-mask-asset");
+    expect(getCompositeTransforms(parentClip)).toHaveLength(1);
+    expect(composition?.parameters.expressionEnabled).toBe(false);
+    expect(resolveMaskBooleanExpression(parentClip!, maskClips)).toBeNull();
+
+    useTimelineStore.getState().setClipMaskExpressionEnabled("clip_1", true);
+    const reenabledParent = useTimelineStore
+      .getState()
+      .clips.find(
+        (clip): clip is StandardTimelineClip =>
+          clip.id === "clip_1" && clip.type !== "mask",
+      );
+    expect(
+      resolveMaskBooleanExpression(reenabledParent!, maskClips),
+    ).not.toBeNull();
+  });
+
+  it.each([
+    ["applied", undefined],
+    ["disabled", false],
+  ] as const)(
+    "keeps the draft mask attach in step with the store path (%s)",
+    (metadataPlacement, expectedExpressionEnabled) => {
+      const draft = {
+        tracks: [createTrack("track_1")],
+        clips: [createParentClip()],
+      } as unknown as Parameters<typeof attachGenerationMaskToDraft>[0];
+
+      attachGenerationMaskToDraft(draft, "clip_1", "generation-mask-asset", {
+        enabled: metadataPlacement === "applied",
+      });
+
+      const parent = draft.clips.find(
+        (clip): clip is StandardTimelineClip =>
+          clip.id === "clip_1" && clip.type !== "mask",
+      );
+      const composition = (parent?.components ?? []).find(
+        (component): component is MaskCompositionComponent =>
+          component.type === "mask_composition",
+      );
+      expect(composition?.parameters.expressionEnabled).toBe(
+        expectedExpressionEnabled,
+      );
+    },
+  );
 
   it("places new clips on the bottom-most compatible track when nothing is occupied in range", () => {
     useTimelineStore.getState().replaceTimelineSnapshot({

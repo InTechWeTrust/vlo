@@ -502,7 +502,9 @@ export const useClipMove = (
           if (isAssetBackedClip(newClip)) {
             const asset = getAssetById(newClip.assetId);
             if (asset) {
-              attachGenerationMask(newClip.id, asset);
+              attachGenerationMask(newClip.id, asset, {
+                metadataPlacement: "disabled",
+              });
             }
           }
         } else {

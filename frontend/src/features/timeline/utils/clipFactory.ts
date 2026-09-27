@@ -5,10 +5,19 @@ import { useProjectStore } from "../../project/useProjectStore";
 import {
   deriveClipTransformsFromAsset,
   deriveExtractedAudioClipState,
+  type MetadataPlacement,
 } from "./metadataTransforms";
 import { durationSecondsToTicks } from "./assetDuration";
 
-export const createClipFromAsset = (asset: Asset): BaseClip => {
+export interface CreateClipFromAssetOptions {
+  /** Defaults to "applied"; see {@link MetadataPlacement}. */
+  metadataPlacement?: MetadataPlacement;
+}
+
+export const createClipFromAsset = (
+  asset: Asset,
+  { metadataPlacement = "applied" }: CreateClipFromAssetOptions = {},
+): BaseClip => {
   if (asset.type === "lut") {
     throw new Error("LUT assets cannot be placed on the timeline");
   }
@@ -36,6 +45,7 @@ export const createClipFromAsset = (asset: Asset): BaseClip => {
     metadataClipState?.transformations ??
     deriveClipTransformsFromAsset(asset, {
       logicalContainerSize: getProjectDimensions(aspectRatio),
+      metadataPlacement,
     });
 
   return {

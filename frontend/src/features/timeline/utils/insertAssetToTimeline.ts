@@ -4,6 +4,7 @@ import { createClipFromAsset } from "./clipFactory";
 import { useTimelineStore } from "../useTimelineStore";
 import { createDefaultGeneratedMaskTransforms } from "../model/timelineCommands";
 import { getTrackTypeFromClip } from "./formatting";
+import type { MetadataPlacement } from "./metadataTransforms";
 
 function clipOverlapsRange(
   clip: TimelineClip,
@@ -25,6 +26,15 @@ function isCompatibleTrackType(
   return !trackType || trackType === expectedTrackType;
 }
 
+interface AttachGenerationMaskOptions {
+  /**
+   * Defaults to "applied". "disabled" still attaches the mask and its
+   * feathering but switches the mask equation off, as the mask panel's
+   * On/Off toggle does.
+   */
+  metadataPlacement?: MetadataPlacement;
+}
+
 /**
  * If the asset has a linked generation mask, attach it as a child mask clip
  * and seed shared mask feathering on the parent when unset.
@@ -32,6 +42,7 @@ function isCompatibleTrackType(
 export function attachGenerationMask(
   clipId: string,
   asset: Asset,
+  { metadataPlacement = "applied" }: AttachGenerationMaskOptions = {},
 ): void {
   const meta = asset.creationMetadata;
   if (meta?.source !== "generated" || !meta.generationMaskAssetId) return;
@@ -68,6 +79,10 @@ export function attachGenerationMask(
         createDefaultGeneratedMaskTransforms(),
       );
     }
+  }
+
+  if (metadataPlacement === "disabled") {
+    store.setClipMaskExpressionEnabled(clipId, false);
   }
 }
 

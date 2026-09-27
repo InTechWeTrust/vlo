@@ -11,9 +11,20 @@ interface Size {
   height: number;
 }
 
+/**
+ * How a generated asset's recorded placement (inpaint crop position/scale and
+ * its linked generation mask) lands on a new clip. "applied" restores the
+ * generation's framing, which is what Send to Timeline wants. "disabled"
+ * attaches the same components switched off, so a hand-placed drop starts
+ * full-frame with the framing one toggle away.
+ */
+export type MetadataPlacement = "applied" | "disabled";
+
 export interface DeriveClipTransformsOptions {
   /** Timeline coordinate space; also the fallback for legacy crop metadata. */
   logicalContainerSize?: Size;
+  /** Defaults to "applied". */
+  metadataPlacement?: MetadataPlacement;
 }
 
 export interface DerivedExtractedAudioClipState {
@@ -115,6 +126,7 @@ function deriveGeneratedMaskCropTransforms(
   const deltaY = (cropCenterY / containerSize.height - 0.5) * logicalSize.height;
   const scaleX = cropSize.width / containerSize.width;
   const scaleY = cropSize.height / containerSize.height;
+  const isEnabled = options.metadataPlacement !== "disabled";
 
   const transforms: ClipTransform[] = [];
 
@@ -125,7 +137,7 @@ function deriveGeneratedMaskCropTransforms(
     transforms.push({
       id: crypto.randomUUID(),
       type: "position",
-      isEnabled: true,
+      isEnabled,
       parameters: {
         x: roundGeometryValue(deltaX),
         y: roundGeometryValue(deltaY),
@@ -140,7 +152,7 @@ function deriveGeneratedMaskCropTransforms(
     transforms.push({
       id: crypto.randomUUID(),
       type: "scale",
-      isEnabled: true,
+      isEnabled,
       parameters: {
         x: roundGeometryValue(scaleX),
         y: roundGeometryValue(scaleY),

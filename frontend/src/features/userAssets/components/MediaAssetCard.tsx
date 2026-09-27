@@ -271,7 +271,13 @@ export function MediaAssetCard({
     () => ({
       type: "asset",
       asset,
-      clip: clip ?? (asset && asset.type !== "lut" ? createClipFromAsset(asset) : null),
+      // A hand-placed drop keeps any inpaint framing but starts with it off;
+      // Send to Timeline is the path that restores it.
+      clip:
+        clip ??
+        (asset && asset.type !== "lut"
+          ? createClipFromAsset(asset, { metadataPlacement: "disabled" })
+          : null),
       ...(compositeAsset ? { compositeAsset } : {}),
     }),
     [asset, clip, compositeAsset],

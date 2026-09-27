@@ -224,6 +224,44 @@ describe("metadataTransforms", () => {
     ]);
   });
 
+  it("attaches metadata-derived placement switched off for disabled placement", () => {
+    const asset = createAsset({
+      creationMetadata: {
+        source: "generated",
+        workflowName: "Clip Factory Workflow",
+        inputs: [],
+        maskCropMetadata: {
+          mode: "cropped",
+          crop_position: [240, 135],
+          scale: 0.25,
+        },
+      },
+    });
+
+    const applied = createClipFromAsset(asset);
+    const disabled = createClipFromAsset(asset, {
+      metadataPlacement: "disabled",
+    });
+
+    expect(applied.transformations.map((t) => t.isEnabled)).toEqual([
+      true,
+      true,
+    ]);
+    // Same framing is kept so switching it on matches Send to Timeline.
+    expect(disabled.transformations).toEqual([
+      expect.objectContaining({
+        type: "position",
+        isEnabled: false,
+        parameters: applied.transformations[0].parameters,
+      }),
+      expect.objectContaining({
+        type: "scale",
+        isEnabled: false,
+        parameters: applied.transformations[1].parameters,
+      }),
+    ]);
+  });
+
   it("uses stored audio duration instead of the image fallback", () => {
     const clip = createClipFromAsset(
       createAsset({
