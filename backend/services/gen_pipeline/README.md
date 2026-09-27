@@ -139,11 +139,13 @@ loaded. No sidecar is required.
 
 Loads and parses the sidecar via `load_rules_model_for_workflow` in
 [../workflow_rules/normalize.py](../workflow_rules/normalize.py). The
-resolution itself is implemented by `sidecar_path_for_workflow()` in the
-same module.
+resolution itself is implemented by `find_sidecar()` in
+[../workflow_bundles.py](../workflow_bundles.py).
 
-Sidecar resolution order: `workflows_dir/<stem>.rules.json`, then each of
-`fallback_workflow_dirs` in order. In production these are wired via
+Sidecar resolution order: for `workflows_dir` and then each of
+`fallback_workflow_dirs`, the loose `<dir>/<stem>.rules.json` first, then the
+sidecar beside the workflow in a bundle folder (`<dir>/<bundle>/`). A
+directory without bundle folders resolves exactly as loose-only. In production these are wired via
 `WORKFLOWS_DIR` + `fallback_workflow_dirs=[DEFAULT_WORKFLOWS_DIR]` in
 [../comfyui/comfyui_generate.py](../comfyui/comfyui_generate.py) and
 [../../routers/comfyui.py](../../routers/comfyui.py) to
@@ -159,7 +161,8 @@ Sidecars are loaded for:
   applies preprocessing rules.
 
 `POST /comfy/workflow/save/{filename}` writes modified workflows into
-`WORKFLOWS_DIR`, where they shadow any packaged version.
+`WORKFLOWS_DIR`, where they shadow any packaged version. A workflow that
+already lives in a user bundle is written back into that bundle.
 
 Failure modes:
 

@@ -6,6 +6,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from services.workflow_bundles import find_sidecar, sidecar_name_for_workflow
 from services.workflow_rules.schema import (
     ResolvedWorkflowRules,
     WorkflowRuleWarningModel,
@@ -71,12 +72,8 @@ def default_rules_model() -> ResolvedWorkflowRules:
 
 
 def sidecar_path_for_workflow(workflows_dir: Path, workflow_filename: str) -> Path:
-    workflow_path = Path(workflow_filename)
-    if workflow_path.suffix.lower() == ".json":
-        sidecar_name = f"{workflow_path.stem}.rules.json"
-    else:
-        sidecar_name = f"{workflow_path.name}.rules.json"
-    return workflows_dir / sidecar_name
+    """The loose sidecar location; bundled sidecars go through ``find_sidecar``."""
+    return workflows_dir / sidecar_name_for_workflow(workflow_filename)
 
 
 def normalize_rules_model(
@@ -124,16 +121,9 @@ def _resolve_sidecar_path(
     workflow_filename: str,
     fallback_dirs: list[Path] | None = None,
 ) -> Path | None:
-    primary = sidecar_path_for_workflow(workflows_dir, workflow_filename)
-    if primary.exists():
-        return primary
-
-    for fallback_dir in fallback_dirs or []:
-        candidate = sidecar_path_for_workflow(fallback_dir, workflow_filename)
-        if candidate.exists():
-            return candidate
-
-    return None
+    # Each directory is checked loose-first, then its bundle folders, so
+    # loose ``wf.rules.json`` sidecars resolve exactly as before bundles.
+    return find_sidecar([workflows_dir, *(fallback_dirs or [])], workflow_filename)
 
 
 def load_rules_model_for_workflow(

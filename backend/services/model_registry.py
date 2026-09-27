@@ -18,6 +18,7 @@ from services.download_service import DownloadFileSpec
 from services.runtime_settings import get_comfyui_install_dir
 from services.sam2.sam2_discovery import discover_sam2_models
 from services.sam_audio.sam_audio_discovery import discover_sam_audio_models
+from services.workflow_bundles import find_workflow
 from services.workflow_modes import WORKFLOWS_DIR, get_packaged_workflows_dir
 
 _HF_RESOLVE = "https://huggingface.co/{repo}/resolve/main/{filename}"
@@ -136,13 +137,7 @@ def _is_safe_workflow_filename(filename: str) -> bool:
 
 
 def _resolve_workflow_path(filename: str) -> Path | None:
-    main = WORKFLOWS_DIR / filename
-    if main.exists():
-        return main
-    default = get_packaged_workflows_dir() / filename
-    if default.exists():
-        return default
-    return None
+    return find_workflow([WORKFLOWS_DIR, get_packaged_workflows_dir()], filename)
 
 
 def _normalize_relative_directory(directory: str) -> str:

@@ -56,6 +56,8 @@ export interface WorkflowOption {
   groupId?: string;
   groupName?: string;
   groupOrder?: number;
+  /** The workflow ships a how-to document (see `getWorkflowHowTo`). */
+  hasHowTo?: boolean;
 }
 
 export interface PreviewAnimation {

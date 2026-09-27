@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, File, Request, Response, UploadFile, WebSocket
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from services.comfyui import comfyui_generate as comfyui_generate_service
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,6 @@ from services.workflow_rules import (
     load_rules_model_for_workflow,
     matches_input_presence_condition,
     normalize_rules_model,
-    sidecar_path_for_workflow,
 )
 from services.workflow_rules.schema import dump_resolved_rules, dump_warning_models
 from services.workflow_rules.object_info import (
@@ -82,6 +81,17 @@ from services.comfyui.comfyui_generate import (  # noqa: E402
     WORKFLOWS_DIR,
 )
 from services.workflow_modes import get_packaged_workflows_dir
+from services.workflow_bundles import (
+    asset_content_type,
+    build_how_to_document,
+    find_how_to,
+    find_sidecar,
+    find_workflow,
+    iter_root_workflows,
+    resolve_confined_file,
+    resolve_shared_file,
+    resolve_user_write_path,
+)
 
 DUMMY_PHOTO_PATH = DEFAULT_WORKFLOWS_DIR.parent / "dummy_photo.jpeg"
 WORKFLOW_MENU_CONFIG_PATH = (
@@ -374,27 +384,33 @@ def _is_safe_workflow_filename(filename: str) -> bool:
     return not (".." in filename or "/" in filename or "\\" in filename)
 
 
+def _workflow_roots() -> list[Path]:
+    """User workflows first, then the packaged set for the active mode."""
+    return [WORKFLOWS_DIR, get_packaged_workflows_dir()]
+
+
+def _how_to_roots() -> list[Path]:
+    """Workflow roots plus the default packaged set.
+
+    How-to documents and shared assets are mode-neutral, so the high-VRAM set
+    falls back to the default set's copies instead of duplicating them.
+    """
+    roots = _workflow_roots()
+    if DEFAULT_WORKFLOWS_DIR not in roots:
+        roots.append(DEFAULT_WORKFLOWS_DIR)
+    return roots
+
+
 def _resolve_workflow_path(filename: str) -> Path | None:
-    """Return the path to the workflow, checking main dir first then defaults."""
-    main = WORKFLOWS_DIR / filename
-    if main.exists():
-        return main
-    default = get_packaged_workflows_dir() / filename
-    if default.exists():
-        return default
-    return None
+    """Return the path to the workflow, checking main dir first then defaults.
+
+    Within each directory a loose file wins over a bundled one.
+    """
+    return find_workflow(_workflow_roots(), filename)
 
 
 def _resolve_workflow_sidecar_path(filename: str) -> Path | None:
-    main = sidecar_path_for_workflow(WORKFLOWS_DIR, filename)
-    if main.exists():
-        return main
-
-    default = sidecar_path_for_workflow(get_packaged_workflows_dir(), filename)
-    if default.exists():
-        return default
-
-    return None
+    return find_sidecar(_workflow_roots(), filename)
 
 
 def _classify_uploaded_workflow_filename(filename: str) -> dict[str, str]:
@@ -926,6 +942,13 @@ def _parse_workflow_inputs(workflow: dict) -> list[dict]:
 # Workflow Management
 # ---------------------------------------------------------------------------
 
+def _mark_how_to(workflow_item: dict[str, Any], how_to_roots: list[Path]) -> None:
+    # Only set when true so list items for workflows without a how-to are
+    # unchanged from the pre-bundle response.
+    if find_how_to(how_to_roots, workflow_item["id"]) is not None:
+        workflow_item["has_how_to"] = True
+
+
 @router.get("/workflow/list")
 async def list_workflows():
     """Returns a list of available workflows from main and default directories.
@@ -937,10 +960,13 @@ async def list_workflows():
         workflows = []
         workflow_menu_metadata = _load_workflow_menu_metadata()
 
-        # Main dir first – these take precedence.
+        how_to_roots = _how_to_roots()
+
+        # Main dir first – these take precedence. Within a dir, loose files
+        # come before bundle folders.
         if WORKFLOWS_DIR.exists():
-            for path in WORKFLOWS_DIR.glob("*.json"):
-                if path.name.endswith(".rules.json"):
+            for path in iter_root_workflows(WORKFLOWS_DIR):
+                if path.name in seen:
                     continue
                 seen.add(path.name)
                 name = path.stem
@@ -954,16 +980,16 @@ async def list_workflows():
                 workflow_item.update(workflow_menu_metadata.get(path.name, {}))
                 if workflow_item.get("hidden"):
                     continue
+                _mark_how_to(workflow_item, how_to_roots)
                 workflows.append(workflow_item)
 
         # Default dir – only add workflows not already seen.
         packaged_workflows_dir = get_packaged_workflows_dir()
         if packaged_workflows_dir.exists():
-            for path in packaged_workflows_dir.glob("*.json"):
-                if path.name.endswith(".rules.json"):
-                    continue
+            for path in iter_root_workflows(packaged_workflows_dir):
                 if path.name in seen:
                     continue
+                seen.add(path.name)
                 name = path.stem
                 rules, _ = load_rules_model_for_workflow(packaged_workflows_dir, path.name)
                 if rules.name:
@@ -972,6 +998,7 @@ async def list_workflows():
                 workflow_item.update(workflow_menu_metadata.get(path.name, {}))
                 if workflow_item.get("hidden"):
                     continue
+                _mark_how_to(workflow_item, how_to_roots)
                 workflows.append(workflow_item)
 
         workflows.sort(key=_workflow_list_sort_key)
@@ -1069,7 +1096,7 @@ async def save_workflow_content(filename: str, request: Request):
 
     try:
         WORKFLOWS_DIR.mkdir(parents=True, exist_ok=True)
-        path = WORKFLOWS_DIR / filename
+        path = resolve_user_write_path(WORKFLOWS_DIR, filename)
         path.write_text(json.dumps(workflow_payload, indent=2), encoding="utf-8")
 
         object_info_saved = False
@@ -1166,7 +1193,7 @@ async def upload_workflow_files(files: list[UploadFile] = File(...)):
                     details={"filename": filename, "reason": exc.msg},
                 )
 
-            path = WORKFLOWS_DIR / filename
+            path = resolve_user_write_path(WORKFLOWS_DIR, filename)
             path.write_text(json.dumps(parsed_json, indent=2), encoding="utf-8")
 
             uploaded.append({
@@ -1225,6 +1252,73 @@ async def get_workflow_rules(filename: str):
             retryable=True,
             details={"reason": str(exc)},
         )
+
+
+def _asset_response(path: Path | None) -> Response:
+    content_type = asset_content_type(path) if path is not None else None
+    if path is None or content_type is None:
+        return error_response(
+            404,
+            "workflow_asset_not_found",
+            "Workflow asset not found",
+            retryable=False,
+        )
+    return FileResponse(
+        path,
+        media_type=content_type,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+@router.get("/workflow/howto/{filename}")
+async def get_workflow_how_to(filename: str):
+    """Returns a workflow's how-to as render fragments with includes resolved."""
+    if not _is_safe_workflow_filename(filename):
+        return error_response(
+            400,
+            "invalid_workflow_filename",
+            "Invalid workflow filename",
+            retryable=False,
+        )
+
+    roots = _how_to_roots()
+    location = find_how_to(roots, filename)
+    if location is None:
+        return error_response(
+            404,
+            "workflow_how_to_not_found",
+            "Workflow has no how-to",
+            retryable=False,
+        )
+
+    try:
+        fragments = build_how_to_document(location, shared_roots=roots)
+    except (OSError, UnicodeDecodeError) as exc:
+        return error_response(
+            500,
+            "workflow_how_to_read_failed",
+            "Failed to read the workflow how-to",
+            retryable=True,
+            details={"reason": str(exc)},
+        )
+    return {"workflow_id": filename, "fragments": fragments}
+
+
+@router.get("/workflow/howto/{filename}/assets/{asset_path:path}")
+async def get_workflow_how_to_asset(filename: str, asset_path: str):
+    """Serves media from the bundle that owns the workflow's how-to."""
+    if not _is_safe_workflow_filename(filename):
+        return _asset_response(None)
+    location = find_how_to(_how_to_roots(), filename)
+    if location is None or location.bundle_dir is None:
+        return _asset_response(None)
+    return _asset_response(resolve_confined_file(location.bundle_dir, asset_path))
+
+
+@router.get("/workflow/shared/{asset_path:path}")
+async def get_workflow_shared_asset(asset_path: str):
+    """Serves media from the ``_shared`` libraries (``shared:`` refs)."""
+    return _asset_response(resolve_shared_file(_how_to_roots(), asset_path))
 
 
 @router.post("/workflow/rules/resolve")

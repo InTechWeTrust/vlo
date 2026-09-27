@@ -11,12 +11,15 @@ import {
   getWorkflowMenuDefinition,
   getWorkflowRules,
   cancelGenerations,
+  getWorkflowHowTo,
   listWorkflows,
   resolveWorkflowRules,
   saveWorkflowContent,
   syncObjectInfo,
   updateConfig,
   uploadWorkflowJsonFiles,
+  workflowHowToAssetUrl,
+  workflowSharedAssetUrl,
 } from "../comfyuiApi";
 import type { GenerationRequest } from "../../pipeline/types";
 
@@ -452,6 +455,62 @@ describe("comfyuiApi workflow endpoints", () => {
       groupName: "Group",
       groupOrder: 3,
     });
+  });
+
+  it("listWorkflows only flags workflows that have a how-to", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse({
+        body: [
+          { id: "plain.json", name: "Plain" },
+          { id: "doc.json", name: "Documented", has_how_to: true },
+        ],
+      }),
+    );
+
+    const result = await listWorkflows();
+
+    expect(result).toEqual([
+      { id: "plain.json", name: "Plain" },
+      { id: "doc.json", name: "Documented", hasHowTo: true },
+    ]);
+  });
+
+  it("getWorkflowHowTo keeps well-formed fragments and drops the rest", async () => {
+    fetchMock.mockResolvedValueOnce(
+      makeResponse({
+        body: {
+          workflow_id: "wf.json",
+          fragments: [
+            { kind: "markdown", markdown: "# Hi", base: "bundle:" },
+            { kind: "markdown", markdown: "Loose", base: null },
+            { kind: "missing", src: "shared:lib/a.md", reason: "not_found" },
+            { kind: "markdown" },
+            "junk",
+          ],
+        },
+      }),
+    );
+
+    const result = await getWorkflowHowTo("my wf.json");
+
+    expect(lastFetchUrl()).toContain("/comfy/workflow/howto/my%20wf.json");
+    expect(result).toEqual({
+      workflowId: "my wf.json",
+      fragments: [
+        { kind: "markdown", markdown: "# Hi", base: "bundle:" },
+        { kind: "markdown", markdown: "Loose", base: null },
+        { kind: "missing", src: "shared:lib/a.md", reason: "not_found" },
+      ],
+    });
+  });
+
+  it("builds encoded how-to asset URLs", () => {
+    expect(workflowHowToAssetUrl("wf.json", "assets/a b.png")).toMatch(
+      /\/comfy\/workflow\/howto\/wf\.json\/assets\/assets\/a%20b\.png$/,
+    );
+    expect(workflowSharedAssetUrl("inpainting/mask.webp")).toMatch(
+      /\/comfy\/workflow\/shared\/inpainting\/mask\.webp$/,
+    );
   });
 
   it("getWorkflowContent and saveWorkflowContent hit the content endpoint", async () => {

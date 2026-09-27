@@ -70,6 +70,7 @@ import {
   normalizeAspectRatioSelection,
 } from "./utils/aspectRatioSelection";
 import { WorkflowDependencyResolver } from "./components/WorkflowDependencyResolver";
+import { WorkflowHowToButton } from "./components/WorkflowHowTo";
 import { ComfyuiLaunchExitDetails } from "./components/ComfyuiLaunchExitDetails";
 import { ComfyuiLaunchProgress } from "./components/ComfyuiLaunchProgress";
 import { useProjectStore } from "../project";
@@ -565,6 +566,11 @@ export function GenerationPanel() {
     ? workflowMenuLeaves.find((workflow) => workflow.id === selectedWorkflowId)
         ?.label ?? selectedWorkflowId
     : null;
+  const selectedWorkflowHasHowTo = selectedWorkflowId
+    ? availableWorkflows.some(
+        (workflow) => workflow.id === selectedWorkflowId && workflow.hasHowTo,
+      )
+    : false;
   const workflowMenuLayout = useMenuTreeLayout(
     workflowMenuDefinition,
     workflowLeafIds,
@@ -1375,6 +1381,12 @@ export function GenerationPanel() {
             >
               {selectedWorkflowLabel}
             </Typography>
+            {selectedWorkflowHasHowTo ? (
+              <WorkflowHowToButton
+                workflowId={selectedWorkflowId}
+                workflowLabel={selectedWorkflowLabel ?? selectedWorkflowId}
+              />
+            ) : null}
           </Box>
         ) : (
           <NestedMenuTree

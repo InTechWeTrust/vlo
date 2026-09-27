@@ -31,6 +31,92 @@ When editing a packaged workflow in the app, saving produces a user copy in
 `backend/assets/workflows/` that thereafter shadows the packaged version —
 the original in `.config/default_workflows/` is never mutated.
 
+### Bundles
+
+A workflow can also live in a **bundle**: a direct subfolder of either
+directory that keeps the workflow, its sidecar, a how-to document and its
+assets together, so the folder can be shared as a unit.
+
+```text
+backend/assets/workflows/
+├── klein_multi/                  ← bundle
+│   ├── vlo_klein_multi.json      ← id is still "vlo_klein_multi.json"
+│   ├── vlo_klein_multi.rules.json
+│   ├── README.md                 ← how-to
+│   └── assets/
+│       └── example.webp
+└── my_workflow.json              ← loose workflows keep working unchanged
+```
+
+- The workflow id is the bare filename wherever the file lives, so moving a
+  workflow into a bundle does not change saved references.
+- Within a directory, loose files always win: a loose `wf.json` or
+  `wf.rules.json` is used before a bundled one. A directory with no bundle
+  folders behaves exactly as before bundles existed.
+- Only `*.json` files at the top of a bundle are workflows. `bundle.json` is
+  reserved, and folders starting with `_` or `.` are never bundles.
+- Saving or uploading a workflow that already lives in a user bundle writes
+  it back into that bundle.
+
+---
+
+## How-to Documents
+
+A workflow with a how-to gets an info icon beside its name in the Generate
+panel. The how-to is Markdown, found in this order (user directory first,
+then packaged; the high-VRAM set falls back to the default set's docs):
+
+1. A loose `<stem>.howto.md` next to a loose workflow. It may use `shared:`
+   refs but has no folder of its own for relative assets.
+2. In the workflow's bundle, `<stem>.howto.md`, else the bundle's `README.md`
+   (useful when one bundle holds several workflows).
+
+Rules for what a how-to may refer to:
+
+| Ref                                | Resolves to                                      |
+| ---------------------------------- | ------------------------------------------------ |
+| `assets/shot.png` (relative)       | a file inside the document's own bundle          |
+| `shared:inpainting/crop-vs-full.png` | a file in a `_shared/` library (see below)     |
+| `https://…`, `mailto:`             | a link only — remote media is never embedded     |
+| anything else                      | shown as a missing reference                     |
+
+- Paths cannot leave their bundle or library (`..` past the root, absolute
+  paths, hidden files and symlinks pointing outside are refused).
+- Embeddable media: `.png`, `.jpg`/`.jpeg`, `.webp`, `.gif`, `.avif`, `.mp4`,
+  `.webm`. SVG is not served.
+- Videos use image syntax — `![Walkthrough](assets/walkthrough.webm)` renders
+  a player. Keep packaged videos short and compressed; they are committed to
+  git.
+- Raw HTML in the Markdown is not rendered.
+- Section links use GitHub-style heading slugs (`[Crop mode](#mask-crop-mode)`)
+  and work across included documents. A repeated heading gets `-1`, `-2`...
+  in document order, includes counted.
+
+### Shared libraries and includes
+
+`_shared/<library>/` in either directory holds documents and media any how-to
+can use, for explanations that apply to a family of workflows (every inpaint
+workflow reads its source video and mask the same way). User libraries
+override packaged ones file by file.
+
+A how-to pulls a shared document in with a directive on its own line:
+
+```md
+::include{src="shared:inpainting/mask-inputs.md"}
+```
+
+- An included document's relative refs resolve inside its own library, not
+  the including bundle.
+- A bundle may also include its own documents with a relative path
+  (`::include{src="docs/tips.md"}`).
+- Includes are one level deep, and an include that cannot be found renders as
+  a visible "missing section" warning.
+- Packaged library names are effectively public: other people's bundles may
+  refer to them, so avoid renaming them.
+
+See the packaged `vlo_ltx2_5_inpaint.howto.md` and
+`_shared/inpainting/` for a working example.
+
 ---
 
 ## Root Structure (V3)

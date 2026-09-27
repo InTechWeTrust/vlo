@@ -460,6 +460,7 @@ interface WorkflowListResponseItem {
   group_id?: string;
   group_name?: string;
   group_order?: number;
+  has_how_to?: boolean;
 }
 
 export interface WorkflowUploadResultItem {
@@ -494,7 +495,77 @@ export async function listWorkflows(): Promise<WorkflowOption[]> {
     ...(typeof workflow.group_order === "number"
       ? { groupOrder: workflow.group_order }
       : {}),
+    ...(workflow.has_how_to === true ? { hasHowTo: true } : {}),
   }));
+}
+
+/**
+ * One piece of a resolved how-to. `base` is where the fragment's relative
+ * refs resolve (`"bundle:<dir>/"` or `"shared:<dir>/"`); `null` means the
+ * document has no bundle, so only `shared:` and external refs work.
+ */
+export type WorkflowHowToFragment =
+  | { kind: "markdown"; markdown: string; base: string | null }
+  | { kind: "missing"; src: string; reason: string };
+
+export interface WorkflowHowTo {
+  workflowId: string;
+  fragments: WorkflowHowToFragment[];
+}
+
+function parseHowToFragment(value: unknown): WorkflowHowToFragment | null {
+  if (!isRecord(value)) return null;
+  if (value.kind === "markdown" && typeof value.markdown === "string") {
+    return {
+      kind: "markdown",
+      markdown: value.markdown,
+      base: typeof value.base === "string" ? value.base : null,
+    };
+  }
+  if (value.kind === "missing" && typeof value.src === "string") {
+    return {
+      kind: "missing",
+      src: value.src,
+      reason: typeof value.reason === "string" ? value.reason : "not_found",
+    };
+  }
+  return null;
+}
+
+export async function getWorkflowHowTo(
+  workflowId: string,
+  signal?: AbortSignal,
+): Promise<WorkflowHowTo> {
+  const resp = await fetch(
+    `${COMFY_API}/workflow/howto/${encodeURIComponent(workflowId)}`,
+    { signal },
+  );
+  if (!resp.ok) {
+    await throwRequestError("Workflow how-to fetch", resp);
+  }
+  const payload: unknown = await resp.json();
+  const rawFragments =
+    isRecord(payload) && Array.isArray(payload.fragments)
+      ? payload.fragments
+      : [];
+  return {
+    workflowId,
+    fragments: rawFragments
+      .map(parseHowToFragment)
+      .filter((fragment) => fragment !== null),
+  };
+}
+
+function encodePath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+export function workflowHowToAssetUrl(workflowId: string, path: string): string {
+  return `${COMFY_API}/workflow/howto/${encodeURIComponent(workflowId)}/assets/${encodePath(path)}`;
+}
+
+export function workflowSharedAssetUrl(path: string): string {
+  return `${COMFY_API}/workflow/shared/${encodePath(path)}`;
 }
 
 export async function getWorkflowMenuDefinition(

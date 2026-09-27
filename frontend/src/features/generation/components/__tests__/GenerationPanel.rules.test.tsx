@@ -645,6 +645,32 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(handleWorkflowBack).toHaveBeenCalledOnce();
   });
 
+  it("shows the how-to icon only for workflows that ship a how-to", () => {
+    const hook = useGenerationPanel as unknown as ReturnType<typeof vi.fn>;
+    hook.mockReturnValue(
+      makeHookState({
+        selectedWorkflowId: "wf.json",
+        availableWorkflows: [{ id: "wf.json", name: "Workflow" }],
+      }),
+    );
+    const { unmount } = render(<GenerationPanel />);
+    expect(
+      screen.queryByRole("button", { name: "How to use this workflow" }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    hook.mockReturnValue(
+      makeHookState({
+        selectedWorkflowId: "wf.json",
+        availableWorkflows: [{ id: "wf.json", name: "Workflow", hasHowTo: true }],
+      }),
+    );
+    render(<GenerationPanel />);
+    expect(
+      screen.getByRole("button", { name: "How to use this workflow" }),
+    ).toBeInTheDocument();
+  });
+
   it("moves inferred-input and rule warnings to debug logging", () => {
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
