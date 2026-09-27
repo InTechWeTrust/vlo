@@ -478,12 +478,13 @@ def _packaged_how_to_workflow_ids() -> list[str]:
     )
 
 
-def test_packaged_inpaint_workflows_ship_how_tos():
+def test_packaged_workflows_ship_how_tos():
     assert {
         "vlo_VACE_inpaint.json",
         "vlo_ltx2_5_inpaint.json",
         "vlo_minimax_h3_inpaint.json",
         "vlo_minimax_h3_inpaint_flf2va.json",
+        "vlo_minimax_h3_ttm.json",
     } <= set(_packaged_how_to_workflow_ids())
 
 
