@@ -797,11 +797,11 @@
         "Node name for S&R": "RandomNoise"
       },
       "widgets_values": [
-        1,
+        6332,
         "randomize"
       ],
       "widgets_values_named": {
-        "noise_seed": 1,
+        "noise_seed": 6332,
         "control_after_generate": "randomize"
       }
     },

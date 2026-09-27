@@ -252,7 +252,7 @@
         ]
       },
       "widgets_values": [
-        959948902156062,
+        6332,
         "euler",
         "simple",
         1,
@@ -262,7 +262,7 @@
       ],
       "widgets_values_named": {
         "resize_type.multiplier": 4,
-        "seed": 959948902156062,
+        "seed": 6332,
         "sampler_name": "euler",
         "scheduler": "simple",
         "denoise": 1,
@@ -786,8 +786,8 @@
               "ver": "0.27.0"
             },
             "widgets_values": [
-              959948902156062,
-              "fixed",
+              6332,
+              "randomize",
               1,
               1,
               "euler",
@@ -795,8 +795,8 @@
               1
             ],
             "widgets_values_named": {
-              "seed": 959948902156062,
-              "control_after_generate": "fixed",
+              "seed": 6332,
+              "control_after_generate": "randomize",
               "steps": 1,
               "cfg": 1,
               "sampler_name": "euler",
