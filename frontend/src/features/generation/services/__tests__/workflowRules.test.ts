@@ -540,6 +540,67 @@ describe("resolvePresentedInputs", () => {
     expect(result.inputs[0]?.label).toBe("Primary Prompt");
   });
 
+  function makeCombinedEncoderInputs(): WorkflowInput[] {
+    // Shape of TextEncodeQwenImage21: one node owns both prompts and feeds
+    // both the sampler's positive and negative sockets.
+    return [
+      {
+        nodeId: "459:474",
+        classType: "TextEncodeQwenImage21",
+        inputType: "text",
+        param: "prompt",
+        label: "Prompt",
+        currentValue: "",
+        origin: "inferred",
+      },
+      {
+        nodeId: "459:474",
+        classType: "TextEncodeQwenImage21",
+        inputType: "text",
+        param: "negative_prompt",
+        label: "Negative Prompt",
+        currentValue: "",
+        origin: "inferred",
+      },
+    ];
+  }
+
+  it("keeps each label on a node that owns several text inputs", () => {
+    // No wiring to go on (the sampler sits inside a subgraph), so the only
+    // role hint is the "Negative Prompt" label on one of the two inputs.
+    const result = resolvePresentedInputs(makeCombinedEncoderInputs(), {
+      version: 1,
+      nodes: {},
+      slots: {},
+    });
+
+    expect(
+      result.inputs.map((input) => [input.param, input.label]),
+    ).toEqual([
+      ["prompt", "Prompt"],
+      ["negative_prompt", "Negative Prompt"],
+    ]);
+  });
+
+  it("scopes a present naming one param to that input on a multi-input node", () => {
+    const result = resolvePresentedInputs(makeCombinedEncoderInputs(), {
+      version: 1,
+      nodes: {
+        "459:474": {
+          present: { label: "Edit instruction", param: "prompt" },
+        },
+      },
+      slots: {},
+    });
+
+    expect(
+      result.inputs.map((input) => [input.param, input.label, input.origin]),
+    ).toEqual([
+      ["prompt", "Edit instruction", "rule"],
+      ["negative_prompt", "Negative Prompt", "inferred"],
+    ]);
+  });
+
   it("attaches node selection config to direct video inputs", () => {
     const result = resolvePresentedInputs(makeInferredInputs(), {
       version: 1,
@@ -1440,6 +1501,79 @@ describe("resolvePresentedInputs", () => {
     expect(widgets[0]?.config.trueValue).toBe("on");
     expect(widgets[0]?.config.falseValue).toBe("off");
     expect(widgets[0]?.currentValue).toBe(false);
+  });
+
+  it("resolves rule widgets inside a subgraph from graph data alone", () => {
+    // The panel syncs graph data without an API workflow, so a widget rule
+    // addressed by execution id has to be found through the subgraph.
+    const graphData = {
+      nodes: [{ id: 30, type: "sampler-subgraph", inputs: [], widgets_values: [999] }],
+      definitions: {
+        subgraphs: [
+          {
+            id: "sampler-subgraph",
+            name: "Sampler",
+            inputNode: { id: -10 },
+            inputs: [{ id: "in-seed", name: "noise_seed", type: "INT", linkIds: [2] }],
+            nodes: [
+              {
+                id: 5,
+                type: "RandomNoise",
+                inputs: [
+                  {
+                    name: "noise_seed",
+                    type: "INT",
+                    widget: { name: "noise_seed" },
+                    link: 2,
+                  },
+                ],
+                // Stale inner value: the promoted instance value executes.
+                widgets_values: [1, "randomize"],
+              },
+            ],
+            links: [
+              { id: 2, origin_id: -10, origin_slot: 0, target_id: 5, target_slot: 0 },
+            ],
+          },
+        ],
+      },
+    };
+
+    const widgets = resolveWidgetInputs(
+      null,
+      {
+        version: 1,
+        nodes: {
+          "30:5": {
+            widgets: {
+              noise_seed: {
+                label: "Seed",
+                control_after_generate: true,
+                value_type: "int",
+              },
+            },
+          },
+        },
+        slots: {},
+      },
+      {
+        graphData,
+        objectInfo: {
+          RandomNoise: {
+            input: {
+              required: {
+                noise_seed: ["INT", { default: 0, control_after_generate: true }],
+              },
+            },
+          },
+        },
+      },
+    );
+
+    expect(widgets.map((widget) => [widget.nodeId, widget.param])).toEqual([
+      ["30:5", "noise_seed"],
+    ]);
+    expect(widgets[0]?.currentValue).toBe(999);
   });
 
   it("omits hidden noise widgets while keeping the visible generation seed", () => {

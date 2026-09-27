@@ -8,6 +8,7 @@ import {
   evaluateCondition,
   type FrontendRuleState,
 } from "../frontendRuleState";
+import { buildFlatGraphNodeIndex, type FlatGraphNode } from "../graphSubgraphs";
 import { normalizeWorkflowRules } from "./normalize";
 import { toFiniteNumber, toPositiveInteger } from "./shared";
 import type {
@@ -55,18 +56,25 @@ interface ComfyAppWithGraph {
   rootGraph?: LiteGraphGraph | null;
 }
 
+// Rules address nodes inside subgraphs by execution id (`<instance>:<inner>`),
+// so lookups go through the subgraph-aware flat index rather than the root
+// `nodes` array. One index per graph object: the resolver asks once per widget.
+const flatGraphIndexCache = new WeakMap<
+  Record<string, unknown>,
+  Map<string, FlatGraphNode>
+>();
+
 function resolveGraphNode(
   graphData: Record<string, unknown> | null | undefined,
   nodeId: string,
-): Record<string, unknown> | null {
-  const nodes = graphData?.nodes;
-  if (!Array.isArray(nodes)) return null;
-
-  const node = nodes.find((candidate) => {
-    if (!isRecord(candidate)) return false;
-    return String(candidate.id) === nodeId;
-  });
-  return isRecord(node) ? node : null;
+): FlatGraphNode | null {
+  if (!graphData) return null;
+  let index = flatGraphIndexCache.get(graphData);
+  if (!index) {
+    index = buildFlatGraphNodeIndex(graphData);
+    flatGraphIndexCache.set(graphData, index);
+  }
+  return index.get(nodeId) ?? null;
 }
 
 function resolveInputSpec(
@@ -221,7 +229,12 @@ function resolveGraphWidgetValue(
   const graphNode = resolveGraphNode(graphData, nodeId);
   if (!graphNode) return undefined;
 
-  const widgetsValues = graphNode.widgets_values;
+  // A promoted widget executes the value held by the enclosing instance, not
+  // the (possibly stale) one saved on the inner node.
+  const promoted = graphNode.promotedValues.get(param);
+  if (promoted !== undefined) return promoted;
+
+  const widgetsValues = graphNode.node.widgets_values;
   if (!Array.isArray(widgetsValues)) return undefined;
 
   const classInfo = resolveClassInfo(objectInfo, classType);
@@ -274,7 +287,7 @@ function getGraphParamValue(
   const graphNode = resolveGraphNode(options.graphData, ref.node_id);
   const classType =
     workflowClassType ??
-    (typeof graphNode?.type === "string" ? graphNode.type : undefined);
+    (typeof graphNode?.node.type === "string" ? graphNode.node.type : undefined);
 
   return resolveGraphWidgetValue(
     options.graphData,
@@ -740,8 +753,8 @@ export function resolveWidgetInputsFromRules(
     const classType =
       workflowNode && typeof workflowNode.class_type === "string"
         ? workflowNode.class_type
-        : typeof graphNode?.type === "string"
-          ? graphNode.type
+        : typeof graphNode?.node.type === "string"
+          ? graphNode.node.type
           : undefined;
 
     for (const [param, entry] of Object.entries(widgetDefs)) {
@@ -815,7 +828,7 @@ export function resolveWidgetInputsFromRules(
             workflowTitle: workflowNode?._meta && isRecord(workflowNode._meta)
               ? workflowNode._meta.title
               : undefined,
-            graphTitle: graphNode?.title,
+            graphTitle: graphNode?.node.title,
             ruleTitle: nodeRule.node_title,
             classType,
             objectInfo: options.objectInfo,

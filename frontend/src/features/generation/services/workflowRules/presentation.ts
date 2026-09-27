@@ -212,6 +212,17 @@ function resolveConditioningRoles(
     directlyResolvedNodeIds.add(sourceNodeId);
   }
 
+  // A node with several text inputs (a combined positive/negative encoder)
+  // already names each one; a node-wide role would relabel them all alike.
+  const textInputCounts = new Map<string, number>();
+  for (const input of inferredInputs) {
+    if (input.inputType !== "text") continue;
+    textInputCounts.set(input.nodeId, (textInputCounts.get(input.nodeId) ?? 0) + 1);
+  }
+  for (const [nodeId, count] of textInputCounts) {
+    if (count > 1) roles.delete(nodeId);
+  }
+
   return roles;
 }
 
@@ -364,14 +375,26 @@ export function resolvePresentedInputsFromRules(
 
   for (const inferred of inferredInputs) {
     const nodeRule = ruleNodes[inferred.nodeId];
-    const present = nodeRule?.present;
+    const nodePresent = nodeRule?.present;
     const selectionConfig = toSelectionConfig(nodeRule?.selection ?? undefined);
     if (nodeRule?.ignore) {
       continue;
     }
-    if (present?.enabled === false) {
+    if (nodePresent?.enabled === false) {
       continue;
     }
+    // On a node with several inferred inputs, a `present` naming one of their
+    // params describes that input alone; applying it to the siblings would
+    // retarget them all at the same param.
+    const siblings = inferredByNodeId.get(inferred.nodeId) ?? [];
+    const presentTargetsSibling =
+      siblings.length > 1 &&
+      !!nodePresent?.param &&
+      siblings.some((sibling) => sibling.param === nodePresent.param);
+    const present =
+      presentTargetsSibling && inferred.param !== nodePresent?.param
+        ? undefined
+        : nodePresent;
 
     // Nodes with a derived mask rule are hidden from the UI; they are
     // auto-populated during preprocessing with the rendered mask.

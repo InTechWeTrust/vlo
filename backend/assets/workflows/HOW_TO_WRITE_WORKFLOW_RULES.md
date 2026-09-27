@@ -1181,6 +1181,14 @@ user can drag out.
 | `section_id`                               | autodetected | Top-level section override (defaults to `inputs` for media and `prompts` for text) |
 | `group_id` / `group_title` / `group_order` | —            | Grouping within a section (see below)                                              |
 
+Some nodes infer several inputs. `TextEncodeQwenImage21`, for example, owns
+both `prompt` and `negative_prompt`. On such a node, a `present` whose `param`
+names one of them applies to that input only, and the siblings keep their
+inferred labels. Without a matching `param`, `present` applies to every input
+on the node, and `enabled: false` always hides all of them. Nodes like this
+are also left out of positive/negative role labelling, because each input
+already carries its own name.
+
 `section_id` chooses the top-level bucket (`inputs`, `prompts`, `settings`,
 or a custom id such as `masking`). `group_*` then organizes related entries
 inside that section.
