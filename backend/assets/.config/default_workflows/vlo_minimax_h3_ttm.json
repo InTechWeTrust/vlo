@@ -30,8 +30,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloMemoryLoadVideo",
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "title": "Reference video (cut and drag)",
@@ -73,8 +73,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloMemoryLoadVideo",
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "title": "Motion mask video",
@@ -1368,8 +1368,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloTimeToMove",
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1828,7 +1828,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloSaveVideo",
-        "cnr_id": "ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [

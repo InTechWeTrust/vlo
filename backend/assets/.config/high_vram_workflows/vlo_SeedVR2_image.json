@@ -127,7 +127,9 @@
         }
       ],
       "properties": {
-        "Node name for S&R": "vloMemoryLoadImage"
+        "Node name for S&R": "vloMemoryLoadImage",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
       },
       "widgets_values": [
         "024ed2c3-141e-4a2a-8858-a7e4e4e35a4f.png",

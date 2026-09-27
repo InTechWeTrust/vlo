@@ -875,7 +875,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloSaveVideo",
-        "cnr_id": "ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1224,8 +1225,8 @@
       ],
       "title": "Load Video",
       "properties": {
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "Node name for S&R": "vloMemoryLoadVideo",
         "widget_ue_connectable": {}
       },
@@ -1262,8 +1263,8 @@
         }
       ],
       "properties": {
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "Node name for S&R": "vloMemoryLoadVideo",
         "widget_ue_connectable": {}
       },
@@ -1866,8 +1867,8 @@
         }
       ],
       "properties": {
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "eda5d990380657f2b1472d1ca68a486ed7f3c2a1",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "Node name for S&R": "vloTimeToMove",
         "widget_ue_connectable": {}
       },

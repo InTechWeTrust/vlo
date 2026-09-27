@@ -649,7 +649,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloMiniMaxH3ReferenceToVideoBatch",
-        "aux_id": "PxTicks/ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -907,7 +908,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloSaveVideo",
-        "cnr_id": "ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1169,7 +1171,8 @@
       "title": "Reference Images",
       "properties": {
         "Node name for S&R": "vloMemoryLoadImageBatch",
-        "aux_id": "PxTicks/ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1247,7 +1250,8 @@
       "title": "Reference Videos",
       "properties": {
         "Node name for S&R": "vloMemoryLoadVideoBatch",
-        "aux_id": "PxTicks/ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1309,7 +1313,8 @@
       "title": "Standalone Reference Audio",
       "properties": {
         "Node name for S&R": "vloMemoryLoadAudioBatch",
-        "aux_id": "PxTicks/ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [

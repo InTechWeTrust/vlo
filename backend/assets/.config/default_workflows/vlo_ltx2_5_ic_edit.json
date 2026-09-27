@@ -2301,7 +2301,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloSaveVideo",
-        "cnr_id": "ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [

@@ -112,7 +112,9 @@
         }
       ],
       "properties": {
-        "Node name for S&R": "vloMemoryLoadVideo"
+        "Node name for S&R": "vloMemoryLoadVideo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
       },
       "widgets_values": [
         "generation-selection-1783940010586.mp4",
@@ -485,7 +487,9 @@
         }
       ],
       "properties": {
-        "Node name for S&R": "vloSaveVideo"
+        "Node name for S&R": "vloSaveVideo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
       },
       "widgets_values": [
         30,

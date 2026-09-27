@@ -355,7 +355,8 @@
       "title": "Reference Images",
       "properties": {
         "Node name for S&R": "vloMemoryLoadImageBatch",
-        "aux_id": "PxTicks/ComfyUI-vlo"
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
       },
       "widgets_values": [
         [],
@@ -506,7 +507,8 @@
       "title": "Reference Fan Out",
       "properties": {
         "Node name for S&R": "vloListFanOut",
-        "aux_id": "PxTicks/ComfyUI-vlo"
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0"
       },
       "widgets_values": []
     },

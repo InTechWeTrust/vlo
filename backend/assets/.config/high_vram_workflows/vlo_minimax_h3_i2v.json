@@ -688,8 +688,8 @@
       "title": "Start Frame",
       "properties": {
         "Node name for S&R": "vloMemoryLoadImage",
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -867,8 +867,8 @@
       "title": "End Frame",
       "properties": {
         "Node name for S&R": "vloMemoryLoadImage",
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "1626905a17eed0dac58016fbe03597c3d0576acc",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1647,7 +1647,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloSaveVideo",
-        "cnr_id": "ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [

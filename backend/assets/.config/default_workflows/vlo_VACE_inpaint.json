@@ -1058,7 +1058,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloSaveVideo",
-        "cnr_id": "ComfyUI-vlo",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1208,8 +1209,8 @@
       "title": "Load Mask Video",
       "properties": {
         "Node name for S&R": "vloMemoryLoadVideo",
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "6f054dd1f09cc97ae4991c25792bf5d1c5f96e8b",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [
@@ -1253,8 +1254,8 @@
       ],
       "properties": {
         "Node name for S&R": "vloMemoryLoadVideo",
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "6f054dd1f09cc97ae4991c25792bf5d1c5f96e8b",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {}
       },
       "widgets_values": [

@@ -312,8 +312,8 @@
         }
       ],
       "properties": {
-        "aux_id": "PxTicks/ComfyUI-vlo",
-        "ver": "eda5d990380657f2b1472d1ca68a486ed7f3c2a1",
+        "cnr_id": "comfyui-vlo",
+        "ver": "0.2.0",
         "widget_ue_connectable": {},
         "Node name for S&R": "vloMemoryLoadVideo"
       },
