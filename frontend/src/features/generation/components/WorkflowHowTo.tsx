@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -146,7 +147,7 @@ export function WorkflowHowToDialog({
                 key={index}
                 workflowId={workflowId}
                 fragment={fragment}
-                headingIds={headingIds[index] ?? []}
+                headingIds={headingIds[index] ?? NO_HEADING_IDS}
                 onNavigateToHeading={navigateToHeading}
               />
             ))}
@@ -156,6 +157,8 @@ export function WorkflowHowToDialog({
     </Dialog>
   );
 }
+
+const NO_HEADING_IDS: readonly string[] = [];
 
 interface HowToFragmentProps {
   workflowId: string;
@@ -177,27 +180,73 @@ function HowToFragment({
       </Alert>
     );
   }
-  const urls: HowToAssetUrls = {
-    bundleAsset: (path) => workflowHowToAssetUrl(workflowId, path),
-    sharedAsset: workflowSharedAssetUrl,
-  };
+  return (
+    <MemoizedMarkdownFragment
+      workflowId={workflowId}
+      markdown={fragment.markdown}
+      base={fragment.base}
+      headingIds={headingIds}
+      onNavigateToHeading={onNavigateToHeading}
+    />
+  );
+}
+
+const REMARK_PLUGINS = [remarkGfm];
+
+// Refs are resolved (and unsafe schemes refused) by the components below,
+// which need the raw value to tell bundle refs from shared ones.
+function keepUrl(url: string): string {
+  return url;
+}
+
+interface MarkdownFragmentProps {
+  workflowId: string;
+  markdown: string;
+  base: string | null;
+  headingIds: readonly string[];
+  onNavigateToHeading: (targetId: string) => void;
+}
+
+function MarkdownFragment({
+  workflowId,
+  markdown,
+  base,
+  headingIds,
+  onNavigateToHeading,
+}: MarkdownFragmentProps) {
+  // react-markdown treats each `components` entry as a component type, so a
+  // fresh object on every render remounts the whole fragment. Any re-render
+  // between mousedown and mouseup (the editor updates focus on pointerdown)
+  // then swaps the pressed link for a new element and the click is lost.
+  const components = useMemo(
+    () =>
+      createMarkdownComponents(
+        base,
+        {
+          bundleAsset: (path) => workflowHowToAssetUrl(workflowId, path),
+          sharedAsset: workflowSharedAssetUrl,
+        },
+        onNavigateToHeading,
+      ),
+    [base, workflowId, onNavigateToHeading],
+  );
+  const rehypePlugins = useMemo(
+    () => [rehypeHowToHeadingIds(headingIds)],
+    [headingIds],
+  );
   return (
     <Markdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeHowToHeadingIds(headingIds)]}
-      // Refs are resolved (and unsafe schemes refused) by the components
-      // below, which need the raw value to tell bundle refs from shared ones.
-      urlTransform={(url) => url}
-      components={createMarkdownComponents(
-        fragment.base,
-        urls,
-        onNavigateToHeading,
-      )}
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={rehypePlugins}
+      urlTransform={keepUrl}
+      components={components}
     >
-      {fragment.markdown}
+      {markdown}
     </Markdown>
   );
 }
+
+const MemoizedMarkdownFragment = memo(MarkdownFragment);
 
 function MissingRef({ refText }: { refText: string }) {
   return (

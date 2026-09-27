@@ -154,6 +154,29 @@ describe("WorkflowHowToButton", () => {
     );
   });
 
+  it("keeps rendered links in place when the panel re-renders", async () => {
+    // A remounted link between mousedown and mouseup swallows the click.
+    respondWith({
+      workflow_id: "wf.json",
+      fragments: [
+        {
+          kind: "markdown",
+          markdown: "# Title\n\n[Guide](https://example.com/guide)\n",
+          base: null,
+        },
+      ],
+    });
+    const { rerender } = render(
+      <WorkflowHowToButton workflowId="wf.json" workflowLabel="My Workflow" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "How to use this workflow" }));
+    const link = await screen.findByRole("link", { name: "Guide" });
+
+    rerender(<WorkflowHowToButton workflowId="wf.json" workflowLabel="My Workflow" />);
+
+    expect(screen.getByRole("link", { name: "Guide" })).toBe(link);
+  });
+
   it("shows an error when the how-to cannot be loaded", async () => {
     respondWith(
       { error: { code: "workflow_how_to_not_found", message: "Workflow has no how-to" } },
