@@ -2,9 +2,7 @@
   "version": 2,
   "hidden_workflows": [
     "vlo_minimax_h3_masked_guide.json",
-    "vlo_ltx2_5_ic_edit.json",
-    "vlo_wan_ttm.json",
-    "vlo_wan_animate.json"
+    "vlo_ltx2_5_ic_edit.json"
   ],
   "nodes": [
     {
@@ -78,19 +76,14 @@
       "order": 0
     },
     {
-      "workflow_id": "vlo_wan2_2.json",
+      "workflow_id": "vlo_minimax_h3_i2v.json",
       "parent_id": "video.generate",
       "order": 1
     },
     {
-      "workflow_id": "vlo_minimax_h3_i2v.json",
-      "parent_id": "video.generate",
-      "order": 2
-    },
-    {
       "workflow_id": "vlo_minimax_h3_r2v.json",
       "parent_id": "video.generate",
-      "order": 3
+      "order": 2
     },
     {
       "workflow_id": "vlo_VACE_inpaint.json",
@@ -123,24 +116,14 @@
       "order": 5
     },
     {
-      "workflow_id": "vlo_wan_ttm.json",
+      "workflow_id": "vlo_minimax_h3_ttm.json",
       "parent_id": "video.control",
       "order": 0
     },
     {
-      "workflow_id": "vlo_minimax_h3_ttm.json",
-      "parent_id": "video.control",
-      "order": 1
-    },
-    {
-      "workflow_id": "vlo_wan_animate.json",
-      "parent_id": "video.control",
-      "order": 2
-    },
-    {
       "workflow_id": "vlo_minimax_h3_fun_controlnet_union.json",
       "parent_id": "video.control",
-      "order": 3
+      "order": 1
     },
     {
       "workflow_id": "vlo_SeedVR2_video.json",

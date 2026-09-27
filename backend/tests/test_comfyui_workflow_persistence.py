@@ -292,7 +292,6 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         "vlo_qwen_image_2_1_edit.json": "image.edit",
         "vlo_SeedVR2_image.json": "image.enhance",
         "vlo_ltx2_5.json": "video.generate",
-        "vlo_wan2_2.json": "video.generate",
         "vlo_minimax_h3_i2v.json": "video.generate",
         "vlo_minimax_h3_r2v.json": "video.generate",
         "vlo_VACE_inpaint.json": "video.edit",
@@ -301,9 +300,7 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         "vlo_ltx2_5_clean_plate.json": "video.edit",
         "vlo_minimax_h3_inpaint.json": "video.edit",
         "vlo_minimax_h3_inpaint_flf2va.json": "video.edit",
-        "vlo_wan_ttm.json": "video.control",
         "vlo_minimax_h3_ttm.json": "video.control",
-        "vlo_wan_animate.json": "video.control",
         "vlo_minimax_h3_fun_controlnet_union.json": "video.control",
         "vlo_SeedVR2_video.json": "video.enhance",
         "vlo_gimm_vfi.json": "video.enhance",
@@ -320,8 +317,6 @@ def test_packaged_workflow_menu_hides_experimental_workflows(tmp_path, monkeypat
 
     assert "vlo_minimax_h3_masked_guide.json" not in workflow_ids
     assert "vlo_ltx2_5_ic_edit.json" not in workflow_ids
-    assert "vlo_wan_ttm.json" not in workflow_ids
-    assert "vlo_wan_animate.json" not in workflow_ids
     assert "vlo_minimax_h3_inpaint.json" in workflow_ids
 
 

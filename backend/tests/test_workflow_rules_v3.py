@@ -63,48 +63,16 @@ def test_vace_inpaint_uses_v3_pipeline_stage_controls():
     assert [target.width.node_id for target in aspect_stage.targets] == ["104", "105"]
 
 
-def test_wan_animate_sidecar_loads_mask_processing_rules():
+def test_ttm_sidecar_loads_track_selection_message_and_mask_selection_modes():
     rules, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "vlo_wan_animate.json",
+        "vlo_minimax_h3_ttm.json",
     )
 
     assert warnings == []
     assert rules.version == 3
 
-    mask_stage = get_pipeline_stage(rules, "mask_processing")
-    assert mask_stage is not None
-    assert [(target.source.node_id, target.mask.node_id) for target in mask_stage.targets] == [
-        ("185", "190")
-    ]
-    assert [control.key for control in mask_stage.controls] == [
-        "crop_mode",
-        "crop_dilation",
-    ]
-    assert mask_stage.controls[0].default_rules is not None
-    assert mask_stage.controls[0].default_rules[0].when.ref.control_id == "animate_mode"
-    assert mask_stage.controls[0].default_rules[0].value == "full"
-
-    output_assembly = get_pipeline_stage(rules, "output_assembly")
-    assert output_assembly is not None
-    attach_mask_control = output_assembly.controls[0]
-    assert attach_mask_control.key == "attach_generation_mask"
-    assert attach_mask_control.default is True
-    assert attach_mask_control.default_rules is not None
-    assert attach_mask_control.default_rules[0].when.ref.control_id == "animate_mode"
-    assert attach_mask_control.default_rules[0].value is False
-
-
-def test_wan_ttm_sidecar_loads_track_selection_message_and_mask_selection_modes():
-    rules, warnings = load_rules_model_for_workflow(
-        DEFAULT_WORKFLOWS_DIR,
-        "vlo_wan_ttm.json",
-    )
-
-    assert warnings == []
-    assert rules.version == 3
-
-    source_video_rule = rules.nodes["129"]
+    source_video_rule = rules.nodes["1"]
     assert source_video_rule.selection is not None
     assert source_video_rule.selection.include_tracks is True
     assert (
@@ -120,10 +88,10 @@ def test_wan_ttm_sidecar_loads_track_selection_message_and_mask_selection_modes(
     assert mask_stage.targets[0].source_video_treatment == "preserve_transparency"
 
 
-def test_wan_ttm_sidecar_defaults_to_full_mask_mode_and_disables_mask_attachment():
+def test_ttm_sidecar_defaults_to_full_mask_mode_and_disables_mask_attachment():
     rules, warnings = load_rules_model_for_workflow(
         DEFAULT_WORKFLOWS_DIR,
-        "vlo_wan_ttm.json",
+        "vlo_minimax_h3_ttm.json",
     )
 
     assert warnings == []
