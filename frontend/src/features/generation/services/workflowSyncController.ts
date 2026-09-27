@@ -100,6 +100,16 @@ export async function injectWorkflowAndRead(
 
   try {
     const result = await iframeBridge.injectWorkflow(graphData, workflowId);
+    if (result.droppedLinks.length > 0) {
+      // Aimed at workflow and rules authors: a rules control bound to one of
+      // these inputs on the subgraph node is dead, so the author should bind
+      // it to the inner node instead.
+      console.warn(
+        `[Generation] ComfyUI dropped ${result.droppedLinks.length} subgraph input link(s) while loading "${workflowId}". ` +
+          "These inputs now use the inner node's widget value; target the inner node (<subgraphNodeId>:<innerNodeId>) in rules rather than the subgraph node.",
+        result.droppedLinks,
+      );
+    }
     if (shouldAbort()) {
       return {
         ok: false,

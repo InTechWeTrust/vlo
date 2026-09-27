@@ -78,6 +78,7 @@ describe("workflowSyncController", () => {
         missingNodeTypes: ["CustomNode"],
         missingModels: ["model.safetensors"],
       },
+      droppedLinks: [],
       snapshot,
     });
     const result = await injectWorkflowAndRead(
@@ -99,6 +100,35 @@ describe("workflowSyncController", () => {
       },
     });
     expect(bridgeMocks.readActive).not.toHaveBeenCalled();
+  });
+
+  it("warns authors about subgraph links ComfyUI dropped on load", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const droppedLinks = [
+      {
+        subgraphId: "subgraph-a",
+        subgraphName: "Upscale",
+        targetNodeId: "57",
+        inputName: "resize_type.multiplier",
+      },
+    ];
+    bridgeMocks.injectWorkflow.mockResolvedValue({
+      warnings: null,
+      droppedLinks,
+      snapshot,
+    });
+    const result = await injectWorkflowAndRead(
+      iframe,
+      snapshot.graphData,
+      "wf.json",
+      () => false,
+    );
+    expect(result).toMatchObject({ ok: true, warnings: null });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('dropped 1 subgraph input link(s) while loading "wf.json"'),
+      droppedLinks,
+    );
+    warn.mockRestore();
   });
 
   it("returns a deferred result for retryable bridge errors", async () => {
@@ -133,7 +163,11 @@ describe("workflowSyncController", () => {
   });
 
   it("does not commit an injection result after the load is aborted", async () => {
-    bridgeMocks.injectWorkflow.mockResolvedValue({ warnings: null, snapshot });
+    bridgeMocks.injectWorkflow.mockResolvedValue({
+      warnings: null,
+      droppedLinks: [],
+      snapshot,
+    });
     const result = await injectWorkflowAndRead(
       iframe,
       snapshot.graphData,

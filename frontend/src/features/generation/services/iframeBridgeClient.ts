@@ -63,8 +63,22 @@ export interface BridgeWarningSummary {
   missingModels: string[];
 }
 
+/**
+ * A subgraph link ComfyUI discarded while loading the injected workflow (see
+ * `findLoadDroppableLinks` in bridge-core.mjs). The target input now executes
+ * its inner widget value, so anything bound to the subgraph node's matching
+ * input has no effect.
+ */
+export interface BridgeDroppedLink {
+  subgraphId: string | null;
+  subgraphName: string | null;
+  targetNodeId: string;
+  inputName: string;
+}
+
 export interface BridgeInjectResult {
   warnings: BridgeWarningSummary | null;
+  droppedLinks: BridgeDroppedLink[];
   snapshot: BridgeWorkflowSnapshot;
 }
 
@@ -219,6 +233,30 @@ function toWarningSummary(value: unknown): BridgeWarningSummary | null {
     : [];
   if (missingNodeTypes.length === 0 && missingModels.length === 0) return null;
   return { missingNodeTypes, missingModels };
+}
+
+// Diagnostic only, so malformed entries are skipped rather than failing the
+// injection. Older bridges omit the field.
+function toDroppedLinks(value: unknown): BridgeDroppedLink[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): BridgeDroppedLink[] => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.targetNodeId !== "string" ||
+      typeof entry.inputName !== "string"
+    ) {
+      return [];
+    }
+    return [
+      {
+        subgraphId: typeof entry.subgraphId === "string" ? entry.subgraphId : null,
+        subgraphName:
+          typeof entry.subgraphName === "string" ? entry.subgraphName : null,
+        targetNodeId: entry.targetNodeId,
+        inputName: entry.inputName,
+      },
+    ];
+  });
 }
 
 export class IframeBridgeClient {
@@ -398,6 +436,7 @@ export class IframeBridgeClient {
     }
     return {
       warnings: toWarningSummary(result.warnings),
+      droppedLinks: toDroppedLinks(result.droppedLinks),
       snapshot: toSnapshot(result.snapshot),
     };
   }

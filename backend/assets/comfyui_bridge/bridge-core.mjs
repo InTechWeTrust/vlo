@@ -173,6 +173,147 @@ export function fingerprintWorkflow(graphData) {
   return shape === null ? null : stableStringify(shape);
 }
 
+// litegraph's SUBGRAPH_INPUT_ID: the virtual node a subgraph's inputs leave from.
+const SUBGRAPH_INPUT_NODE_ID = "-10";
+
+function linkRecord(link) {
+  if (Array.isArray(link)) {
+    return { id: link[0], originId: link[1], targetId: link[3], targetSlot: link[4] };
+  }
+  if (!isRecord(link)) return null;
+  return {
+    id: link.id,
+    originId: link.origin_id,
+    targetId: link.target_id,
+    targetSlot: link.target_slot,
+  };
+}
+
+/**
+ * Links inside a subgraph definition that ComfyUI's frontend drops on load.
+ *
+ * A DynamicCombo widget (`COMFY_DYNAMICCOMBO_V3`, e.g. `resize_type`) rebuilds
+ * its child inputs (`resize_type.multiplier`) when its value is applied during
+ * configure, and a link from the subgraph's input node into one of those
+ * children does not survive the rebuild (ComfyUI_frontend 1.49.6; see
+ * docs/todos/comfyui-frontend-dynamic-combo-subgraph-links.md). Children are
+ * recognised as widget-backed inputs with a dotted name, which excludes
+ * Autogrow slots such as `images.image_1`: those carry no widget and keep
+ * their links.
+ */
+function findLoadDroppableLinks(subgraph) {
+  if (!isRecord(subgraph) || !Array.isArray(subgraph.links)) return [];
+  const nodesById = new Map(
+    (Array.isArray(subgraph.nodes) ? subgraph.nodes : [])
+      .filter(isRecord)
+      .map((node) => [String(node.id), node]),
+  );
+  const droppable = [];
+  for (const rawLink of subgraph.links) {
+    const link = linkRecord(rawLink);
+    if (!link || String(link.originId) !== SUBGRAPH_INPUT_NODE_ID) continue;
+    const inputs = nodesById.get(String(link.targetId))?.inputs;
+    if (!Array.isArray(inputs)) continue;
+    const input =
+      inputs.find((candidate) => isRecord(candidate) && candidate.link === link.id) ??
+      inputs[link.targetSlot];
+    if (
+      !isRecord(input) ||
+      typeof input.name !== "string" ||
+      !input.name.includes(".") ||
+      !isRecord(input.widget)
+    ) {
+      continue;
+    }
+    droppable.push({
+      key: stableStringify(normalizeLink(rawLink)),
+      droppedLink: {
+        subgraphId: typeof subgraph.id === "string" ? subgraph.id : null,
+        subgraphName: typeof subgraph.name === "string" ? subgraph.name : null,
+        linkId: link.id ?? null,
+        targetNodeId: String(link.targetId),
+        inputName: input.name,
+      },
+    });
+  }
+  return droppable;
+}
+
+function countKeys(keys) {
+  const counts = new Map();
+  for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * Compares link multisets, letting `droppable` links be absent from `actual`.
+ * Returns the links that were absent, or null when the sets differ otherwise.
+ *
+ * Absence is decided by link id, which survives ComfyUI's load, because the
+ * endpoint-only keys cannot tell a droppable link from a sibling sharing its
+ * endpoints (a subgraph's image and multiplier inputs both run -10 → resize).
+ */
+function compareLinks(expectedLinks, actualLinks, droppable, actualLinkIds) {
+  const absent = droppable.filter(
+    (entry) => !actualLinkIds.has(entry.droppedLink.linkId),
+  );
+  const expectedCounts = countKeys(expectedLinks.map(stableStringify));
+  const actualCounts = countKeys(actualLinks.map(stableStringify));
+  const absentCounts = countKeys(absent.map((entry) => entry.key));
+  for (const key of new Set([...expectedCounts.keys(), ...actualCounts.keys()])) {
+    const missing = (expectedCounts.get(key) ?? 0) - (actualCounts.get(key) ?? 0);
+    if (missing !== (absentCounts.get(key) ?? 0)) return null;
+  }
+  return absent.map((entry) => entry.droppedLink);
+}
+
+function compareGraphShapes(expected, actual, isSubgraph) {
+  const expectedShape = structuralGraphShape(expected);
+  const actualShape = structuralGraphShape(actual);
+  if (expectedShape === null || actualShape === null) return null;
+  if (stableStringify(expectedShape.nodes) !== stableStringify(actualShape.nodes)) {
+    return null;
+  }
+  const actualLinkIds = new Set(
+    (Array.isArray(actual.links) ? actual.links : [])
+      .map((link) => linkRecord(link)?.id)
+      .filter((id) => id !== undefined),
+  );
+  const dropped = compareLinks(
+    expectedShape.links,
+    actualShape.links,
+    isSubgraph ? findLoadDroppableLinks(expected) : [],
+    actualLinkIds,
+  );
+  if (dropped === null) return null;
+  const expectedSubgraphs = Array.isArray(expected.definitions?.subgraphs)
+    ? expected.definitions.subgraphs.filter(isRecord)
+    : [];
+  const actualSubgraphs = Array.isArray(actual.definitions?.subgraphs)
+    ? actual.definitions.subgraphs.filter(isRecord)
+    : [];
+  if (expectedSubgraphs.length !== actualSubgraphs.length) return null;
+  for (const [index, subgraph] of expectedSubgraphs.entries()) {
+    const nested = compareGraphShapes(subgraph, actualSubgraphs[index], true);
+    if (nested === null) return null;
+    dropped.push(...nested);
+  }
+  return dropped;
+}
+
+/**
+ * Whether `actual` is `expected` as ComfyUI loaded it: the same structure as
+ * `fingerprintWorkflow` compares, except for subgraph links ComfyUI is known
+ * to drop on load (`findLoadDroppableLinks`). Returns the dropped links, or
+ * null on any other difference.
+ */
+export function matchInjectedWorkflow(expected, actual) {
+  const expectedFingerprint = fingerprintWorkflow(expected);
+  if (expectedFingerprint === null) return null;
+  if (fingerprintWorkflow(actual) === expectedFingerprint) return [];
+  return compareGraphShapes(expected, actual, false);
+}
+
 function toUnique(values) {
   return [...new Set(values)];
 }
@@ -802,14 +943,13 @@ export function startVloBridge({ app, api, windowObject = window }) {
   }
 
   async function waitForInjectedWorkflow(graphData, filename, previousActive) {
-    const expectedFingerprint = fingerprintWorkflow(graphData);
     const expectedStem = filenameStem(filename);
     const deadline = Date.now() + WORKFLOW_ACTIVE_TIMEOUT_MS;
     let lastObservation = null;
     while (Date.now() < deadline) {
       const active = getActiveWorkflow();
-      const fingerprintMatches =
-        fingerprintWorkflow(active?.activeState) === expectedFingerprint;
+      const droppedLinks = matchInjectedWorkflow(graphData, active?.activeState);
+      const fingerprintMatches = droppedLinks !== null;
       const activeStem = filenameStem(resolveTabFilename(active));
       const stemMatches =
         !expectedStem || stemMatchesExpected(activeStem, expectedStem);
@@ -818,7 +958,7 @@ export function startVloBridge({ app, api, windowObject = window }) {
         // A fingerprint hit on a tab that either carries the injected name or
         // only just became active is our injection; anything stricter trips
         // over ComfyUI's tab-naming quirks.
-        if (stemMatches || active !== previousActive) return active;
+        if (stemMatches || active !== previousActive) return { active, droppedLinks };
       }
       await sleep(windowObject, APP_READY_POLL_MS);
     }
@@ -862,14 +1002,20 @@ export function startVloBridge({ app, api, windowObject = window }) {
     const file = new windowObject.File([blob], filename, { type: "application/json" });
     const previousActive = getActiveWorkflow();
     await app.handleFile(file, undefined, { deferWarnings: true });
-    const active = await waitForInjectedWorkflow(
+    const { active, droppedLinks } = await waitForInjectedWorkflow(
       payload.graphData,
       filename,
       previousActive,
     );
+    if (droppedLinks.length > 0) {
+      console.warn(
+        "[vlo-bridge] ComfyUI dropped subgraph-input links into DynamicCombo inputs while loading; those inputs now use the inner widget value:",
+        droppedLinks,
+      );
+    }
     const warnings = await captureWarnings(active);
     await closeOtherWorkflowTabs(active);
-    return { snapshot: readActive(), warnings };
+    return { snapshot: readActive(), warnings, droppedLinks };
   }
 
   function assertExpectedWorkflow(payload) {

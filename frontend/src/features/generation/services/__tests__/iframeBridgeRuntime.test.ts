@@ -4,6 +4,7 @@ import {
   BRIDGE_PROTOCOL,
   BRIDGE_VERSION,
   fingerprintWorkflow,
+  matchInjectedWorkflow,
   startVloBridge,
 } from "../../../../../../backend/assets/comfyui_bridge/bridge-core.mjs";
 import {
@@ -207,6 +208,82 @@ function createHarness() {
     windowObject,
   };
 }
+
+// Minimal SeedVR2-shaped workflow: a subgraph whose input node (-10) feeds both
+// a DynamicCombo child (`resize_type.multiplier`, widget-backed) and, on the
+// same target node, a plain image input; plus an Autogrow slot (no widget).
+const SUBGRAPH_IMAGE_LINK = {
+  id: 45,
+  origin_id: -10,
+  origin_slot: 0,
+  target_id: 57,
+  target_slot: 0,
+  type: "IMAGE",
+};
+const SUBGRAPH_MULTIPLIER_LINK = {
+  id: 50,
+  origin_id: -10,
+  origin_slot: 1,
+  target_id: 57,
+  target_slot: 2,
+  type: "FLOAT",
+};
+const SUBGRAPH_AUTOGROW_LINK = {
+  id: 60,
+  origin_id: -10,
+  origin_slot: 2,
+  target_id: 70,
+  target_slot: 0,
+  type: "IMAGE",
+};
+
+function dynamicComboSubgraphWorkflow(links: Array<Record<string, unknown>>) {
+  return {
+    nodes: [{ id: 66, type: "subgraph-a" }],
+    links: [],
+    definitions: {
+      subgraphs: [
+        {
+          id: "subgraph-a",
+          name: "Upscale",
+          nodes: [
+            {
+              id: 57,
+              type: "ResizeImageMaskNode",
+              inputs: [
+                { name: "input", type: "IMAGE,MASK", link: 45 },
+                {
+                  name: "resize_type",
+                  type: "COMFY_DYNAMICCOMBO_V3",
+                  widget: { name: "resize_type" },
+                  link: null,
+                },
+                {
+                  name: "resize_type.multiplier",
+                  type: "FLOAT",
+                  widget: { name: "resize_type.multiplier" },
+                  link: 50,
+                },
+              ],
+            },
+            {
+              id: 70,
+              type: "TextEncodeQwenImage21",
+              inputs: [{ name: "images.image_1", type: "IMAGE", link: 60 }],
+            },
+          ],
+          links,
+        },
+      ],
+    },
+  };
+}
+
+const INJECTED_SUBGRAPH_WORKFLOW = dynamicComboSubgraphWorkflow([
+  SUBGRAPH_IMAGE_LINK,
+  SUBGRAPH_MULTIPLIER_LINK,
+  SUBGRAPH_AUTOGROW_LINK,
+]);
 
 function hello(harness: ReturnType<typeof createHarness>) {
   harness.send({
@@ -589,6 +666,49 @@ describe("hosted iframe bridge runtime", () => {
     expect(
       harness.posted.find((message) => message.requestId === "inject-dup"),
     ).toMatchObject({ ok: true });
+  });
+
+  it("injects a subgraph workflow whose DynamicCombo link ComfyUI dropped", async () => {
+    const harness = createHarness();
+    harness.activeWorkflow.activeState = new Proxy(
+      dynamicComboSubgraphWorkflow([SUBGRAPH_IMAGE_LINK, SUBGRAPH_AUTOGROW_LINK]),
+      {},
+    ) as never;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    startVloBridge({
+      app: harness.app,
+      api: harness.api,
+      windowObject: harness.windowObject,
+    });
+    hello(harness);
+    request(harness, "inject-dropped", "inject-workflow", {
+      graphData: INJECTED_SUBGRAPH_WORKFLOW,
+      filename: "workflow.json",
+    });
+
+    // No pending warnings, so the bridge waits out its 1s warning capture.
+    await vi.waitFor(
+      () =>
+        expect(
+          harness.posted.some((message) => message.requestId === "inject-dropped"),
+        ).toBe(true),
+      { timeout: 3_000 },
+    );
+    expect(
+      harness.posted.find((message) => message.requestId === "inject-dropped"),
+    ).toMatchObject({
+      ok: true,
+      result: {
+        droppedLinks: [
+          { targetNodeId: "57", inputName: "resize_type.multiplier" },
+        ],
+      },
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("[vlo-bridge] ComfyUI dropped subgraph-input links"),
+      expect.any(Array),
+    );
+    warn.mockRestore();
   });
 
   it("resolves on a clone and leaves the live graph untouched", async () => {
@@ -1854,6 +1974,61 @@ describe("hosted iframe bridge runtime", () => {
     expect(fingerprintWorkflow(firstSubgraph)).not.toBe(
       fingerprintWorkflow(secondSubgraph),
     );
+  });
+
+  it("tolerates only the subgraph links ComfyUI drops from DynamicCombo children", () => {
+    const loaded = dynamicComboSubgraphWorkflow([
+      SUBGRAPH_IMAGE_LINK,
+      SUBGRAPH_AUTOGROW_LINK,
+    ]);
+    expect(fingerprintWorkflow(loaded)).not.toBe(
+      fingerprintWorkflow(INJECTED_SUBGRAPH_WORKFLOW),
+    );
+    expect(matchInjectedWorkflow(INJECTED_SUBGRAPH_WORKFLOW, loaded)).toEqual([
+      {
+        subgraphId: "subgraph-a",
+        subgraphName: "Upscale",
+        linkId: 50,
+        targetNodeId: "57",
+        inputName: "resize_type.multiplier",
+      },
+    ]);
+
+    // Surviving the load is fine too, and reports nothing.
+    expect(
+      matchInjectedWorkflow(INJECTED_SUBGRAPH_WORKFLOW, INJECTED_SUBGRAPH_WORKFLOW),
+    ).toEqual([]);
+
+    // The image link shares the multiplier's endpoints (-10 → 57); losing it
+    // instead must still fail, as must losing a widgetless Autogrow link.
+    expect(
+      matchInjectedWorkflow(
+        INJECTED_SUBGRAPH_WORKFLOW,
+        dynamicComboSubgraphWorkflow([
+          SUBGRAPH_MULTIPLIER_LINK,
+          SUBGRAPH_AUTOGROW_LINK,
+        ]),
+      ),
+    ).toBeNull();
+    expect(
+      matchInjectedWorkflow(
+        INJECTED_SUBGRAPH_WORKFLOW,
+        dynamicComboSubgraphWorkflow([
+          SUBGRAPH_IMAGE_LINK,
+          SUBGRAPH_MULTIPLIER_LINK,
+        ]),
+      ),
+    ).toBeNull();
+
+    // The same shape at the root is not a subgraph input and is not tolerated.
+    const rootNode = INJECTED_SUBGRAPH_WORKFLOW.definitions.subgraphs[0].nodes[0];
+    const rootInjected = {
+      nodes: [{ id: -10, type: "Source" }, rootNode],
+      links: [SUBGRAPH_MULTIPLIER_LINK],
+    };
+    expect(
+      matchInjectedWorkflow(rootInjected, { ...rootInjected, links: [] }),
+    ).toBeNull();
   });
 });
 
