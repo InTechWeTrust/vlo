@@ -153,19 +153,19 @@
       "order": 1
     },
     {
-      "workflow_id": "vlo_klein_multi.json",
-      "parent_id": "image.generate",
-      "order": 0
-    },
-    {
       "workflow_id": "vlo_krea2_turbo.json",
       "parent_id": "image.generate",
-      "order": 1
+      "order": 0
     },
     {
       "workflow_id": "vlo_qwen_image_2_1_edit.json",
       "parent_id": "image.edit",
       "order": 0
+    },
+    {
+      "workflow_id": "vlo_klein_multi.json",
+      "parent_id": "image.edit",
+      "order": 1
     },
     {
       "workflow_id": "vlo_SeedVR2_image.json",

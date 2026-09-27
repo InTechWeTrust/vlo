@@ -287,7 +287,7 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         placement["leafId"]: placement["parentId"]
         for placement in tree["leafPlacements"]
     } == {
-        "vlo_klein_multi.json": "image.generate",
+        "vlo_klein_multi.json": "image.edit",
         "vlo_krea2_turbo.json": "image.generate",
         "vlo_qwen_image_2_1_edit.json": "image.edit",
         "vlo_SeedVR2_image.json": "image.enhance",
