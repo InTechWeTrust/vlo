@@ -39,6 +39,7 @@ import {
   OpenInNew,
   Timeline,
 } from "@mui/icons-material";
+import comfyLogo from "../../assets/comfy.svg";
 import { ComfyUIEditor } from "./components/ComfyUIEditor";
 import { GenerationInputs } from "./components/GenerationInputs";
 import {
@@ -1232,15 +1233,33 @@ export function GenerationPanel() {
             }}
             sx={{ fontSize: "0.65rem", height: 20, cursor: "pointer" }}
           />
-          <IconButton
+          {/* The wordmark alone reads as a label beside the connection chip,
+              so "Open" carries the affordance. */}
+          <Button
             size="small"
             onClick={() => setEditorOpen(true)}
             title="Open ComfyUI Node Editor"
+            aria-label="Open ComfyUI Node Editor"
             disabled={connectionStatus !== "connected"}
-            sx={{ color: "text.secondary" }}
+            sx={{
+              minWidth: 0,
+              px: 0.75,
+              gap: 0.75,
+              color: "text.secondary",
+              textTransform: "none",
+              fontSize: "0.75rem",
+              lineHeight: 1,
+              "&.Mui-disabled img": { filter: "grayscale(1)", opacity: 0.4 },
+            }}
           >
-            <OpenInNew fontSize="small" />
-          </IconButton>
+            Open
+            <Box
+              component="img"
+              src={comfyLogo}
+              alt=""
+              sx={{ height: 12, display: "block" }}
+            />
+          </Button>
         </Box>
         <Popover
           open={Boolean(urlAnchorEl)}
