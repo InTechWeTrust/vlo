@@ -296,6 +296,7 @@ def _install_with_stubbed_commands(
     *,
     fail_cuda_torch: bool = False,
     torch_has_cuda: tuple[bool, ...] = (True,),
+    manager_requirements: bool = False,
 ) -> list[list[str]]:
     commands: list[list[str]] = []
     checks = list(torch_has_cuda)
@@ -307,6 +308,11 @@ def _install_with_stubbed_commands(
             clone_target = Path(command[-1])
             if clone_target == target:
                 _write_comfyui_checkout(target)
+                if manager_requirements:
+                    (target / local_runtime.MANAGER_REQUIREMENTS_FILENAME).write_text(
+                        "comfyui_manager==4.2.2\n",
+                        encoding="utf-8",
+                    )
             else:
                 clone_target.mkdir(parents=True)
         if command[1:3] == ["-m", "venv"]:
@@ -330,6 +336,54 @@ def _install_with_stubbed_commands(
 
 def _index_of(commands: list[list[str]], predicate) -> int:
     return next(index for index, command in enumerate(commands) if predicate(command))
+
+
+def test_installer_installs_the_bundled_manager_after_comfyui_requirements(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manager = ComfyuiLocalRuntime()
+    target = tmp_path / "ComfyUI"
+
+    commands = _install_with_stubbed_commands(
+        manager,
+        target,
+        monkeypatch,
+        manager_requirements=True,
+    )
+
+    requirements_index = _index_of(
+        commands, lambda command: command[-2:] == ["-r", "requirements.txt"]
+    )
+    manager_index = _index_of(
+        commands,
+        lambda command: command[-2:]
+        == ["-r", local_runtime.MANAGER_REQUIREMENTS_FILENAME],
+    )
+    assert requirements_index < manager_index
+    assert commands[manager_index][:4] == [
+        str(target / ".venv" / "bin" / "python"),
+        "-m",
+        "pip",
+        "install",
+    ]
+    assert manager.get_install_status()["phase"] == "complete"
+
+
+def test_installer_skips_the_manager_for_checkouts_without_it(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    manager = ComfyuiLocalRuntime()
+    target = tmp_path / "ComfyUI"
+
+    commands = _install_with_stubbed_commands(manager, target, monkeypatch)
+
+    assert not any(
+        command[-2:] == ["-r", local_runtime.MANAGER_REQUIREMENTS_FILENAME]
+        for command in commands
+    )
+    assert manager.get_install_status()["phase"] == "complete"
 
 
 def test_cuda_torch_policy_does_not_depend_on_detecting_a_gpu() -> None:

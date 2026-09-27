@@ -45,6 +45,7 @@ TORCH_CUDA_PACKAGES = ("torch", "torchvision", "torchaudio")
 # additional preview model.
 # `--enable-manager` is recent, so each flag is only passed when the checkout's
 # parser advertises it — argparse aborts startup on an unknown argument.
+MANAGER_REQUIREMENTS_FILENAME = "manager_requirements.txt"
 OPTIONAL_LAUNCH_ARGUMENTS: tuple[tuple[str, ...], ...] = (
     ("--enable-manager",),
     ("--preview-method", "latent2rgb"),
@@ -781,6 +782,27 @@ class ComfyuiLocalRuntime:
                 [str(python), "-m", "pip", "install", "-r", "requirements.txt"],
                 cwd=target,
             )
+            # The bundled manager ships as its own package outside
+            # requirements.txt. Without it `--enable-manager` only logs a
+            # warning and ComfyUI starts with no manager UI.
+            if (target / MANAGER_REQUIREMENTS_FILENAME).is_file():
+                self._set_install_status(
+                    phase="installing_requirements",
+                    running=True,
+                    target_path=target,
+                    message="Installing ComfyUI-Manager…",
+                )
+                self._run_install_command(
+                    [
+                        str(python),
+                        "-m",
+                        "pip",
+                        "install",
+                        "-r",
+                        MANAGER_REQUIREMENTS_FILENAME,
+                    ],
+                    cwd=target,
+                )
             self._set_install_status(
                 phase="installing_requirements",
                 running=True,
