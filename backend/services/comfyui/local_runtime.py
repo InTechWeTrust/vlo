@@ -30,7 +30,6 @@ MANAGED_CUSTOM_NODE_REPOSITORY_URLS = (
     "https://github.com/PxTicks/ComfyUI-vlo",
     "https://github.com/Fannovel16/comfyui_controlnet_aux",
     "https://github.com/kijai/ComfyUI-GIMM-VFI",
-    "https://github.com/kijai/ComfyUI-MelBandRoFormer",
     "https://github.com/kosinkadink/ComfyUI-VideoHelperSuite",
     "https://github.com/kijai/ComfyUI-KJNodes",
 )

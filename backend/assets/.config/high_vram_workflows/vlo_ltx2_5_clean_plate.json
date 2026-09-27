@@ -694,31 +694,6 @@
       "bgcolor": "#653"
     },
     {
-      "id": 469,
-      "type": "MarkdownNote",
-      "pos": [-1750, 4000],
-      "size": [390, 90],
-      "flags": {
-        "collapsed": false
-      },
-      "order": 8,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "title": "Sampler Preview",
-      "properties": {
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "Tiny VAE for sampler previews. \nOptionally you can drop this for a lower res latent RGB built into the node \n\nhttps://github.com/madebyollin/taehv/blob/main/safetensors/taeltx2_3.safetensors"
-      ],
-      "widgets_values_named": {
-        "text": "Tiny VAE for sampler previews. \nOptionally you can drop this for a lower res latent RGB built into the node \n\nhttps://github.com/madebyollin/taehv/blob/main/safetensors/taeltx2_3.safetensors"
-      },
-      "color": "#222",
-      "bgcolor": "#000"
-    },
-    {
       "id": 440,
       "type": "GetImageRangeFromBatch",
       "pos": [-390, 4310],

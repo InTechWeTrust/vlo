@@ -86,23 +86,6 @@
           ]
         }
       }
-    },
-    "239": {
-      "widgets": {
-        "switch": {
-          "label": "Voice only",
-          "when": {
-            "kind": "input_presence",
-            "inputs": ["232"],
-            "match": "all_present"
-          },
-          "value_type": "boolean",
-          "default": false,
-          "group_id": "audio",
-          "group_title": "Audio",
-          "group_order": 1
-        }
-      }
     }
   },
   "validation": {
@@ -145,10 +128,7 @@
         "217",
         "218",
         "226",
-        "225",
-        "231",
-        "235",
-        "239"
+        "235"
       ]
     }
   ],

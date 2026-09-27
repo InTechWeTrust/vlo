@@ -829,39 +829,6 @@
       "bgcolor": "#000"
     },
     {
-      "id": 177,
-      "type": "SetNode",
-      "pos": [190, 4400],
-      "size": [210, 40],
-      "flags": {
-        "collapsed": true
-      },
-      "order": 61,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "VAE",
-          "type": "VAE",
-          "link": 247
-        }
-      ],
-      "outputs": [
-        {
-          "name": "*",
-          "type": "*",
-          "links": null
-        }
-      ],
-      "title": "Set_vae_tiny",
-      "properties": {
-        "Node name for S&R": "SetNode",
-        "aux_id": "SetNode",
-        "previousName": "",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["vae_tiny"]
-    },
-    {
       "id": 179,
       "type": "MarkdownNote",
       "pos": [-310, 3780],
@@ -882,39 +849,6 @@
       ],
       "color": "#222",
       "bgcolor": "#000"
-    },
-    {
-      "id": 180,
-      "type": "VAELoader",
-      "pos": [190, 4350],
-      "size": [370, 60],
-      "flags": {},
-      "order": 14,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "VAE",
-          "type": "VAE",
-          "links": [247]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.16.3",
-        "Node name for S&R": "VAELoader",
-        "models": [
-          {
-            "name": "taeltx2_3.safetensors",
-            "url": "https://huggingface.co/Kijai/LTX2.3_comfy/resolve/main/vae/taeltx2_3.safetensors",
-            "directory": "vae"
-          }
-        ],
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["taeltx2_3.safetensors"],
-      "color": "#1f1f48",
-      "bgcolor": "rgba(24,24,27,.9)"
     },
     {
       "id": 181,
@@ -967,28 +901,6 @@
       },
       "widgets_values": [
         "Width & height settings must be divisible by 32 + 1. \nFrame count must be divisible by 8 + 1. \n\n\nRunning with invalid parameters **will not cause errors**. Instead, the flow will silently choose the closest valid parameters. \n\nBy default, we are using 720p resolution. You can try 1920*1088 if you have a powerful GPU."
-      ],
-      "color": "#222",
-      "bgcolor": "#000"
-    },
-    {
-      "id": 184,
-      "type": "MarkdownNote",
-      "pos": [-310, 3960],
-      "size": [390, 110],
-      "flags": {
-        "collapsed": false
-      },
-      "order": 17,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [],
-      "title": "Sampler Preview",
-      "properties": {
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [
-        "Tiny VAE for sampler previews. \nOptionally you can drop this for a lower res latent RGB built into the node \n\nhttps://github.com/madebyollin/taehv/blob/main/safetensors/taeltx2_3.safetensors"
       ],
       "color": "#222",
       "bgcolor": "#000"
@@ -1799,7 +1711,7 @@
         {
           "name": "MODEL",
           "type": "MODEL",
-          "links": [260]
+          "links": [263]
         }
       ],
       "title": "Get_model",
@@ -1811,34 +1723,6 @@
       "widgets_values": ["model"],
       "color": "#223",
       "bgcolor": "#335"
-    },
-    {
-      "id": 193,
-      "type": "GetNode",
-      "pos": [1980, 3980],
-      "size": [280, 40],
-      "flags": {
-        "collapsed": true
-      },
-      "order": 29,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "VAE",
-          "type": "VAE",
-          "links": [259]
-        }
-      ],
-      "title": "Get_vae_tiny",
-      "properties": {
-        "Node name for S&R": "GetNode",
-        "aux_id": "GetNode",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["vae_tiny"],
-      "color": "#322",
-      "bgcolor": "#533"
     },
     {
       "id": 24,
@@ -2356,48 +2240,6 @@
       ]
     },
     {
-      "id": 198,
-      "type": "LTX2SamplingPreviewOverride",
-      "pos": [1980, 3930],
-      "size": [280, 100],
-      "flags": {},
-      "order": 67,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MODEL",
-          "link": 260
-        },
-        {
-          "name": "latent_upscale_model",
-          "shape": 7,
-          "type": "LATENT_UPSCALE_MODEL",
-          "link": null
-        },
-        {
-          "name": "vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": 259
-        }
-      ],
-      "outputs": [
-        {
-          "name": "MODEL",
-          "type": "MODEL",
-          "links": [263]
-        }
-      ],
-      "properties": {
-        "cnr_id": "comfyui-kjnodes",
-        "ver": "ff79c7332d7ea4aa85097a88fb09359f28cb487e",
-        "Node name for S&R": "LTX2SamplingPreviewOverride",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [8]
-    },
-    {
       "id": 217,
       "type": "GetNode",
       "pos": [800, 4980],
@@ -2606,42 +2448,6 @@
       "widgets_values": ["fps"],
       "color": "#232",
       "bgcolor": "#353"
-    },
-    {
-      "id": 225,
-      "type": "MelBandRoFormerModelLoader",
-      "pos": [180, 5030],
-      "size": [280, 80],
-      "flags": {},
-      "order": 41,
-      "mode": 0,
-      "inputs": [],
-      "outputs": [
-        {
-          "name": "model",
-          "type": "MELROFORMERMODEL",
-          "links": [322]
-        }
-      ],
-      "properties": {
-        "cnr_id": "ComfyUI-MelBandRoFormer",
-        "ver": "b40e263224778ec417114d91d8b3b39934e30de5",
-        "Node name for S&R": "MelBandRoFormerModelLoader",
-        "models": [
-          {
-            "name": "MelBandRoformer_fp16.safetensors",
-            "url": "https://huggingface.co/Kijai/MelBandRoFormer_comfy/resolve/main/MelBandRoformer_fp16.safetensors",
-            "directory": "diffusion_models"
-          }
-        ],
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "version": "7.5.2",
-          "input_ue_unconnectable": {}
-        },
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": ["MelBandRoformer_fp16.safetensors"]
     },
     {
       "id": 227,
@@ -3304,51 +3110,6 @@
       "bgcolor": "rgba(24,24,27,.9)"
     },
     {
-      "id": 231,
-      "type": "MelBandRoFormerSampler",
-      "pos": [490, 5030],
-      "size": [240, 50],
-      "flags": {},
-      "order": 96,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "model",
-          "type": "MELROFORMERMODEL",
-          "link": 322
-        },
-        {
-          "name": "audio",
-          "type": "AUDIO",
-          "link": 323
-        }
-      ],
-      "outputs": [
-        {
-          "name": "vocals",
-          "type": "AUDIO",
-          "links": [331, 341]
-        },
-        {
-          "name": "instruments",
-          "type": "AUDIO",
-          "links": null
-        }
-      ],
-      "properties": {
-        "cnr_id": "ComfyUI-MelBandRoFormer",
-        "ver": "b40e263224778ec417114d91d8b3b39934e30de5",
-        "Node name for S&R": "MelBandRoFormerSampler",
-        "ue_properties": {
-          "widget_ue_connectable": {},
-          "version": "7.5.2",
-          "input_ue_unconnectable": {}
-        },
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": []
-    },
-    {
       "id": 229,
       "type": "TrimAudioDuration",
       "pos": [500, 4790],
@@ -3375,7 +3136,7 @@
         {
           "name": "AUDIO",
           "type": "AUDIO",
-          "links": [323, 330, 342]
+          "links": [343]
         }
       ],
       "properties": {
@@ -3527,44 +3288,6 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": []
-    },
-    {
-      "id": 239,
-      "type": "ComfySwitchNode",
-      "pos": [810, 4710],
-      "size": [290, 80],
-      "flags": {},
-      "order": 98,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "on_false",
-          "type": "AUDIO",
-          "link": 342
-        },
-        {
-          "name": "on_true",
-          "type": "AUDIO",
-          "link": 341
-        }
-      ],
-      "outputs": [
-        {
-          "name": "output",
-          "type": "AUDIO",
-          "links": [332, 343]
-        }
-      ],
-      "title": "Voice Only = true | Full Audio = false",
-      "properties": {
-        "cnr_id": "comfy-core",
-        "ver": "0.9.1",
-        "Node name for S&R": "ComfySwitchNode",
-        "widget_ue_connectable": {}
-      },
-      "widgets_values": [false],
-      "color": "#422342",
-      "bgcolor": "rgba(24,24,27,.9)"
     },
     {
       "id": 246,
@@ -4091,16 +3814,13 @@
     [243, 164, 0, 168, 3, "FLOAT"],
     [245, 175, 0, 172, 0, "VAE"],
     [246, 181, 0, 173, 0, "VAE"],
-    [247, 180, 0, 177, 0, "VAE"],
     [248, 186, 0, 185, 0, "MODEL"],
     [251, 187, 0, 186, 0, "MODEL"],
     [252, 190, 0, 188, 0, "CLIP"],
     [253, 185, 0, 192, 0, "MODEL"],
     [256, 196, 0, 197, 1, "CONDITIONING"],
     [257, 196, 0, 197, 2, "CONDITIONING"],
-    [259, 193, 0, 198, 2, "VAE"],
-    [260, 122, 0, 198, 0, "MODEL"],
-    [263, 198, 0, 197, 0, "MODEL"],
+    [263, 122, 0, 197, 0, "MODEL"],
     [264, 197, 0, 199, 0, "MODEL"],
     [265, 200, 0, 36, 0, "MODEL"],
     [274, 207, 0, 36, 2, "CONDITIONING"],
@@ -4128,8 +3848,6 @@
     [319, 227, 0, 228, 1, "VAE"],
     [320, 232, 0, 229, 0, "AUDIO"],
     [321, 222, 0, 229, 1, "FLOAT"],
-    [322, 225, 0, 231, 0, "MELROFORMERMODEL"],
-    [323, 229, 0, 231, 1, "AUDIO"],
     [324, 234, 0, 235, 0, "LATENT"],
     [325, 233, 0, 235, 1, "LATENT"],
     [326, 235, 0, 24, 1, "LATENT"],
@@ -4140,9 +3858,7 @@
     [338, 240, 0, 32, 1, "INT"],
     [339, 242, 0, 48, 2, "INT"],
     [340, 243, 0, 48, 3, "INT"],
-    [341, 231, 0, 239, 1, "AUDIO"],
-    [342, 229, 0, 239, 0, "AUDIO"],
-    [343, 239, 0, 228, 0, "AUDIO"],
+    [343, 229, 0, 228, 0, "AUDIO"],
     [344, 244, 0, 44, 0, "IMAGE"],
     [345, 245, 0, 48, 0, "IMAGE"],
     [346, 203, 0, 246, 0, "IMAGE"]
