@@ -174,15 +174,6 @@
           "link": 69
         },
         {
-          "label": "scale_multiplier",
-          "name": "resize_type.multiplier",
-          "type": "FLOAT",
-          "widget": {
-            "name": "resize_type.multiplier"
-          },
-          "link": null
-        },
-        {
           "name": "seed",
           "type": "INT",
           "widget": {
@@ -261,7 +252,6 @@
         ]
       },
       "widgets_values": [
-        4,
         959948902156062,
         "euler",
         "simple",
@@ -366,19 +356,6 @@
             "pos": [
               635.134765625,
               103.9012143089731
-            ]
-          },
-          {
-            "id": "df3b8dbd-5649-4dbd-8551-c5cb254eafc5",
-            "name": "resize_type.multiplier",
-            "type": "FLOAT",
-            "linkIds": [
-              50
-            ],
-            "label": "scale_multiplier",
-            "pos": [
-              635.134765625,
-              123.9012143089731
             ]
           },
           {
@@ -957,7 +934,7 @@
                 "widget": {
                   "name": "resize_type.multiplier"
                 },
-                "link": 50
+                "link": null
               },
               {
                 "localized_name": "scale_method",
@@ -1343,17 +1320,9 @@
             "type": "IMAGE"
           },
           {
-            "id": 50,
-            "origin_id": -10,
-            "origin_slot": 2,
-            "target_id": 57,
-            "target_slot": 2,
-            "type": "FLOAT"
-          },
-          {
             "id": 51,
             "origin_id": -10,
-            "origin_slot": 3,
+            "origin_slot": 2,
             "target_id": 54,
             "target_slot": 4,
             "type": "INT"
@@ -1361,7 +1330,7 @@
           {
             "id": 54,
             "origin_id": -10,
-            "origin_slot": 4,
+            "origin_slot": 3,
             "target_id": 54,
             "target_slot": 7,
             "type": "COMBO"
@@ -1369,7 +1338,7 @@
           {
             "id": 55,
             "origin_id": -10,
-            "origin_slot": 5,
+            "origin_slot": 4,
             "target_id": 54,
             "target_slot": 8,
             "type": "COMBO"
@@ -1377,7 +1346,7 @@
           {
             "id": 56,
             "origin_id": -10,
-            "origin_slot": 6,
+            "origin_slot": 5,
             "target_id": 54,
             "target_slot": 9,
             "type": "FLOAT"
@@ -1385,7 +1354,7 @@
           {
             "id": 57,
             "origin_id": -10,
-            "origin_slot": 7,
+            "origin_slot": 6,
             "target_id": 52,
             "target_slot": 0,
             "type": "COMBO"
@@ -1393,7 +1362,7 @@
           {
             "id": 58,
             "origin_id": -10,
-            "origin_slot": 8,
+            "origin_slot": 7,
             "target_id": 51,
             "target_slot": 0,
             "type": "COMBO"
@@ -1401,7 +1370,7 @@
           {
             "id": 64,
             "origin_id": -10,
-            "origin_slot": 9,
+            "origin_slot": 8,
             "target_id": 59,
             "target_slot": 2,
             "type": "COMBO"

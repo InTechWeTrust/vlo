@@ -50,10 +50,10 @@
       "title": "Note: SeedVR2",
       "properties": {},
       "widgets_values": [
-        "## SeedVR2\n\nOne-step video restoration / upscale (ICLR 2026). This workflow uses the **3B Int8** model for video upscaling.\n\n- Project: [SeedVR2](https://iceclear.github.io/projects/seedvr2/)\n- ComfyUI native support: [PR #14424](https://github.com/Comfy-Org/ComfyUI/pull/14424)\n\n### Subgraph parameters\n\n- **trim_video**: enable to cut a segment before upscaling\n- **trim_start_time / duration**: trim start (seconds) and length\n- **scale_multiplier**: upscale factor (default `2`)\n- **seed / sampler / scheduler / denoise**: sampling controls; `denoise=1` means full restore\n- **color_correction_method**: optional color match to original (default `none`)\n- **unet_name / vae_name**: model files to load\n\n### Tip: long videos\n\nIf the input is too long, turn on **trim_video**, upscale in shorter segments, then merge them. This helps avoid OOM / slowdowns on long clips.\n"
+        "## SeedVR2\n\nOne-step video restoration / upscale (ICLR 2026). This workflow uses the **3B Int8** model for video upscaling.\n\n- Project: [SeedVR2](https://iceclear.github.io/projects/seedvr2/)\n- ComfyUI native support: [PR #14424](https://github.com/Comfy-Org/ComfyUI/pull/14424)\n\n### Subgraph parameters\n\n- **trim_video**: enable to cut a segment before upscaling\n- **trim_start_time / duration**: trim start (seconds) and length\n- **scale multiplier**: upscale factor (default `2`), set as `resize_type.multiplier` on the Resize Image/Mask node inside the subgraph\n- **seed / sampler / scheduler / denoise**: sampling controls; `denoise=1` means full restore\n- **color_correction_method**: optional color match to original (default `none`)\n- **unet_name / vae_name**: model files to load\n\n### Tip: long videos\n\nIf the input is too long, turn on **trim_video**, upscale in shorter segments, then merge them. This helps avoid OOM / slowdowns on long clips.\n"
       ],
       "widgets_values_named": {
-        "text": "## SeedVR2\n\nOne-step video restoration / upscale (ICLR 2026). This workflow uses the **3B Int8** model for video upscaling.\n\n- Project: [SeedVR2](https://iceclear.github.io/projects/seedvr2/)\n- ComfyUI native support: [PR #14424](https://github.com/Comfy-Org/ComfyUI/pull/14424)\n\n### Subgraph parameters\n\n- **trim_video**: enable to cut a segment before upscaling\n- **trim_start_time / duration**: trim start (seconds) and length\n- **scale_multiplier**: upscale factor (default `2`)\n- **seed / sampler / scheduler / denoise**: sampling controls; `denoise=1` means full restore\n- **color_correction_method**: optional color match to original (default `none`)\n- **unet_name / vae_name**: model files to load\n\n### Tip: long videos\n\nIf the input is too long, turn on **trim_video**, upscale in shorter segments, then merge them. This helps avoid OOM / slowdowns on long clips.\n"
+        "text": "## SeedVR2\n\nOne-step video restoration / upscale (ICLR 2026). This workflow uses the **3B Int8** model for video upscaling.\n\n- Project: [SeedVR2](https://iceclear.github.io/projects/seedvr2/)\n- ComfyUI native support: [PR #14424](https://github.com/Comfy-Org/ComfyUI/pull/14424)\n\n### Subgraph parameters\n\n- **trim_video**: enable to cut a segment before upscaling\n- **trim_start_time / duration**: trim start (seconds) and length\n- **scale multiplier**: upscale factor (default `2`), set as `resize_type.multiplier` on the Resize Image/Mask node inside the subgraph\n- **seed / sampler / scheduler / denoise**: sampling controls; `denoise=1` means full restore\n- **color_correction_method**: optional color match to original (default `none`)\n- **unet_name / vae_name**: model files to load\n\n### Tip: long videos\n\nIf the input is too long, turn on **trim_video**, upscale in shorter segments, then merge them. This helps avoid OOM / slowdowns on long clips.\n"
       },
       "color": "#222",
       "bgcolor": "#000"
@@ -174,15 +174,6 @@
           "type": "FLOAT",
           "widget": {
             "name": "duration"
-          },
-          "link": null
-        },
-        {
-          "label": "scale_multiplier",
-          "name": "resize_type.multiplier_1",
-          "type": "FLOAT",
-          "widget": {
-            "name": "resize_type.multiplier_1"
           },
           "link": null
         },
@@ -312,7 +303,6 @@
         false,
         0,
         0,
-        2,
         959948902156062,
         "euler",
         "simple",
@@ -646,19 +636,6 @@
             "pos": [
               -392.107421875,
               94
-            ]
-          },
-          {
-            "id": "f03a6fda-1ed0-49b0-a120-15259bff282a",
-            "name": "resize_type.multiplier_1",
-            "type": "FLOAT",
-            "linkIds": [
-              86
-            ],
-            "label": "scale_multiplier",
-            "pos": [
-              -392.107421875,
-              114
             ]
           },
           {
@@ -1310,7 +1287,7 @@
                 "widget": {
                   "name": "resize_type.multiplier"
                 },
-                "link": 86
+                "link": null
               },
               {
                 "localized_name": "scale_method",
@@ -2142,17 +2119,9 @@
             "type": "FLOAT"
           },
           {
-            "id": 86,
-            "origin_id": -10,
-            "origin_slot": 4,
-            "target_id": 57,
-            "target_slot": 2,
-            "type": "FLOAT"
-          },
-          {
             "id": 87,
             "origin_id": -10,
-            "origin_slot": 5,
+            "origin_slot": 4,
             "target_id": 54,
             "target_slot": 4,
             "type": "INT"
@@ -2160,7 +2129,7 @@
           {
             "id": 90,
             "origin_id": -10,
-            "origin_slot": 6,
+            "origin_slot": 5,
             "target_id": 54,
             "target_slot": 7,
             "type": "COMBO"
@@ -2168,7 +2137,7 @@
           {
             "id": 91,
             "origin_id": -10,
-            "origin_slot": 7,
+            "origin_slot": 6,
             "target_id": 54,
             "target_slot": 8,
             "type": "COMBO"
@@ -2176,7 +2145,7 @@
           {
             "id": 92,
             "origin_id": -10,
-            "origin_slot": 8,
+            "origin_slot": 7,
             "target_id": 54,
             "target_slot": 9,
             "type": "FLOAT"
@@ -2208,7 +2177,7 @@
           {
             "id": 108,
             "origin_id": -10,
-            "origin_slot": 9,
+            "origin_slot": 8,
             "target_id": 59,
             "target_slot": 2,
             "type": "COMBO"
@@ -2288,7 +2257,7 @@
           {
             "id": 123,
             "origin_id": -10,
-            "origin_slot": 10,
+            "origin_slot": 9,
             "target_id": 105,
             "target_slot": 0,
             "type": "BOOLEAN"
@@ -2296,7 +2265,7 @@
           {
             "id": 124,
             "origin_id": -10,
-            "origin_slot": 11,
+            "origin_slot": 10,
             "target_id": 99,
             "target_slot": 1,
             "type": "INT"
@@ -2304,7 +2273,7 @@
           {
             "id": 125,
             "origin_id": -10,
-            "origin_slot": 12,
+            "origin_slot": 11,
             "target_id": 52,
             "target_slot": 0,
             "type": "COMBO"
@@ -2312,7 +2281,7 @@
           {
             "id": 126,
             "origin_id": -10,
-            "origin_slot": 13,
+            "origin_slot": 12,
             "target_id": 51,
             "target_slot": 0,
             "type": "COMBO"
