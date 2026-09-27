@@ -27,6 +27,8 @@ export interface ComfyuiInstallStatus {
   targetPath: string | null;
   message: string | null;
   error: string | null;
+  /** The latest line the running install command printed. */
+  logLine: string | null;
 }
 
 export interface ComfyuiLaunchResult {

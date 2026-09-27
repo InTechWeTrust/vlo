@@ -2,10 +2,12 @@ import { Box, CircularProgress, Typography } from "@mui/material";
 
 interface ComfyuiLaunchProgressProps {
   latestOutput: string | null;
+  message?: string;
 }
 
 export function ComfyuiLaunchProgress({
   latestOutput,
+  message = "ComfyUI is starting; this can take a minute on first launch…",
 }: ComfyuiLaunchProgressProps) {
   return (
     <Box sx={{ mt: 1.5 }} data-testid="comfyui-launch-progress">
@@ -18,9 +20,7 @@ export function ComfyuiLaunchProgress({
         }}
       >
         <CircularProgress size={14} />
-        <Typography variant="caption">
-          ComfyUI is starting; this can take a minute on first launch…
-        </Typography>
+        <Typography variant="caption">{message}</Typography>
       </Box>
       {latestOutput ? (
         <Typography

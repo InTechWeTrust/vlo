@@ -221,6 +221,25 @@ export function ComfyUiSetupPrompt() {
             </Alert>
           ) : null}
           {installing ? <LinearProgress /> : null}
+          {installStatus?.logLine &&
+          (installing || installStatus.phase === "failed") ? (
+            <Typography
+              variant="caption"
+              title={installStatus.logLine}
+              data-testid="comfyui-install-log-line"
+              sx={{
+                mt: -1.5,
+                color: "text.secondary",
+                fontFamily: "monospace",
+                fontSize: 11,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {installStatus.logLine}
+            </Typography>
+          ) : null}
           {!installing ? (
             <Box sx={{ display: "flex", gap: 1 }}>
               <Button

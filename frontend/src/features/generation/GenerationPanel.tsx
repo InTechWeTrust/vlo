@@ -1323,7 +1323,15 @@ export function GenerationPanel() {
                 {isLaunchingComfyui ? "Launching ComfyUI…" : "Launch ComfyUI"}
               </Button>
             ) : null}
-            {comfyuiLaunchStarting ? (
+            {environmentSetupStatus?.running ? (
+              <ComfyuiLaunchProgress
+                message={
+                  environmentSetupStatus.message ??
+                  "Creating a managed ComfyUI environment…"
+                }
+                latestOutput={environmentSetupStatus.logLine}
+              />
+            ) : comfyuiLaunchStarting ? (
               <ComfyuiLaunchProgress
                 latestOutput={comfyuiLaunch?.logTail.at(-1) ?? null}
               />

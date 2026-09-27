@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtimeApiMocks = vi.hoisted(() => ({
   launchComfyui: vi.fn(),
+  prepareComfyuiEnvironment: vi.fn(),
 }));
 
 vi.mock("../../hooks/useGenerationPanel", () => ({
@@ -23,6 +24,7 @@ vi.mock("../../../../services/runtimeApi", async () => {
   return {
     ...actual,
     launchComfyui: runtimeApiMocks.launchComfyui,
+    prepareComfyuiEnvironment: runtimeApiMocks.prepareComfyuiEnvironment,
   };
 });
 vi.mock("../../hooks/useWorkflowMenuDefinition", async () => {
@@ -570,6 +572,56 @@ describe("GenerationPanel workflow rule hints", () => {
         useSystemPython: true,
       });
     });
+  });
+
+  it("shows the managed environment's latest install output while it is created", async () => {
+    runtimeApiMocks.launchComfyui.mockResolvedValueOnce({
+      started: false,
+      alreadyRunning: false,
+      requiresPythonChoice: true,
+    });
+    runtimeApiMocks.prepareComfyuiEnvironment.mockResolvedValueOnce({
+      phase: "installing_requirements",
+      running: true,
+      targetPath: "/opt/ComfyUI",
+      message: "Installing ComfyUI requirements…",
+      error: null,
+      logLine: "Collecting torchsde",
+    });
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({
+        connectionStatus: "disconnected",
+        selectedWorkflowId: null,
+        runtimeStatus: {
+          comfyui: {
+            status: "disconnected",
+            url: "http://127.0.0.1:8188",
+            error: "offline",
+          },
+          settings: {
+            comfyuiInstallVerification: {
+              requestedPath: "/opt/ComfyUI",
+              installPath: "/opt/ComfyUI",
+              valid: true,
+              mainPyPresent: true,
+              sourceMarkers: ["argument parser"],
+              layoutMarkers: ["comfy", "nodes.py", "server.py"],
+              warnings: [],
+            },
+          },
+        },
+      }),
+    );
+
+    render(<GenerationPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Launch ComfyUI" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Create managed environment" }),
+    );
+
+    const progress = await screen.findByTestId("comfyui-launch-progress");
+    expect(progress).toHaveTextContent("Installing ComfyUI requirements…");
+    expect(progress).toHaveTextContent("Collecting torchsde");
   });
 
   it("replaces the workflow menu with a back control after selection", () => {

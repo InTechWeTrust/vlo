@@ -162,6 +162,59 @@ describe("ComfyUiSetupPrompt", () => {
     expect(api.installComfyui).toHaveBeenCalledTimes(1);
   });
 
+  it("follows the running install's latest output beneath the progress bar", async () => {
+    api.getComfyuiInstallStatus
+      .mockResolvedValueOnce({
+        phase: "installing_requirements",
+        running: true,
+        targetPath: "/home/me/ComfyUI",
+        message: "Installing ComfyUI requirements…",
+        error: null,
+        logLine: "Collecting torch",
+      })
+      .mockResolvedValue({
+        phase: "installing_requirements",
+        running: true,
+        targetPath: "/home/me/ComfyUI",
+        message: "Installing ComfyUI requirements…",
+        error: null,
+        logLine: "Downloading torch-2.12.0.whl (900.0 MB) — 43%",
+      });
+    render(<ComfyUiSetupPrompt />);
+
+    expect(
+      await screen.findByTestId("comfyui-install-log-line"),
+    ).toHaveTextContent("Collecting torch");
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+
+    // The status poll runs every 1.5s.
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("comfyui-install-log-line")).toHaveTextContent(
+          "Downloading torch-2.12.0.whl (900.0 MB) — 43%",
+        );
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it("keeps the last output line visible when the install fails", async () => {
+    api.getComfyuiInstallStatus.mockResolvedValue({
+      phase: "failed",
+      running: false,
+      targetPath: "/home/me/ComfyUI",
+      message: "ComfyUI installation failed.",
+      error: "Command returned non-zero exit status 1.",
+      logLine: "ERROR: No matching distribution found for torch",
+    });
+    render(<ComfyUiSetupPrompt />);
+
+    expect(
+      await screen.findByTestId("comfyui-install-log-line"),
+    ).toHaveTextContent("ERROR: No matching distribution found for torch");
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
   it("verifies a typed existing install before accepting it", async () => {
     api.pickComfyuiDirectory.mockReturnValue(new Promise(() => {}));
     api.verifyComfyuiInstall.mockResolvedValue({

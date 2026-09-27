@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 
 from config import RUNTIME_ROOT
 from services.comfyui.frontend_settings import seed_managed_frontend_settings
+from services.comfyui.install_output import InstallOutputTracker
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,10 @@ _VERIFICATION_CACHE_LOCK = threading.Lock()
 _VERIFICATION_CACHE: dict[str, ComfyuiInstallVerification] = {}
 _DIRECTORY_PICKER_LOCK = threading.Lock()
 _DIRECTORY_PICKER_TIMEOUT_SECONDS = 5 * 60
+# `--progress-bar raw` arrived in pip 24.1. Older pips reject the value, even
+# from the environment, and fail the whole command.
+_PIP_RAW_PROGRESS_MIN_VERSION = (24, 1)
+_PIP_VERSION_CHECK_TIMEOUT_SECONDS = 60
 
 InstallPhase = Literal[
     "idle",
@@ -121,6 +126,9 @@ class ComfyuiInstallStatus(TypedDict):
     targetPath: str | None
     message: str | None
     error: str | None
+    # The latest line the running install command printed, so a long step
+    # visibly moves.
+    logLine: str | None
 
 
 class DirectoryPickerBusyError(RuntimeError):
@@ -362,13 +370,14 @@ def _portable_python(install_path: Path) -> Path | None:
 
 
 def _launch_environment() -> dict[str, str]:
-    """Environment for a ComfyUI child whose output goes to a log file.
+    """Environment for a Python child whose output goes to a file or a pipe.
 
-    With stdout redirected to a file, Windows Python encodes output with the
-    ANSI code page, and ComfyUI's log interceptor uses strict error handling,
-    so a single non-cp1252 character printed by a custom node can raise
-    mid-startup. Unbuffered output keeps the log current, so the tail shown in
+    With stdout redirected, Windows Python encodes output with the ANSI code
+    page, and ComfyUI's log interceptor uses strict error handling, so a
+    single non-cp1252 character printed by a custom node can raise
+    mid-startup. Unbuffered output keeps the log current, so the line shown in
     the UI is what the process is doing now rather than what it last flushed.
+    The installer's pip commands want both for the same reasons.
     """
 
     return {
@@ -376,6 +385,34 @@ def _launch_environment() -> dict[str, str]:
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUNBUFFERED": "1",
     }
+
+
+def _pip_supports_raw_progress(python: Path, cwd: Path) -> bool:
+    try:
+        result = subprocess.run(
+            [str(python), "-c", "import pip; print(pip.__version__)"],
+            cwd=cwd,
+            check=True,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=_PIP_VERSION_CHECK_TIMEOUT_SECONDS,
+        )
+        version = tuple(int(part) for part in result.stdout.strip().split(".")[:2])
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+    return version >= _PIP_RAW_PROGRESS_MIN_VERSION
+
+
+def _write_to_terminal(text: str) -> None:
+    if not text:
+        return
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except (AttributeError, OSError, ValueError):
+        # No usable console (a windowless launch); the UI still gets the line.
+        pass
 
 
 def _read_log_tail(log_path: Path, offset: int) -> list[str]:
@@ -403,7 +440,10 @@ class ComfyuiLocalRuntime:
             "targetPath": None,
             "message": None,
             "error": None,
+            "logLine": None,
         }
+        # Set once the managed venv's pip can report download progress.
+        self._install_environment: dict[str, str] | None = None
         self._process: subprocess.Popen[bytes] | None = None
         self._launch_log_path: Path | None = None
         # Byte offset where the current launch's output starts, so the tail
@@ -469,6 +509,9 @@ class ComfyuiLocalRuntime:
                 "targetPath": str(target_path),
                 "message": message,
                 "error": error,
+                # Kept across steps, like a terminal: on failure it is often
+                # the line that says why.
+                "logLine": self._install_status["logLine"],
             }
 
     def start_install(self, parent_path: str | Path) -> ComfyuiInstallStatus:
@@ -497,7 +540,9 @@ class ComfyuiLocalRuntime:
                 "targetPath": str(target),
                 "message": "Cloning ComfyUI…",
                 "error": None,
+                "logLine": None,
             }
+            self._install_environment = None
 
         thread = threading.Thread(
             target=self._install_worker,
@@ -527,7 +572,9 @@ class ComfyuiLocalRuntime:
                 "targetPath": str(target),
                 "message": "Creating a managed environment for the existing checkout…",
                 "error": None,
+                "logLine": None,
             }
+            self._install_environment = None
 
         thread = threading.Thread(
             target=self._install_worker,
@@ -539,12 +586,42 @@ class ComfyuiLocalRuntime:
         return self.get_install_status()
 
     def _run_install_command(self, command: list[str], cwd: Path | None = None) -> None:
-        subprocess.run(
+        # Piped rather than inherited so the latest line can reach the UI. It
+        # is echoed as it arrives, so the backend terminal keeps the full log.
+        tracker = InstallOutputTracker()
+        with subprocess.Popen(
             command,
             cwd=cwd,
-            check=True,
             stdin=subprocess.DEVNULL,
-        )
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=self._install_environment or _launch_environment(),
+        ) as process:
+            assert process.stdout is not None
+            while chunk := process.stdout.read1(64 * 1024):
+                _write_to_terminal(tracker.feed(chunk))
+                self._publish_install_log_line(tracker.latest)
+            _write_to_terminal(tracker.feed(b"", final=True))
+            self._publish_install_log_line(tracker.latest)
+            returncode = process.wait()
+        if returncode:
+            raise subprocess.CalledProcessError(returncode, command)
+
+    def _publish_install_log_line(self, line: str | None) -> None:
+        if line is None:
+            return
+        with self._lock:
+            self._install_status["logLine"] = line
+
+    def _enable_pip_download_progress(self, python: Path, cwd: Path) -> None:
+        # Into a pipe, pip draws its download bar only once the download is
+        # done, so a multi-gigabyte torch wheel would sit on one line for
+        # minutes. Raw progress lines let the tracker show a percentage.
+        if _pip_supports_raw_progress(python, cwd):
+            self._install_environment = {
+                **_launch_environment(),
+                "PIP_PROGRESS_BAR": "raw",
+            }
 
     def _torch_has_cuda(self, python: Path, cwd: Path) -> bool:
         try:
@@ -692,6 +769,7 @@ class ComfyuiLocalRuntime:
                 [str(python), "-m", "pip", "install", "--upgrade", "pip"],
                 cwd=target,
             )
+            self._enable_pip_download_progress(python, target)
             if _installs_cuda_torch_first():
                 self._install_cuda_torch(target, python)
             self._set_install_status(

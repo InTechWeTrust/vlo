@@ -2,6 +2,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -504,6 +505,101 @@ def test_installer_skips_cuda_torch_where_no_cuda_build_exists(
         local_runtime.TORCH_CUDA_INDEX_URL not in command for command in commands
     )
     assert manager.get_install_status()["phase"] == "complete"
+
+
+class _NoopThread:
+    def __init__(self, *args, **kwargs) -> None:
+        del args, kwargs
+
+    def start(self) -> None:
+        pass
+
+
+def test_install_commands_publish_their_latest_line_and_still_echo_it(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    manager = ComfyuiLocalRuntime()
+    manager._set_install_status(
+        phase="installing_requirements", running=True, target_path=tmp_path
+    )
+
+    manager._run_install_command(
+        [
+            sys.executable,
+            "-c",
+            "import sys; print('Collecting torch'); "
+            "print('Installing collected packages: torch', file=sys.stderr)",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert manager.get_install_status()["logLine"] == (
+        "Installing collected packages: torch"
+    )
+    echoed = capsys.readouterr().out
+    assert "Collecting torch" in echoed
+    assert "Installing collected packages: torch" in echoed
+
+    # A new step keeps the last line until its command prints one.
+    manager._set_install_status(
+        phase="installing_requirements", running=True, target_path=tmp_path
+    )
+    assert manager.get_install_status()["logLine"] == (
+        "Installing collected packages: torch"
+    )
+
+
+def test_a_failing_install_command_raises_with_its_last_line_kept(
+    tmp_path: Path,
+) -> None:
+    manager = ComfyuiLocalRuntime()
+
+    with pytest.raises(subprocess.CalledProcessError):
+        manager._run_install_command(
+            [
+                sys.executable,
+                "-c",
+                "print('ERROR: No matching distribution'); raise SystemExit(1)",
+            ],
+            cwd=tmp_path,
+        )
+
+    assert manager.get_install_status()["logLine"] == "ERROR: No matching distribution"
+
+
+def test_pip_download_progress_is_only_enabled_for_a_pip_that_supports_it(
+    tmp_path: Path,
+) -> None:
+    fake_python = tmp_path / "python"
+
+    def pip_reporting(version: str) -> bool:
+        fake_python.write_text(f"#!/bin/sh\necho {version}\n", encoding="utf-8")
+        fake_python.chmod(0o755)
+        return local_runtime._pip_supports_raw_progress(fake_python, tmp_path)
+
+    assert pip_reporting("24.1") is True
+    assert pip_reporting("25.2.1") is True
+    assert pip_reporting("23.0.1") is False
+    assert pip_reporting("not-a-version") is False
+    assert (
+        local_runtime._pip_supports_raw_progress(tmp_path / "missing", tmp_path)
+        is False
+    )
+
+
+def test_a_new_install_clears_the_previous_log_line(
+    tmp_path: Path, monkeypatch
+) -> None:
+    manager = ComfyuiLocalRuntime()
+    manager._publish_install_log_line("from the last install")
+    manager._install_environment = {"PIP_PROGRESS_BAR": "raw"}
+    monkeypatch.setattr(local_runtime.threading, "Thread", _NoopThread)
+
+    status = manager.start_install(tmp_path)
+
+    assert status["logLine"] is None
+    assert manager._install_environment is None
 
 
 def test_windows_environment_discovery_uses_scripts_python(tmp_path: Path) -> None:
