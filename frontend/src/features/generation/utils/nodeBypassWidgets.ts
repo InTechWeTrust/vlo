@@ -84,6 +84,13 @@ export interface NodeBypassTargetReconciliationOptions {
    * default would silently undo a user who turned the loader back on.
    */
   readonly appliedDefaults: ReadonlySet<string>;
+  /**
+   * Keep selections whose widget is absent from this pass, for the same
+   * reason as widget values: a reload of the same workflow empties the widget
+   * list for its duration, and the defaults already counted as applied would
+   * not come back to restore what was dropped.
+   */
+  readonly preserveMissing?: boolean;
 }
 
 export interface NodeBypassTargetReconciliationResult {
@@ -100,6 +107,7 @@ export function reconcileNodeBypassWidgetTargets({
   widgetInputs,
   previousTargets,
   appliedDefaults,
+  preserveMissing = false,
 }: NodeBypassTargetReconciliationOptions): NodeBypassTargetReconciliationResult {
   const bypassableTargets = new Set<string>();
   const defaultTargets = new Set<string>();
@@ -114,7 +122,7 @@ export function reconcileNodeBypassWidgetTargets({
 
   const targets = new Set<string>();
   for (const target of previousTargets) {
-    if (bypassableTargets.has(target)) {
+    if (preserveMissing || bypassableTargets.has(target)) {
       targets.add(target);
     }
   }

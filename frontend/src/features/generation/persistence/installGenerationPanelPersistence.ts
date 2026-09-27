@@ -87,6 +87,13 @@ export function installGenerationPanelPersistence(): () => void {
     // alone, not to erase it: the project keeps the last workflow it can
     // actually be reopened on.
     if (state.selectedWorkflowId === TEMP_WORKFLOW_ID) return pendingWrite;
+    // A load has cleared the graph and is fetching it again. What the panel
+    // holds is between workflows (or between two copies of one), and the
+    // snapshot would lose the graph it falls back on. The load putting the
+    // graph back changes the store, which schedules the write this declines.
+    if (state.isWorkflowLoading && state.syncedGraphData === null) {
+      return pendingWrite;
+    }
     // The saved state has not been read back yet, so there is nothing to
     // compare against and an empty panel would look like a deliberate one.
     if (readingSnapshotFor !== null) return pendingWrite;
@@ -171,10 +178,17 @@ export function installGenerationPanelPersistence(): () => void {
   });
 
   const unregisterPreSave = registerPreSaveHook(() => writeNow());
-  const unregisterClosing = registerProjectClosingHook(() => {
-    cancelScheduledWrite();
-    return pendingWrite.catch(() => undefined);
-  });
+  // Closing writes what is still waiting out the debounce rather than dropping
+  // it: an edit made just before closing is the most recent state there is.
+  const unregisterClosing = registerProjectClosingHook(() =>
+    writeNow().catch(() => undefined),
+  );
+  // Leaving the page gets no chance to await anything, so this only starts
+  // the write. That still beats the debounce, which would never fire at all.
+  const flushOnPageHide = () => {
+    if (writeTimer !== null) void writeNow();
+  };
+  globalThis.addEventListener?.("pagehide", flushOnPageHide);
 
   if (currentProjectId !== null) {
     // Installing is not a project change: the editor can remount inside one
@@ -187,6 +201,7 @@ export function installGenerationPanelPersistence(): () => void {
 
   return () => {
     cancelScheduledWrite();
+    globalThis.removeEventListener?.("pagehide", flushOnPageHide);
     unregisterClosing();
     unregisterPreSave();
     unsubscribeGeneration();

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runPreSaveHooks } from "../../../../core/persistence/preSaveHooks";
+import { runProjectClosingHooks } from "../../../../core/project/projectLifecycleHooks";
 import { useProjectStore } from "../../../project";
 import { projectPersistenceService } from "../../../project/services/ProjectPersistenceService";
 import { useGenerationStore } from "../../useGenerationStore";
@@ -52,6 +53,8 @@ describe("installGenerationPanelPersistence", () => {
       isRestoringPanelSnapshot: false,
       selectedWorkflowId: null,
       targetResolution: 1080,
+      isWorkflowLoading: false,
+      syncedGraphData: null,
     });
   });
 
@@ -281,5 +284,55 @@ describe("installGenerationPanelPersistence", () => {
     await runPreSaveHooks();
 
     expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  async function openRestoredProject(): Promise<void> {
+    openProject("project-a");
+    uninstall = installGenerationPanelPersistence();
+    await vi.waitFor(() =>
+      expect(useGenerationStore.getState().pendingPanelSnapshot).not.toBeNull(),
+    );
+    useGenerationStore.setState({ pendingPanelSnapshot: null });
+  }
+
+  it("writes an edit still waiting out the debounce when the project closes", async () => {
+    await openRestoredProject();
+    useGenerationStore.setState({ selectedWorkflowId: "flux.json" });
+
+    await runProjectClosingHooks();
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]?.[0]).toMatchObject({ workflowId: "flux.json" });
+  });
+
+  it("starts writing an edit still waiting out the debounce when the page is left", async () => {
+    await openRestoredProject();
+    useGenerationStore.setState({ selectedWorkflowId: "flux.json" });
+
+    globalThis.dispatchEvent(new Event("pagehide"));
+    // Settles the write's promise chain without reaching the debounce.
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not write while a workflow load has cleared the graph", async () => {
+    await openRestoredProject();
+    useGenerationStore.setState({
+      selectedWorkflowId: "flux.json",
+      isWorkflowLoading: true,
+      syncedGraphData: null,
+    });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(write).not.toHaveBeenCalled();
+
+    // The load putting the graph back is itself the change that saves.
+    useGenerationStore.setState({ syncedGraphData: { nodes: [] } });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0]?.[0]).toMatchObject({
+      workflowId: "flux.json",
+      graphData: { nodes: [] },
+    });
   });
 });

@@ -7,6 +7,13 @@ export interface WidgetValueReconciliationOptions {
   widgetInputs: readonly WorkflowWidgetInput[];
   previousValues: WidgetValueMap;
   previousCurrentValues: WidgetCurrentValueMap;
+  /**
+   * Keep values whose widget is absent from this pass. Set while the same
+   * workflow reloads: its graph is cleared for the duration, so every widget
+   * vanishes and returns, and dropping them would reset each one to the
+   * workflow's own value when it does.
+   */
+  preserveMissing?: boolean;
 }
 
 export interface WidgetValueReconciliationResult {
@@ -34,6 +41,7 @@ export function reconcileWidgetValues({
   widgetInputs,
   previousValues,
   previousCurrentValues,
+  preserveMissing = false,
 }: WidgetValueReconciliationOptions): WidgetValueReconciliationResult {
   const presentByNode = new Map<string, Set<string>>();
   const presentKeys = new Set<string>();
@@ -88,33 +96,37 @@ export function reconcileWidgetValues({
     }
   }
 
-  for (const [nodeId, params] of Object.entries(previousValues)) {
-    const presentParams = presentByNode.get(nodeId);
-    for (const param of Object.keys(params)) {
-      if (presentParams?.has(param)) continue;
-      if (!valuesChanged) {
-        nextValues = { ...previousValues };
-        valuesChanged = true;
-      }
-      const nodeCopy = { ...(nextValues[nodeId] ?? {}) };
-      delete nodeCopy[param];
-      if (Object.keys(nodeCopy).length === 0) {
-        const tmp = { ...nextValues };
-        delete tmp[nodeId];
-        nextValues = tmp;
-      } else {
-        nextValues[nodeId] = nodeCopy;
+  // The backing values are kept alongside, so a widget that returns with an
+  // unchanged workflow value is recognised as unchanged and keeps its own.
+  if (!preserveMissing) {
+    for (const [nodeId, params] of Object.entries(previousValues)) {
+      const presentParams = presentByNode.get(nodeId);
+      for (const param of Object.keys(params)) {
+        if (presentParams?.has(param)) continue;
+        if (!valuesChanged) {
+          nextValues = { ...previousValues };
+          valuesChanged = true;
+        }
+        const nodeCopy = { ...(nextValues[nodeId] ?? {}) };
+        delete nodeCopy[param];
+        if (Object.keys(nodeCopy).length === 0) {
+          const tmp = { ...nextValues };
+          delete tmp[nodeId];
+          nextValues = tmp;
+        } else {
+          nextValues[nodeId] = nodeCopy;
+        }
       }
     }
-  }
 
-  for (const key of Object.keys(previousCurrentValues)) {
-    if (presentKeys.has(key)) continue;
-    if (!currentValuesChanged) {
-      nextCurrentValues = { ...previousCurrentValues };
-      currentValuesChanged = true;
+    for (const key of Object.keys(previousCurrentValues)) {
+      if (presentKeys.has(key)) continue;
+      if (!currentValuesChanged) {
+        nextCurrentValues = { ...previousCurrentValues };
+        currentValuesChanged = true;
+      }
+      delete nextCurrentValues[key];
     }
-    delete nextCurrentValues[key];
   }
 
   return {

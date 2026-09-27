@@ -158,4 +158,23 @@ describe("reconcileWidgetValues", () => {
     expect(result.valuesChanged).toBe(true);
     expect(result.currentValuesChanged).toBe(true);
   });
+
+  it("keeps values for absent widgets when asked to preserve them", () => {
+    const result = reconcileWidgetValues({
+      widgetInputs: [],
+      previousValues: { "12": { strength: 0.9 } },
+      previousCurrentValues: { "12:strength": 0.4 },
+      preserveMissing: true,
+    });
+    expect(result.valuesChanged).toBe(false);
+    expect(result.currentValuesChanged).toBe(false);
+
+    // Back with an unchanged backing value, the widget keeps its own.
+    const returned = reconcile(
+      [makeWidget(0.4)],
+      result.values,
+      result.currentValues,
+    );
+    expect(returned.values).toEqual({ "12": { strength: 0.9 } });
+  });
 });

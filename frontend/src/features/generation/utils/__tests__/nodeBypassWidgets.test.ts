@@ -199,3 +199,24 @@ describe("reconcileNodeBypassWidgetTargets", () => {
     ]).toEqual([getNodeBypassWidgetKey("7", "lora_name")]);
   });
 });
+
+describe("reconcileNodeBypassWidgetTargets while widgets are absent", () => {
+  it("keeps selections and does not re-apply defaults when preserving", () => {
+    const key = getNodeBypassWidgetKey("12:6", "lora_name");
+    const absent = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [],
+      previousTargets: new Set([key]),
+      appliedDefaults: new Set([key]),
+      preserveMissing: true,
+    });
+    expect([...absent.targets]).toEqual([key]);
+    expect(absent.changed).toBe(false);
+
+    const dropped = reconcileNodeBypassWidgetTargets({
+      widgetInputs: [],
+      previousTargets: new Set([key]),
+      appliedDefaults: new Set([key]),
+    });
+    expect([...dropped.targets]).toEqual([]);
+  });
+});

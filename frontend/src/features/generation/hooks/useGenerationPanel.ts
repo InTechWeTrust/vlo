@@ -129,6 +129,13 @@ import {
   resolveAutodiscoveredLoraWidgetInputs,
 } from "../utils/loraLoaderWidgets";
 import { collectWidgetSubmissionState } from "../utils/widgetSubmissionState";
+import {
+  createReplayPanelCarry,
+  takeLateReplayWidgets,
+  withPendingReplayCarry,
+  type ReplayPanelCarry,
+} from "../utils/replayPanelCarry";
+import { parseStoredWidgetValue } from "../utils/storedWidgetValues";
 import { applyDynamicWidgetBounds } from "../utils/dynamicWidgetBounds";
 import type { GenerationPanelValuesSnapshot } from "../persistence/generationPanelSnapshot";
 import {
@@ -472,6 +479,10 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   const bypassedWidgetTargetsRef = useRef<ReadonlySet<string>>(new Set());
   const bypassWorkflowSourceRef = useRef<string | null>(null);
   const appliedBypassDefaultsRef = useRef<ReadonlySet<string>>(new Set());
+  const randomizeTogglesRef = useRef<Record<string, boolean>>({});
+  /** The workflow the panel's widget values were last reconciled against. */
+  const widgetValuesWorkflowRef = useRef<string | null>(null);
+  const replayCarryRef = useRef<ReplayPanelCarry | null>(null);
 
   const connectionStatus = useGenerationStore((s) => s.connectionStatus);
   const runtimeStatus = useGenerationStore((s) => s.runtimeStatus);
@@ -770,26 +781,47 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     bypassWorkflowSourceRef.current = selectedWorkflowId;
     // A new workflow gets its rule defaults applied afresh.
     appliedBypassDefaultsRef.current = new Set();
+    if (replayCarryRef.current?.workflowId !== selectedWorkflowId) {
+      replayCarryRef.current = null;
+    }
     const next = new Set<string>();
     bypassedWidgetTargetsRef.current = next;
     setBypassedWidgetTargets(next);
   }, [selectedWorkflowId]);
+
+  // A reload of the workflow already on screen clears its graph until the
+  // reload lands, so its widgets drop out and come back. They are the same
+  // widgets, and what the panel holds for them has to survive the gap.
+  // Switching workflow also loads, but the values are the outgoing
+  // workflow's, and those are let go as before.
+  // Called from effects only: it reads a ref.
+  const isReloadingSameWorkflow = () =>
+    isWorkflowLoading &&
+    selectedWorkflowId !== null &&
+    widgetValuesWorkflowRef.current === selectedWorkflowId;
 
   useEffect(() => {
     const reconciliation = reconcileNodeBypassWidgetTargets({
       widgetInputs,
       previousTargets: bypassedWidgetTargetsRef.current,
       appliedDefaults: appliedBypassDefaultsRef.current,
+      preserveMissing: isReloadingSameWorkflow(),
     });
     appliedBypassDefaultsRef.current = reconciliation.appliedDefaults;
     if (!reconciliation.changed) return;
     bypassedWidgetTargetsRef.current = reconciliation.targets;
     setBypassedWidgetTargets(reconciliation.targets);
+    // Only re-run when widgetInputs identity changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widgetInputs]);
 
   useEffect(() => {
     widgetValuesRef.current = widgetValues;
   }, [widgetValues]);
+
+  useEffect(() => {
+    randomizeTogglesRef.current = randomizeToggles;
+  }, [randomizeToggles]);
 
   useEffect(() => {
     // Read the refs once, here, and hand the values to the updater. React runs
@@ -835,18 +867,72 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
   //
   // Instead, reconcile against the last backing value we saw: preserve panel
   // values while currentValue is unchanged, refresh when currentValue really
-  // changes, initialize newly-added widgets, and drop disappeared ones.
+  // changes, initialize newly-added widgets, and drop disappeared ones —
+  // except while the same workflow reloads, when every widget disappears.
+  //
+  // A widget arriving after a replay was hydrated takes the replay's value
+  // rather than the workflow's own (see `ReplayPanelCarry`).
   useEffect(() => {
     const reconciliation = reconcileWidgetValues({
       widgetInputs,
       previousValues: widgetValuesRef.current,
       previousCurrentValues: widgetCurrentValuesRef.current,
+      preserveMissing: isReloadingSameWorkflow(),
     });
+    if (widgetInputs.length > 0) {
+      widgetValuesWorkflowRef.current = selectedWorkflowId;
+    }
+
+    let nextValues = reconciliation.values;
+    let valuesChanged = reconciliation.valuesChanged;
+    let lateWidgets: WorkflowWidgetInput[] = [];
+    const carry = replayCarryRef.current;
+    if (carry && carry.workflowId === selectedWorkflowId) {
+      const taken = takeLateReplayWidgets(carry, widgetInputs);
+      replayCarryRef.current = taken.carry;
+      lateWidgets = taken.widgets;
+    }
+
+    if (lateWidgets.length > 0 && carry) {
+      const replayedValues = resolveReplayWidgetValues(carry.state, lateWidgets);
+      for (const [nodeId, params] of Object.entries(replayedValues ?? {})) {
+        for (const [param, value] of Object.entries(params)) {
+          if (Object.is(nextValues[nodeId]?.[param], value)) continue;
+          nextValues = setNodeParamValue(nextValues, nodeId, param, value);
+          valuesChanged = true;
+        }
+      }
+
+      // The bypass pass has already run for these widgets and given them the
+      // rule default; the replayed choice replaces it, and counts as applied
+      // so the default is not layered back on later.
+      const replayedBypasses = resolveReplayNodeBypassWidgetTargets(
+        carry.state,
+        lateWidgets,
+      );
+      const targets = new Set(bypassedWidgetTargetsRef.current);
+      const appliedDefaults = new Set(appliedBypassDefaultsRef.current);
+      for (const widget of lateWidgets) {
+        if (!widget.config.nodeBypassOption) continue;
+        const key = getNodeBypassWidgetKey(widget.nodeId, widget.param);
+        appliedDefaults.add(key);
+        if (replayedBypasses.has(key)) targets.add(key);
+        else targets.delete(key);
+      }
+      appliedBypassDefaultsRef.current = appliedDefaults;
+      if (
+        targets.size !== bypassedWidgetTargetsRef.current.size ||
+        [...targets].some((key) => !bypassedWidgetTargetsRef.current.has(key))
+      ) {
+        bypassedWidgetTargetsRef.current = targets;
+        setBypassedWidgetTargets(targets);
+      }
+    }
 
     widgetCurrentValuesRef.current = reconciliation.currentValues;
-    if (reconciliation.valuesChanged) {
-      widgetValuesRef.current = reconciliation.values;
-      setWidgetValues(reconciliation.values);
+    if (valuesChanged) {
+      widgetValuesRef.current = nextValues;
+      setWidgetValues(nextValues);
     }
 
     const nextToggles: Record<string, boolean> = {};
@@ -858,27 +944,38 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
           randomizeToggles[key] ?? w.config.defaultRandomize ?? true;
       }
     }
-    setRandomizeToggles((prev) => ({ ...prev, ...nextToggles }));
+    const lateToggles =
+      carry && lateWidgets.length > 0
+        ? hydrateReplayRandomizeToggles(nextToggles, carry.state, lateWidgets)
+            .value
+        : nextToggles;
+    setRandomizeToggles((prev) => ({ ...prev, ...lateToggles }));
     // Only re-run when widgetInputs identity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widgetInputs]);
 
-  // Sync displayed widget values to exactly what the backend applied.
+  // Show the value the backend picked for each widget left to randomize, so
+  // the seed a generation used can be read off the panel.
+  //
+  // Only those: the backend reports every widget it applied, and it reports
+  // them when a submission lands — which, with generations queued, is well
+  // after the panel has moved on. Taking the rest would roll the user's newer
+  // edits back to what an older submission carried.
   useEffect(() => {
-    const entries = Object.entries(lastAppliedWidgetValues);
-    if (entries.length === 0) return;
-    setWidgetValues((prev) => {
-      const next = { ...prev };
-      for (const [key, applied] of entries) {
-        const sep = key.lastIndexOf(":");
-        if (sep <= 0 || sep >= key.length - 1) continue;
-        const nodeId = key.slice(0, sep);
-        const param = key.slice(sep + 1);
-        next[nodeId] = { ...(next[nodeId] ?? {}), [param]: applied };
-      }
-      widgetValuesRef.current = next;
-      return next;
-    });
+    let next = widgetValuesRef.current;
+    for (const [key, applied] of Object.entries(lastAppliedWidgetValues)) {
+      if (randomizeTogglesRef.current[key] !== true) continue;
+      const widget = widgetInputsRef.current.find(
+        (candidate) => `${candidate.nodeId}:${candidate.param}` === key,
+      );
+      if (!widget?.config.controlAfterGenerate) continue;
+      const value = parseStoredWidgetValue(widget, applied);
+      if (Object.is(next[widget.nodeId]?.[widget.param], value)) continue;
+      next = setNodeParamValue(next, widget.nodeId, widget.param, value);
+    }
+    if (next === widgetValuesRef.current) return;
+    widgetValuesRef.current = next;
+    setWidgetValues(next);
   }, [lastAppliedWidgetValues]);
 
   // Hydrate panel state from a queued generation-replay snapshot after the
@@ -951,11 +1048,17 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
         ).value,
     );
 
+    replayCarryRef.current = createReplayPanelCarry(
+      selectedWorkflowId,
+      pendingReplayPanelState,
+      widgetInputs,
+    );
     clearPendingReplayPanelState();
   }, [
     clearPendingReplayPanelState,
     isWorkflowLoading,
     pendingReplayPanelState,
+    selectedWorkflowId,
     widgetInputs,
     workflowInputs,
   ]);
@@ -977,11 +1080,16 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
     appliedBypassDefaultsRef.current = clearedBypasses;
     bypassWorkflowSourceRef.current = null;
     setBypassedWidgetTargets(clearedBypasses);
+    widgetValuesWorkflowRef.current = null;
+    replayCarryRef.current = null;
   }, [panelResetToken]);
 
   // Mirror the panel's own control values into the store so the project can
   // save them. Nothing submits from here — this is the persistence seam only.
   useEffect(() => {
+    // Mid-reload the widgets are all absent while their values are kept, and
+    // publishing now would describe the panel as having none.
+    if (isReloadingSameWorkflow() && widgetInputs.length === 0) return;
     const widgetState = collectWidgetSubmissionState({
       widgetInputs,
       widgetValues,
@@ -996,7 +1104,18 @@ export function useGenerationPanel(mode: "rules" | "manual" = "rules") {
       bypassNodeIds: widgetState.bypassNodeIds,
       activateNodeIds: widgetState.activateNodeIds,
     };
-    useGenerationStore.getState().setPanelValues(nextValues);
+    const carry = replayCarryRef.current;
+    useGenerationStore
+      .getState()
+      .setPanelValues(
+        withPendingReplayCarry(
+          nextValues,
+          carry?.workflowId === selectedWorkflowId ? carry : null,
+        ),
+      );
+    // The carry is a ref: it only changes alongside the widget list, which is
+    // already a dependency, and the reload flag belongs to that same render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     bypassedWidgetTargets,
     randomizeToggles,
