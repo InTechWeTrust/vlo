@@ -485,6 +485,10 @@ def test_packaged_workflows_ship_how_tos():
         "vlo_minimax_h3_inpaint.json",
         "vlo_minimax_h3_inpaint_flf2va.json",
         "vlo_minimax_h3_ttm.json",
+        "vlo_minimax_h3_i2v.json",
+        "vlo_minimax_h3_masked_guide.json",
+        "vlo_minimax_h3_r2v.json",
+        "vlo_minimax_h3_fun_controlnet_union.json",
     } <= set(_packaged_how_to_workflow_ids())
 
 

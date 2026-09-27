@@ -41,3 +41,5 @@ defaults are a good starting point.
 > Holding things tightly has a cost: the model gets less room to clean up the
 > seams of your cut-and-paste. If the object looks pasted on, try an earlier
 > lock-in or release step.
+
+::include{src="shared:minimax/prompting-base.md"}
