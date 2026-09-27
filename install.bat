@@ -394,6 +394,13 @@ if /I "!INSTALL_SAM_AUDIO!"=="YES" set "WANT_SAM_AUDIO=1"
 :profiles_chosen
 if "%WANT_SAM2%"=="0" if "%WANT_SAM_AUDIO%"=="0" if "%HAD_CUDA_TORCH%"=="0" goto :skip_optional
 
+:: A torch that already has CUDA is kept, and asking about it would be moot.
+call :venv_torch_has_cuda
+if not errorlevel 1 (
+    echo [INFO]  PyTorch in the backend environment already has CUDA support.
+    goto :install_sam2
+)
+
 if /I "%CUDA_TORCH_CHOICE%"=="no" goto :skip_cuda_torch
 if /I "%CUDA_TORCH_CHOICE%"=="yes" goto :do_cuda_torch
 :: An earlier run installed the CUDA build, and the sync has just replaced it.
@@ -596,14 +603,12 @@ if not exist "%VENV_PY%" exit /b 1
 "%VENV_PY%" -c "import importlib.metadata as m, sys; sys.exit(0 if '+cu' in m.version('torch') else 1)" >nul 2>&1
 exit /b %errorlevel%
 
-:install_cuda_torch
+:venv_torch_has_cuda
 :: PyPI's Windows wheels are CPU builds; one that already has CUDA is kept.
 "%VENV_PY%" -c "import sys, torch; sys.exit(0 if torch.version.cuda else 1)" >nul 2>&1
-if not errorlevel 1 (
-    echo [INFO]  PyTorch in the backend environment already has CUDA support.
-    exit /b 0
-)
-:: Pinned to the versions `uv sync` just installed from the lockfile, so the
+exit /b %errorlevel%
+
+:install_cuda_torch:: Pinned to the versions `uv sync` just installed from the lockfile, so the
 :: CUDA build is the release everything else in the lock was resolved with.
 :: Read back through a file: `for /f` mangles a command with several quoted
 :: parts.

@@ -234,15 +234,13 @@ venv_has_cuda_index_torch() {
         >/dev/null 2>&1
 }
 
+# Whether the torch the sync just installed is a CUDA build, from either index.
+venv_torch_has_cuda() {
+    "$VENV_PY" -c 'import sys, torch; sys.exit(0 if torch.version.cuda else 1)' >/dev/null 2>&1
+}
+
 install_cuda_torch() {
     local pins
-
-    # PyPI's Linux wheels are already CUDA builds; only a CPU build (PyPI's
-    # Windows and macOS wheels) needs replacing.
-    if "$VENV_PY" -c 'import sys, torch; sys.exit(0 if torch.version.cuda else 1)' >/dev/null 2>&1; then
-        info "PyTorch in the backend environment already has CUDA support."
-        return 0
-    fi
 
     # Pinned to the versions `uv sync` just installed from the lockfile, so the
     # CUDA build is the release everything else in the lock was resolved with.
@@ -262,6 +260,14 @@ install_cuda_torch() {
 # an earlier run left a CUDA build that the sync has just replaced.
 run_cuda_torch_step() {
     if ! profile_requested sam2 && ! profile_requested sam-audio && [ "$HAD_CUDA_TORCH" -eq 0 ]; then
+        return 0
+    fi
+
+    # PyPI's Linux wheels are already CUDA builds; only a CPU build (PyPI's
+    # Windows and macOS wheels) needs replacing. Checked before asking: a PyPI
+    # CUDA build has no +cu tag, so no rerun could remember a "yes" to it.
+    if venv_torch_has_cuda; then
+        info "PyTorch in the backend environment already has CUDA support."
         return 0
     fi
 

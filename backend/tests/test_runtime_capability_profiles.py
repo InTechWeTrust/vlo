@@ -626,6 +626,69 @@ def test_install_sh_keeps_cuda_torch_across_a_rerun(
     assert "PROFILE_KEPT" in completed.stdout, completed.stderr
 
 
+@pytest.mark.parametrize(
+    ("torch_cuda", "expected"),
+    [
+        (None, ["ASKED", "INSTALL"]),
+        # PyPI's Linux build: no +cu tag, so a rerun cannot know the question
+        # was answered, and asking it again would be moot anyway.
+        ("13.0", []),
+    ],
+    ids=["cpu-build", "cuda-build"],
+)
+def test_install_sh_asks_about_cuda_torch_only_for_a_cpu_build(
+    tmp_path: Path, torch_cuda: str | None, expected: list[str]
+) -> None:
+    if not Path("/bin/bash").exists():  # pragma: no cover
+        pytest.skip("bash is required to exercise install.sh")
+
+    site = tmp_path / "site"
+    (site / "torch").mkdir(parents=True)
+    (site / "torch" / "__init__.py").write_text(_fake_torch(torch_cuda), encoding="utf-8")
+
+    script = (REPO_ROOT / "install.sh").read_text(encoding="utf-8")
+    prelude = tmp_path / "prelude.sh"
+    prelude.write_text(
+        script[script.index("usage() {") : script.index("# -- 1. Check prerequisites")],
+        encoding="utf-8",
+    )
+    harness = tmp_path / "harness.sh"
+    harness.write_text(
+        "\n".join(
+            [
+                "set -euo pipefail",
+                f'SCRIPT_DIR="{tmp_path}"',
+                "FORCE_INSTALL_VLO_NODE=0",
+                "info() { :; }",
+                "warn() { :; }",
+                "error() { :; }",
+                # An update rerun: profiles carried over, no CUDA flag given.
+                "set --",
+                f'source "{prelude}"',
+                "add_profile sam2",
+                f'VENV_PY="{sys.executable}"',
+                'ask_yes_no() { echo ASKED; printf -v "$3" yes; }',
+                "install_cuda_torch() { echo INSTALL; }",
+                "run_cuda_torch_step",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    env = {**os.environ, "PYTHONPATH": str(site)}
+    completed = subprocess.run(
+        ["/bin/bash", str(harness)],
+        env=env,
+        check=True,
+        timeout=30,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.split() == expected, completed.stdout + completed.stderr
+
+
 def test_install_bat_mirrors_the_install_sh_backend_steps() -> None:
     """install.bat cannot run here, so this only ties it to the steps above.
 
@@ -640,6 +703,10 @@ def test_install_bat_mirrors_the_install_sh_backend_steps() -> None:
     assert "call :venv_has_cuda_index_torch" in script
     assert "--reinstall-package torch --reinstall-package torchaudio" in script
     assert '"%HAD_CUDA_TORCH%"=="1"' in script
+    assert "call :venv_torch_has_cuda" in script
+    assert script.index("call :venv_torch_has_cuda") < script.index(
+        "set /p INSTALL_CUDA_TORCH="
+    )
 
 
 def test_install_sh_is_executable_in_git() -> None:
@@ -679,7 +746,7 @@ def test_install_sh_routes_every_prompt_through_the_non_interactive_helper() -> 
     ]
 
     assert len(prompts) == 1, f"prompts outside ask_yes_no: {prompts}"
-    assert '"$prompt"' in prompts[0][1]
+    assert '"$__prompt"' in prompts[0][1]
 
 
 def test_install_sh_runs_unattended_with_stdin_closed(tmp_path: Path) -> None:
