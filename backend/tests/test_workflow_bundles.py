@@ -483,6 +483,7 @@ def test_packaged_inpaint_workflows_ship_how_tos():
         "vlo_VACE_inpaint.json",
         "vlo_ltx2_5_inpaint.json",
         "vlo_minimax_h3_inpaint.json",
+        "vlo_minimax_h3_inpaint_flf2va.json",
     } <= set(_packaged_how_to_workflow_ids())
 
 

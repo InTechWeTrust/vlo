@@ -102,7 +102,7 @@ override packaged ones file by file.
 A how-to pulls a shared document in with a directive on its own line:
 
 ```md
-::include{src="shared:inpainting/mask-inputs.md"}
+::include{src="shared:inpainting/overview.md"}
 ```
 
 - An included document's relative refs resolve inside its own library, not

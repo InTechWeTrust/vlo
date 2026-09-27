@@ -13,7 +13,7 @@ A workflows root holds two shapes side by side:
   workflow into a bundle never changes persisted ids.
 
 ``_shared/`` in a root holds libraries any how-to may reference with a
-``shared:`` prefix (e.g. ``shared:inpainting/mask-inputs.md``).
+``shared:`` prefix (e.g. ``shared:inpainting/overview.md``).
 
 Every lookup takes its roots explicitly so callers keep ownership of the
 user-then-packaged precedence (and tests can patch the directories).
