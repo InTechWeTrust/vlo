@@ -1730,14 +1730,21 @@
         }
       ],
       "properties": {
-        "Node name for S&R": "LoraLoaderModelOnly"
+        "Node name for S&R": "LoraLoaderModelOnly",
+        "models": [
+          {
+            "name": "minimax_h3_turbo_v4_step600_ema.safetensors",
+            "url": "https://huggingface.co/larryvrh/MiniMax-H3-Turbo-Lora/resolve/main/minimax_h3_turbo_v4_step600_ema.safetensors",
+            "directory": "loras"
+          }
+        ]
       },
       "widgets_values": [
-        "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
+        "minimax_h3_turbo_v4_step600_ema.safetensors",
         1
       ],
       "widgets_values_named": {
-        "lora_name": "Wan2.2-Lightning_I2V-A14B-4steps-lora_LOW_fp16.safetensors",
+        "lora_name": "minimax_h3_turbo_v4_step600_ema.safetensors",
         "strength_model": 1
       }
     }
