@@ -1,0 +1,199 @@
+{
+  "version": 3,
+  "name": "Qwen Image 2.1 Edit",
+  "sections": [
+    {
+      "id": "image_generation",
+      "title": "Image Generation",
+      "order": 2,
+      "default_open": true
+    },
+    {
+      "id": "advanced_settings",
+      "title": "Advanced Settings",
+      "order": 5,
+      "default_open": false
+    }
+  ],
+  "nodes": {
+    "477": {
+      "present": {
+        "label": "Reference images",
+        "input_type": "image",
+        "param": "images",
+        "class_type": "vloMemoryLoadImageBatch",
+        "section_id": "inputs",
+        "repeatable": {
+          "max": 10
+        },
+        "required": false
+      }
+    },
+    "459:474": {
+      "widgets": {
+        "resolution": {
+          "label": "Reference resolution",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 0,
+          "max": 2048,
+          "step": 32,
+          "default": 1024,
+          "section_id": "image_generation",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 3
+        }
+      }
+    },
+    "459:458": {
+      "widgets": {
+        "seed": {
+          "label": "Seed",
+          "control_after_generate": true,
+          "value_type": "int",
+          "section_id": "image_generation",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 4
+        },
+        "steps": {
+          "label": "Steps",
+          "value_type": "int",
+          "control": "slider",
+          "slider_display": "number",
+          "min": 1,
+          "max": 60,
+          "step": 1,
+          "default": 25,
+          "section_id": "image_generation",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 5
+        },
+        "cfg": {
+          "label": "CFG",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 1
+        },
+        "sampler_name": {
+          "label": "Sampler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 2
+        },
+        "scheduler": {
+          "label": "Scheduler",
+          "section_id": "advanced_settings",
+          "group_id": "sampling",
+          "group_title": "Sampling",
+          "group_order": 3
+        },
+        "denoise": { "hidden": true }
+      }
+    },
+    "459:469": {
+      "widgets": {
+        "device": {
+          "label": "KV cache device",
+          "section_id": "advanced_settings",
+          "group_id": "kv_cache",
+          "group_title": "KV Cache",
+          "group_order": 10
+        },
+        "dtype": {
+          "label": "KV cache precision",
+          "section_id": "advanced_settings",
+          "group_id": "kv_cache",
+          "group_title": "KV Cache",
+          "group_order": 11
+        }
+      }
+    },
+    "479": {
+      "widgets": {
+        "value": {
+          "label": "Width",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    },
+    "480": {
+      "widgets": {
+        "value": {
+          "label": "Height",
+          "value_type": "int",
+          "hidden": true
+        }
+      }
+    }
+  },
+  "validation": {
+    "inputs": [{ "kind": "optional", "input": "477" }]
+  },
+  "derived_widgets": [],
+  "rewrites": [
+    {
+      "when": {
+        "kind": "input_presence",
+        "inputs": ["477"],
+        "match": "all_missing"
+      },
+      "bypass": ["477"]
+    }
+  ],
+  "effect_switches": [],
+  "slots": {},
+  "media_fallbacks": [],
+  "pipeline": [
+    {
+      "id": "aspect_ratio",
+      "kind": "aspect_ratio",
+      "enabled": true,
+      "config": {
+        "stride": 32,
+        "search_steps": 2,
+        "anchor_input": "477",
+        "resolution_ladder": { "min": 512, "max": 2048, "steps": 7 },
+        "postprocess": {
+          "enabled": false
+        }
+      },
+      "targets": [
+        {
+          "width": { "node_id": "479", "param": "value" },
+          "height": { "node_id": "480", "param": "value" }
+        }
+      ],
+      "controls": [
+        {
+          "key": "target_resolution",
+          "label": "Resolution",
+          "value_type": "int",
+          "expose": "widget",
+          "default": 1024,
+          "section_id": "image_generation",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 0
+        },
+        {
+          "key": "target_aspect_ratio",
+          "label": "Aspect ratio",
+          "value_type": "string",
+          "expose": "widget",
+          "source": "client",
+          "section_id": "image_generation",
+          "group_id": "image_generation",
+          "group_title": "Image Generation",
+          "group_order": 1
+        }
+      ]
+    }
+  ]
+}

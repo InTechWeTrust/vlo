@@ -276,6 +276,7 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
         ("video.enhance", "folder", "Enhance"),
         ("image", "category", "Image"),
         ("image.generate", "folder", "Generate"),
+        ("image.edit", "folder", "Edit"),
         ("image.enhance", "folder", "Enhance"),
     ]
     assert [(node["id"], node["order"]) for node in tree["nodes"] if node["parentId"] is None] == [
@@ -288,6 +289,7 @@ def test_packaged_workflow_menu_has_exact_image_video_structure():
     } == {
         "vlo_klein_multi.json": "image.generate",
         "vlo_krea2_turbo.json": "image.generate",
+        "vlo_qwen_image_2_1_edit.json": "image.edit",
         "vlo_SeedVR2_image.json": "image.enhance",
         "vlo_ltx2_5.json": "video.generate",
         "vlo_wan2_2.json": "video.generate",

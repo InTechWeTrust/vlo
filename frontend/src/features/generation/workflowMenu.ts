@@ -14,7 +14,8 @@ export const DEFAULT_GENERATION_WORKFLOW_MENU: MenuTreeDefinition = {
     { id: "video.enhance", kind: "folder", label: "Enhance", parentId: "video", order: 3 },
     { id: "image", kind: "category", label: "Image", parentId: null, order: 1 },
     { id: "image.generate", kind: "folder", label: "Generate", parentId: "image", order: 0 },
-    { id: "image.enhance", kind: "folder", label: "Enhance", parentId: "image", order: 1 },
+    { id: "image.edit", kind: "folder", label: "Edit", parentId: "image", order: 1 },
+    { id: "image.enhance", kind: "folder", label: "Enhance", parentId: "image", order: 2 },
   ],
   leafPlacements: [
     { leafId: "vlo_ltx2_5.json", parentId: "video.generate", order: 0 },
@@ -35,6 +36,7 @@ export const DEFAULT_GENERATION_WORKFLOW_MENU: MenuTreeDefinition = {
     { leafId: "vlo_gimm_vfi.json", parentId: "video.enhance", order: 1 },
     { leafId: "vlo_klein_multi.json", parentId: "image.generate", order: 0 },
     { leafId: "vlo_krea2_turbo.json", parentId: "image.generate", order: 1 },
+    { leafId: "vlo_qwen_image_2_1_edit.json", parentId: "image.edit", order: 0 },
     { leafId: "vlo_SeedVR2_image.json", parentId: "image.enhance", order: 0 },
   ],
 };

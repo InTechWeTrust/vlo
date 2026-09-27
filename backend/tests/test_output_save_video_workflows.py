@@ -62,7 +62,9 @@ def test_postprocess_targets_a_preview_bicubic_save(rules_path):
         for node in workflow["nodes"]
     )
 
-    for target in _postprocess(rules)["targets"]:
+    # Image workflows may declare postprocess without in-graph resize targets
+    # (browser stretch, or `enabled: false`); only declared targets are checked.
+    for target in _postprocess(rules).get("targets", []):
         node_id = int(target["width"]["node_id"])
         assert int(target["height"]["node_id"]) == node_id
         assert (target["width"]["param"], target["height"]["param"]) == ("width", "height")

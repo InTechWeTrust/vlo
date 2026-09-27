@@ -57,11 +57,18 @@
       "order": 0
     },
     {
+      "id": "image.edit",
+      "kind": "folder",
+      "label": "Edit",
+      "parent_id": "image",
+      "order": 1
+    },
+    {
       "id": "image.enhance",
       "kind": "folder",
       "label": "Enhance",
       "parent_id": "image",
-      "order": 1
+      "order": 2
     }
   ],
   "leaf_placements": [
@@ -154,6 +161,11 @@
       "workflow_id": "vlo_krea2_turbo.json",
       "parent_id": "image.generate",
       "order": 1
+    },
+    {
+      "workflow_id": "vlo_qwen_image_2_1_edit.json",
+      "parent_id": "image.edit",
+      "order": 0
     },
     {
       "workflow_id": "vlo_SeedVR2_image.json",
