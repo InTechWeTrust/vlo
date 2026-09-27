@@ -130,7 +130,7 @@ touching any of them. Each one is saved under
 `.vlo-update-backups/<kind>-<time>/` at its original path, with a
 `MANIFEST.txt`. Pass `--replace-local-files` to approve without a prompt, for
 example from a script. The updater refuses if a symbolic link stands in for a
-folder that holds VLO's own files, because the update would replace the link
+folder that holds vlo's own files, because the update would replace the link
 with an empty folder.
 
 `install.sh` / `install.bat`:
@@ -139,7 +139,7 @@ with an empty folder.
   managed ComfyUI and custom-node installs, and the optional SAM profiles all
   use Git directly or through VCS-backed Python packages;
 - finds a compatible Node.js (20.19+ or 22.13+) and Python (3.10+), or offers to
-  install VLO-managed copies. Those are per-user, and change neither your PATH
+  install vlo-managed copies. Those are per-user, and change neither your PATH
   nor your shell profile;
 - installs the npm and Python dependencies and builds the frontend;
 - offers the optional local-AI profiles — SAM2 for segmentation and masking,

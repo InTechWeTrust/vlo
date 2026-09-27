@@ -335,7 +335,7 @@ class ExtensionManifest(_ManifestModel):
                 raise ValueError(
                     f"dependency '{extension_id}' version range cannot be blank"
                 )
-            # Same comparator grammar as the SDK and VLO ranges, so an author
+            # Same comparator grammar as the SDK and vlo ranges, so an author
             # learns one syntax for every version declaration in the manifest.
             _parse_stable_semver_range(normalized_range)
             normalized_values[extension_id] = normalized_range
@@ -392,7 +392,7 @@ class ExtensionManifest(_ManifestModel):
             return None
         normalized = value.strip()
         if not normalized:
-            raise ValueError("extension VLO range cannot be blank")
+            raise ValueError("extension vlo range cannot be blank")
         _parse_stable_semver_range(normalized)
         return normalized
 

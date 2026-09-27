@@ -22,7 +22,7 @@ CUSTOM_NODE_URL_PATTERN = re.compile(r"^- (https://github\.com/\S+)\s*$")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Clone VLO's recommended ComfyUI custom nodes into a ComfyUI install "
+            "Clone vlo's recommended ComfyUI custom nodes into a ComfyUI install "
             "and install each node's requirements.txt with the active Python."
         )
     )

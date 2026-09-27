@@ -1,6 +1,6 @@
 # Trusted host access conformance fixture
 
-This fixture targets VLO `>=0.3.0 <0.4.0`. It deliberately uses raw live host
+This fixture targets vlo `>=0.3.0 <0.4.0`. It deliberately uses raw live host
 entries and a deeper backend import to prove the trusted fallback composes with a
 normal owner-scoped UI contribution.
 

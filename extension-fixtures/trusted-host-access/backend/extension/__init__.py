@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter
 
 from services.extensions import BackendExtensionContext, BackendExtensionDefinition
-# Trusted fallback: this deeper import is intentionally coupled to VLO 0.2.x.
+# Trusted fallback: this deeper import is intentionally coupled to vlo 0.2.x.
 from services.extensions.host_version import VLO_APPLICATION_VERSION
 
 
@@ -29,7 +29,7 @@ def create_extension(
         return {"vloVersion": VLO_APPLICATION_VERSION}
 
     context.logger.info(
-        "Trusted host fixture backend activated for VLO %s.",
+        "Trusted host fixture backend activated for vlo %s.",
         VLO_APPLICATION_VERSION or "unknown",
     )
 

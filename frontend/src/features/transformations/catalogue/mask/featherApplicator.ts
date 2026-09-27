@@ -138,7 +138,7 @@ export const featherApplicator: StateApplicator = (
   rig.softBlur.strength = featherAmount * BLUR_SCALE;
   rig.twoWayBlur.strength = featherAmount * BLUR_SCALE;
 
-  // Extract any existing AlphaMask effect from the Sprite (e.g. from VLO's SpriteClipMaskController)
+  // Extract any existing AlphaMask effect from the Sprite (e.g. from vlo's SpriteClipMaskController)
   // because rig sprites just use the unmasked `sprite.texture`.
   // We MUST apply the same mask to the rig BEFORE blurring it, otherwise we're blurring the unmasked video.
   const alphaMaskEffect = sprite.effects?.find(

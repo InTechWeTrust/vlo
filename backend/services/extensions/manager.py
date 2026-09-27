@@ -170,7 +170,7 @@ class ExtensionManager:
             )
         ):
             raise ExtensionInventoryError(
-                f"extension '{extension_id}' VLO range does not include host "
+                f"extension '{extension_id}' vlo range does not include host "
                 f"application {VLO_APPLICATION_VERSION}"
             )
         return item

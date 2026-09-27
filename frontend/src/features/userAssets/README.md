@@ -1,6 +1,6 @@
 # User Assets Feature
 
-The `userAssets` feature manages the ingestion, processing, storage, and retrieval of user-provided media files (Video, Audio, Images) within the VLO editor.
+The `userAssets` feature manages the ingestion, processing, storage, and retrieval of user-provided media files (Video, Audio, Images) within the vlo editor.
 
 ## Architecture
 

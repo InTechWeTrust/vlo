@@ -43,7 +43,7 @@ usage() {
     cat <<'USAGE'
 Usage: ./install.sh [options]
 
-  --update-node          Reinstall the VLO-managed Node.js runtime.
+  --update-node          Reinstall the vlo-managed Node.js runtime.
   --profiles <list>      Install these optional capability profiles without
                          prompting. Comma-separated; one or more of:
                              sam2, sam-audio, local-ai, all, none
@@ -371,11 +371,11 @@ prompt_existing_node_choice() {
 
     info "Detected compatible Node.js ${NODE_VERSION}."
     info "Source: ${NODE_SOURCE}"
-    info "VLO can also install its own managed Node.js ${VLO_NODE_VERSION}."
-    info "This is useful if you want VLO to avoid your existing global Node.js setup."
+    info "vlo can also install its own managed Node.js ${VLO_NODE_VERSION}."
+    info "This is useful if you want vlo to avoid your existing global Node.js setup."
     printf '\n'
     # Defaults to no: an unattended run keeps the compatible Node.js it found.
-    ask_yes_no "Install or update VLO-managed Node.js ${VLO_NODE_VERSION} instead? [y/N]: " n answer
+    ask_yes_no "Install or update vlo-managed Node.js ${VLO_NODE_VERSION} instead? [y/N]: " n answer
 
     if [ "$answer" = "yes" ]; then
         install_vlo_node
@@ -386,14 +386,14 @@ prompt_install_vlo_node() {
     local answer
 
     warn "No compatible Node.js runtime was found."
-    info "VLO can download Node.js ${VLO_NODE_VERSION} into:"
+    info "vlo can download Node.js ${VLO_NODE_VERSION} into:"
     info "  ${VLO_NODE_HOME}"
-    info "This install is per-user and VLO-managed."
+    info "This install is per-user and vlo-managed."
     info "It will not modify your system PATH."
     printf '\n'
     # Defaults to yes: there is no usable Node.js, so the only alternative to
     # installing one is failing.
-    ask_yes_no "Install VLO-managed Node.js ${VLO_NODE_VERSION} now? [Y/n]: " y answer
+    ask_yes_no "Install vlo-managed Node.js ${VLO_NODE_VERSION} now? [Y/n]: " y answer
 
     if [ "$answer" != "yes" ]; then
         error "Node.js 20.19+ or 22.13+ is required but was not installed."
@@ -408,16 +408,16 @@ install_vlo_node() {
     info "Downloading Node.js ${VLO_NODE_VERSION} from nodejs.org..."
     curl -fL "$VLO_NODE_URL" -o "$VLO_NODE_ARCHIVE_PATH"
 
-    info "Extracting VLO-managed Node.js ${VLO_NODE_VERSION}..."
+    info "Extracting vlo-managed Node.js ${VLO_NODE_VERSION}..."
     rm -rf "$VLO_NODE_HOME"
     tar -xf "$VLO_NODE_ARCHIVE_PATH" -C "$VLO_NODE_EXTRACT_DIR"
 
-    if ! try_node_path "$VLO_NODE_EXE" "VLO-managed Node.js"; then
-        error "Node.js ${VLO_NODE_VERSION} was extracted, but VLO could not find a usable node binary."
+    if ! try_node_path "$VLO_NODE_EXE" "vlo-managed Node.js"; then
+        error "Node.js ${VLO_NODE_VERSION} was extracted, but vlo could not find a usable node binary."
         exit 1
     fi
 
-    info "Installed VLO-managed Node.js ${NODE_VERSION}."
+    info "Installed vlo-managed Node.js ${NODE_VERSION}."
 }
 
 install_uv_if_needed() {
@@ -461,13 +461,13 @@ prompt_install_vlo_python() {
     local answer
 
     warn "No compatible Python 3.10+ runtime was found."
-    info "VLO can install Python ${VLO_PYTHON_VERSION} into:"
+    info "vlo can install Python ${VLO_PYTHON_VERSION} into:"
     info "  ${VLO_PYTHON_INSTALL_DIR}"
-    info "This install is per-user and VLO-managed."
+    info "This install is per-user and vlo-managed."
     info "It will not modify your shell profile."
     printf '\n'
     # Defaults to yes, for the same reason as the Node.js prompt above.
-    ask_yes_no "Install VLO-managed Python ${VLO_PYTHON_VERSION} now? [Y/n]: " y answer
+    ask_yes_no "Install vlo-managed Python ${VLO_PYTHON_VERSION} now? [Y/n]: " y answer
 
     if [ "$answer" != "yes" ]; then
         error "Python 3.10+ is required but was not installed."
@@ -480,33 +480,33 @@ install_vlo_python() {
     local managed_python
 
     mkdir -p "$VLO_PYTHON_INSTALL_DIR"
-    info "Installing VLO-managed Python ${VLO_PYTHON_VERSION} via uv..."
+    info "Installing vlo-managed Python ${VLO_PYTHON_VERSION} via uv..."
     UV_PYTHON_INSTALL_DIR="$VLO_PYTHON_INSTALL_DIR" "$UV_BIN" python install "$VLO_PYTHON_VERSION"
 
     managed_python="$(find_vlo_python)"
-    if ! try_python_path "$managed_python" "VLO-managed Python"; then
-        error "Python ${VLO_PYTHON_VERSION} was installed, but VLO could not find a usable interpreter."
+    if ! try_python_path "$managed_python" "vlo-managed Python"; then
+        error "Python ${VLO_PYTHON_VERSION} was installed, but vlo could not find a usable interpreter."
         exit 1
     fi
 
-    info "Installed VLO-managed Python ${PY_VERSION}."
+    info "Installed vlo-managed Python ${PY_VERSION}."
 }
 
 # -- 1. Check prerequisites ------------------------------------------
 
-info "VLO Installer"
+info "vlo Installer"
 printf '\n'
 
 if ! command -v git >/dev/null 2>&1 || ! git --version >/dev/null 2>&1; then
-    error "Git is required to install VLO and its managed runtimes. Install it from https://git-scm.com/downloads, then rerun this script."
+    error "Git is required to install vlo and its managed runtimes. Install it from https://git-scm.com/downloads, then rerun this script."
     exit 1
 fi
 
 configure_vlo_node_distribution
 if [ "$FORCE_INSTALL_VLO_NODE" -eq 1 ]; then
-    info "--update-node requested. Installing VLO-managed Node.js ${VLO_NODE_VERSION}..."
+    info "--update-node requested. Installing vlo-managed Node.js ${VLO_NODE_VERSION}..."
     install_vlo_node
-elif try_node_path "$VLO_NODE_EXE" "VLO-managed Node.js"; then
+elif try_node_path "$VLO_NODE_EXE" "vlo-managed Node.js"; then
     # Already the managed runtime at the pinned version: nothing to offer.
     # --update-node still forces a reinstall.
     :
@@ -529,7 +529,7 @@ info "npm ${NPM_VERSION} found via ${NPM_CMD}"
 
 install_uv_if_needed
 
-if try_python_path "$(find_vlo_python)" "VLO-managed Python"; then
+if try_python_path "$(find_vlo_python)" "vlo-managed Python"; then
     :
 else
     for cmd in python3 python; do
@@ -676,5 +676,5 @@ write_profile_marker
 
 printf '\n'
 info "Installation complete!"
-info "Run ./run.sh to start VLO"
+info "Run ./run.sh to start vlo"
 info "Make sure ComfyUI is running separately (default: http://127.0.0.1:8188)"

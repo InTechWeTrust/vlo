@@ -250,7 +250,7 @@ describe("ExtensionManagerDialog", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("blocks an incompatible VLO range", async () => {
+  it("blocks an incompatible vlo range", async () => {
     const incompatible = extensionItem("pending_approval");
     if (!incompatible.manifest) throw new Error("fixture manifest missing");
     incompatible.manifest.vlo = ">=999.0.0";

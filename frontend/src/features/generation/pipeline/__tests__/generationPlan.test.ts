@@ -145,7 +145,7 @@ describe("generationPlan cache media extraction", () => {
     frontendPreprocessMock.mockReset();
   });
 
-  it("does not cache VLO memory loader placeholders", () => {
+  it("does not cache vlo memory loader placeholders", () => {
     const entry = makeCacheEntry();
     const updated = updateGenerationPreprocessCacheFromResponse(
       entry,
@@ -165,7 +165,7 @@ describe("generationPlan cache media extraction", () => {
     expect(updated.backendMedia).toBeNull();
   });
 
-  it("still caches real VLO memory loader ids", () => {
+  it("still caches real vlo memory loader ids", () => {
     const entry = makeCacheEntry();
     const updated = updateGenerationPreprocessCacheFromResponse(
       entry,

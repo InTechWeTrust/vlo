@@ -391,7 +391,7 @@ def validate_plan(plan: InstallPlan) -> None:
     if requires_git and shutil.which("git") is None:
         raise InstallNotAvailableError(
             "Git is required for this install. Install it from "
-            "https://git-scm.com/downloads, restart VLO, and try again."
+            "https://git-scm.com/downloads, restart vlo, and try again."
         )
 
 

@@ -1,6 +1,6 @@
 # Transport, selection, and project conformance fixture
 
-This fixture targets VLO SDK `>=1.0.0`. It proves the Phase H surfaces —
+This fixture targets vlo SDK `>=1.0.0`. It proves the Phase H surfaces —
 transport writes, selection writes, and project identity — behave as an
 extension author would expect:
 

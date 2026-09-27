@@ -174,6 +174,6 @@ export function evaluateExtensionVloCompatibility(
   return evaluateExtensionVersionCompatibility(
     declaredRange,
     hostVersion,
-    "VLO application",
+    "vlo application",
   );
 }

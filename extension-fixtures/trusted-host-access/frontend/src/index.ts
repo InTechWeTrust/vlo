@@ -39,7 +39,7 @@ function requireTimelineStore(host: ExtensionTrustedHostApi): TimelineStore {
   const store = host.get("timeline.store");
   if (!isTimelineStore(store)) {
     throw new Error(
-      "This extension requires trusted host entry 'timeline.store' from its supported VLO range.",
+      "This extension requires trusted host entry 'timeline.store' from its supported vlo range.",
     );
   }
   return store;

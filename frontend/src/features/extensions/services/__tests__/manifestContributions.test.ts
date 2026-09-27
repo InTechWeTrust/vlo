@@ -141,7 +141,7 @@ describe("projectManifestContributions", () => {
     expect(registry.list()).toEqual([]);
   });
 
-  it("fails incompatible SDK and VLO ranges closed", () => {
+  it("fails incompatible SDK and vlo ranges closed", () => {
     const registry = new ExtensionLutRegistry();
     const diagnostics = projectManifestContributions(
       [
@@ -166,7 +166,7 @@ describe("projectManifestContributions", () => {
     ]);
   });
 
-  it("warns and projects when the VLO build version is unknown", () => {
+  it("warns and projects when the vlo build version is unknown", () => {
     const registry = new ExtensionLutRegistry();
     const diagnostics = projectManifestContributions(
       [inventoryItem("example.unknown-vlo", { vlo: ">=0.2.0 <0.3.0" })],

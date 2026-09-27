@@ -26,7 +26,7 @@ enable/code changes to require backend restart in V1.
 The `services.extensions` barrel is the supported compatibility contract, not an
 authority ceiling. Trusted in-process code may import deeper host modules, inspect
 process state, use filesystem/network APIs, or monkeypatch Python objects when the
-supported surface is insufficient. Declare the VLO range, restore hooks in shutdown
+supported surface is insufficient. Declare the vlo range, restore hooks in shutdown
 where practical, and accept that deep shapes can change without an SDK-major bump.
 
 ## Declare Python dependencies for the preflight checklist

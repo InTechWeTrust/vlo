@@ -87,7 +87,7 @@ export function projectManifestContributions(
           level: "error",
           message:
             vloCompatibility.reason ??
-            "The declarative package VLO range is incompatible.",
+            "The declarative package vlo range is incompatible.",
         });
         continue;
       }

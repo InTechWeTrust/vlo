@@ -29,7 +29,7 @@ interface EditorSetupOptions {
 }
 
 /**
- * Top-level Component Object Model for the VLO editor.
+ * Top-level Component Object Model for the vlo editor.
  * Provides access to all child COMs and handles project setup.
  */
 export class EditorComponent {

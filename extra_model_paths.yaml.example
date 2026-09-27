@@ -1,6 +1,6 @@
 # Rename this file to extra_model_paths.yaml to enable it.
 # This file follows the same format as ComfyUI's extra_model_paths.yaml
-# It allows you to point VLO to shared folders so you don't need to duplicate models.
+# It allows you to point vlo to shared folders so you don't need to duplicate models.
 
 comfyui:
     base_path: path/to/comfyui/

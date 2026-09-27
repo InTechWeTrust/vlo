@@ -21,8 +21,8 @@ goto :parse_args
 :: hold it open long enough to read why.
 if not exist "%PYTHON_BIN%" (
     echo.
-    echo [ERROR] VLO is not installed yet.
-    echo [INFO]  Run install.bat first, then start VLO with run.bat.
+    echo [ERROR] vlo is not installed yet.
+    echo [INFO]  Run install.bat first, then start vlo with run.bat.
     echo.
     pause
     exit /b 1
@@ -40,7 +40,7 @@ if "%NO_BROWSER%"=="0" (
     start "" /b "%PYTHON_BIN%" "%SCRIPT_DIR%scripts\open-browser-when-ready.py" "http://%BROWSER_HOST%:%PORT%"
 )
 
-echo Starting VLO at http://%HOST%:%PORT%
+echo Starting vlo at http://%HOST%:%PORT%
 echo Press Ctrl+C to stop.
 echo.
 

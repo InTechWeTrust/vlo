@@ -120,7 +120,7 @@ goto :eof
 :print_usage
 echo Usage: install.bat [options]
 echo.
-echo   --update-node          Reinstall the VLO-managed Node.js runtime.
+echo   --update-node          Reinstall the vlo-managed Node.js runtime.
 echo   --profiles ^<list^>      Install these optional capability profiles without
 echo                          prompting. Comma-separated; one or more of:
 echo                              sam2, sam-audio, local-ai, all, none
@@ -204,12 +204,12 @@ goto :eof
 
 :after_profile_helpers
 
-echo [INFO]  VLO Installer
+echo [INFO]  vlo Installer
 echo.
 
 where git >nul 2>&1
 if errorlevel 1 (
-    call :fail "Git is required to install VLO and its managed runtimes. Install it from https://git-scm.com/downloads, open a new terminal, and rerun this script."
+    call :fail "Git is required to install vlo and its managed runtimes. Install it from https://git-scm.com/downloads, open a new terminal, and rerun this script."
     goto :eof
 )
 git --version >nul 2>&1
@@ -223,14 +223,14 @@ if errorlevel 1 (
 :: Node.js
 call :configure_vlo_node_distribution
 if "%FORCE_INSTALL_VLO_NODE%"=="1" (
-    echo [INFO]  --update-node requested. Installing VLO-managed Node.js %VLO_NODE_VERSION%...
+    echo [INFO]  --update-node requested. Installing vlo-managed Node.js %VLO_NODE_VERSION%...
     call :install_vlo_node
     if errorlevel 1 goto :eof
     goto :node_found
 )
 :: Already the managed runtime at the pinned version: nothing to offer.
 :: --update-node still forces a reinstall.
-call :try_node_path "%VLO_NODE_EXE%" "VLO-managed Node.js"
+call :try_node_path "%VLO_NODE_EXE%" "vlo-managed Node.js"
 if not errorlevel 1 goto :node_found
 
 for /f "tokens=*" %%F in ('where node 2^>nul') do (
@@ -318,7 +318,7 @@ if %errorlevel% neq 0 (
     goto :eof
 )
 :: Run from inside frontend rather than with --prefix: npm 10 on Windows (the
-:: VLO-managed Node's npm) otherwise records the repository root as a
+:: vlo-managed Node's npm) otherwise records the repository root as a
 :: "vlo": "file:.." dependency in frontend/package.json and its lockfile.
 cd /d "%SCRIPT_DIR%frontend"
 call "%NPM_CMD%" install
@@ -477,7 +477,7 @@ call :write_profile_marker
 
 echo.
 echo [INFO]  Installation complete!
-echo [INFO]  Run run.bat to start VLO
+echo [INFO]  Run run.bat to start vlo
 echo [INFO]  Make sure ComfyUI is running separately (default: http://127.0.0.1:8188)
 
 endlocal
@@ -532,13 +532,13 @@ exit /b 0
 
 :prompt_install_vlo_node
 echo [WARN]  No compatible Node.js runtime was found.
-echo [INFO]  VLO can download Node.js %VLO_NODE_VERSION% into:
+echo [INFO]  vlo can download Node.js %VLO_NODE_VERSION% into:
 echo [INFO]    %VLO_NODE_HOME%
-echo [INFO]  This install is per-user and VLO-managed.
+echo [INFO]  This install is per-user and vlo-managed.
 echo [INFO]  It will not modify your system PATH.
 echo.
 set "INSTALL_VLO_NODE="
-set /p INSTALL_VLO_NODE=Install VLO-managed Node.js %VLO_NODE_VERSION% now? [Y/n]:
+set /p INSTALL_VLO_NODE=Install vlo-managed Node.js %VLO_NODE_VERSION% now? [Y/n]:
 if /I "!INSTALL_VLO_NODE!"=="N" (
     call :fail "Node.js 20.19+ or 22.13+ is required but was not installed."
     exit /b 1
@@ -553,11 +553,11 @@ exit /b %errorlevel%
 :prompt_existing_node_choice
 echo [INFO]  Detected compatible Node.js %NODE_VERSION%.
 echo [INFO]  Source: %NODE_SOURCE%
-echo [INFO]  VLO can also install its own managed Node.js %VLO_NODE_VERSION%.
-echo [INFO]  This is useful if you want VLO to avoid your existing global Node.js setup.
+echo [INFO]  vlo can also install its own managed Node.js %VLO_NODE_VERSION%.
+echo [INFO]  This is useful if you want vlo to avoid your existing global Node.js setup.
 echo.
 set "USE_MANAGED_NODE="
-set /p USE_MANAGED_NODE=Install or update VLO-managed Node.js %VLO_NODE_VERSION% instead? [y/N]:
+set /p USE_MANAGED_NODE=Install or update vlo-managed Node.js %VLO_NODE_VERSION% instead? [y/N]:
 if /I "!USE_MANAGED_NODE!"=="Y" (
     call :install_vlo_node
     exit /b %errorlevel%
@@ -579,20 +579,20 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [INFO]  Extracting VLO-managed Node.js %VLO_NODE_VERSION%...
+echo [INFO]  Extracting vlo-managed Node.js %VLO_NODE_VERSION%...
 powershell -NoProfile -ExecutionPolicy ByPass -Command "Expand-Archive -Path '%VLO_NODE_ZIP_PATH%' -DestinationPath '%VLO_HOME%' -Force"
 if errorlevel 1 (
     call :fail "Failed to extract Node.js %VLO_NODE_VERSION%."
     exit /b 1
 )
 
-call :try_node_path "%VLO_NODE_EXE%" "VLO-managed Node.js"
+call :try_node_path "%VLO_NODE_EXE%" "vlo-managed Node.js"
 if errorlevel 1 (
-    call :fail "Node.js %VLO_NODE_VERSION% was extracted, but VLO could not find a usable node.exe."
+    call :fail "Node.js %VLO_NODE_VERSION% was extracted, but vlo could not find a usable node.exe."
     exit /b 1
 )
 
-echo [INFO]  Installed VLO-managed Node.js %NODE_VERSION%.
+echo [INFO]  Installed vlo-managed Node.js %NODE_VERSION%.
 exit /b 0
 
 :: Whether the backend venv holds a PyTorch build from the CUDA index. It has
@@ -648,7 +648,7 @@ for /f "tokens=*" %%V in ('"%UV_BIN%" python find --managed-python --no-python-d
     set "FOUND_PYTHON=%%V"
 )
 if defined FOUND_PYTHON (
-    call :try_python_path "%FOUND_PYTHON%" "VLO-managed Python"
+    call :try_python_path "%FOUND_PYTHON%" "vlo-managed Python"
     if !errorlevel! equ 0 exit /b 0
 )
 
@@ -660,19 +660,19 @@ for /f "tokens=*" %%V in ('"%UV_BIN%" python dir --bin 2^>nul') do (
 )
 
 if defined UV_PYTHON_BIN_DIR (
-    call :try_python_path "%UV_PYTHON_BIN_DIR%\python%VLO_PYTHON_MINOR%.exe" "VLO-managed Python"
+    call :try_python_path "%UV_PYTHON_BIN_DIR%\python%VLO_PYTHON_MINOR%.exe" "vlo-managed Python"
     if !errorlevel! equ 0 exit /b 0
-    call :try_python_path "%UV_PYTHON_BIN_DIR%\python.exe" "VLO-managed Python"
+    call :try_python_path "%UV_PYTHON_BIN_DIR%\python.exe" "vlo-managed Python"
     if !errorlevel! equ 0 exit /b 0
 )
 
 if defined UV_PYTHON_DIR (
     for /f "delims=" %%V in ('dir /b /s "%UV_PYTHON_DIR%\python.exe" 2^>nul') do (
-        call :try_python_path "%%V" "VLO-managed Python"
+        call :try_python_path "%%V" "vlo-managed Python"
         if !errorlevel! equ 0 exit /b 0
     )
     for /f "delims=" %%V in ('dir /b /s "%UV_PYTHON_DIR%\python%VLO_PYTHON_MINOR%.exe" 2^>nul') do (
-        call :try_python_path "%%V" "VLO-managed Python"
+        call :try_python_path "%%V" "vlo-managed Python"
         if !errorlevel! equ 0 exit /b 0
     )
 )
@@ -756,12 +756,12 @@ exit /b 0
 
 :prompt_install_vlo_python
 echo [WARN]  No compatible Python 3.10+ runtime was found.
-echo [INFO]  VLO can install Python %VLO_PYTHON_VERSION% via uv into:
+echo [INFO]  vlo can install Python %VLO_PYTHON_VERSION% via uv into:
 echo [INFO]    %VLO_PYTHON_INSTALL_DIR%
-echo [INFO]  This install is per-user and VLO-managed.
+echo [INFO]  This install is per-user and vlo-managed.
 echo.
 set "INSTALL_VLO_PYTHON="
-set /p INSTALL_VLO_PYTHON=Install VLO-managed Python %VLO_PYTHON_VERSION% now? [Y/n]:
+set /p INSTALL_VLO_PYTHON=Install vlo-managed Python %VLO_PYTHON_VERSION% now? [Y/n]:
 if /I "!INSTALL_VLO_PYTHON!"=="N" (
     call :fail "Python 3.10+ is required but was not installed."
     exit /b 1
@@ -777,7 +777,7 @@ exit /b %errorlevel%
 if not exist "%VLO_HOME%" mkdir "%VLO_HOME%"
 if not exist "%VLO_PYTHON_INSTALL_DIR%" mkdir "%VLO_PYTHON_INSTALL_DIR%"
 
-echo [INFO]  Installing VLO-managed Python %VLO_PYTHON_VERSION% via uv...
+echo [INFO]  Installing vlo-managed Python %VLO_PYTHON_VERSION% via uv...
 call "%UV_BIN%" python install "%VLO_PYTHON_VERSION%"
 if errorlevel 1 (
     call :fail "Python %VLO_PYTHON_VERSION% installation failed."
@@ -786,11 +786,11 @@ if errorlevel 1 (
 
 call :find_vlo_python
 if errorlevel 1 (
-    call :fail "Python %VLO_PYTHON_VERSION% was installed, but VLO could not find a usable interpreter."
+    call :fail "Python %VLO_PYTHON_VERSION% was installed, but vlo could not find a usable interpreter."
     exit /b 1
 )
 
-echo [INFO]  Python %PY_VER% is ready for VLO.
+echo [INFO]  Python %PY_VER% is ready for vlo.
 exit /b 0
 
 :fail

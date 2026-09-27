@@ -23,7 +23,7 @@ Narrower runtimes are typed and are the better path where one exists —
 declared contract. Trusted code may also use the DOM and browser APIs directly.
 When no slot, zone, or workspace fits without losing important functionality,
 use raw panel/DOM integration with explicit `onDispose()` cleanup and document
-the VLO coupling.
+the vlo coupling.
 
 ## Select a UI contribution
 

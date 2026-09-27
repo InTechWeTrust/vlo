@@ -25,7 +25,7 @@ Session entries are `timeline.store`, `playback.clock`, `project.store`,
 `userAssets.store`, `editor.focusStore`, `timeline.selectionStore`,
 `library.selectionStore`, `transformations.registry`, and `extensions.runtime`;
 `renderer.runtime` is availability-scoped. Returned values are exact borrowed host
-identities. Use type-only imports from a matching VLO checkout to narrow them; do
+identities. Use type-only imports from a matching vlo checkout to narrow them; do
 not runtime-import `frontend/src/...` or serialize returned references.
 
 ## Track property patches

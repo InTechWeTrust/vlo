@@ -311,7 +311,7 @@ function ExtensionCard({
             </Typography>
             {manifest.vlo ? (
               <Typography variant="body2">
-                Declared VLO range: <strong>{manifest.vlo}</strong> · Host VLO:{" "}
+                Declared vlo range: <strong>{manifest.vlo}</strong> · Host vlo:{" "}
                 <strong>{VLO_APP_VERSION ?? "unknown"}</strong>
               </Typography>
             ) : null}

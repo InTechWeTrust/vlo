@@ -504,7 +504,7 @@ describe("FrontendExtensionRuntime", () => {
     });
   });
 
-  it("fails before import for an incompatible known VLO range", async () => {
+  it("fails before import for an incompatible known vlo range", async () => {
     const item = inventoryItem("example.future-vlo", { vlo: ">=0.3.0" });
     const importModule = vi.fn(async () => ({ activate: vi.fn() }));
     const host = new ExtensionHost<Record<string, never>>({
@@ -524,11 +524,11 @@ describe("FrontendExtensionRuntime", () => {
     expect(summary.results[0]).toMatchObject({
       status: "incompatible",
       stage: "compatibility",
-      message: expect.stringContaining("VLO application 0.2.0"),
+      message: expect.stringContaining("vlo application 0.2.0"),
     });
   });
 
-  it("warns and activates when the VLO build version is unknown", async () => {
+  it("warns and activates when the vlo build version is unknown", async () => {
     const warning = vi.fn();
     const importModule = vi.fn(async () => ({ activate: vi.fn() }));
     const host = new ExtensionHost<Record<string, never>>({

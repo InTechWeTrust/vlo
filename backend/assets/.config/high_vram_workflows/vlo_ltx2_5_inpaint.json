@@ -3680,7 +3680,7 @@
         "widget_ue_connectable": {}
       },
       "widgets_values": [
-        "Setting frames_number to 1 permits broadcast via VLO Latent Composite Masked"
+        "Setting frames_number to 1 permits broadcast via vlo Latent Composite Masked"
       ],
       "color": "#432",
       "bgcolor": "#653"

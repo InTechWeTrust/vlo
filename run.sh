@@ -19,8 +19,8 @@ done
 # moment we exit, so hold it open long enough to read why.
 if [ ! -x "$PYTHON_BIN" ]; then
     echo ""
-    echo "Error: VLO is not installed yet."
-    echo "Run ./install.sh first, then start VLO with ./run.sh."
+    echo "Error: vlo is not installed yet."
+    echo "Run ./install.sh first, then start vlo with ./run.sh."
     echo ""
     if [ -t 0 ]; then
         read -r -p "Press Enter to close..." _ || true
@@ -43,7 +43,7 @@ if [ "$NO_BROWSER" = false ]; then
         "http://${BROWSER_HOST}:${PORT}" >/dev/null 2>&1 &
 fi
 
-echo "Starting VLO at http://${HOST}:${PORT}"
+echo "Starting vlo at http://${HOST}:${PORT}"
 echo "Press Ctrl+C to stop."
 echo ""
 

@@ -1,6 +1,6 @@
 # Extensions directory
 
-VLO scans only `extensions/installed/` for runtime packages. Put each approved
+Vlo scans only `extensions/installed/` for runtime packages. Put each approved
 extension or declarative look pack in its own directory there:
 
 ```text

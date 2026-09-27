@@ -1,5 +1,5 @@
 <#
-Brings a VLO folder's source up to date for update.bat: fast-forwards a Git
+Brings a vlo folder's source up to date for update.bat: fast-forwards a Git
 checkout, or converts a folder downloaded as a GitHub ZIP into one. update.sh
 carries the same steps for macOS and Linux.
 
@@ -99,7 +99,7 @@ function Get-LocalEntry([string]$RelativePath) {
 }
 
 # LinkType rather than the ReparsePoint attribute: OneDrive placeholders are
-# reparse points too, and they are ordinary files and folders to VLO.
+# reparse points too, and they are ordinary files and folders to vlo.
 function Test-LinkedEntry($Entry) {
     return $null -ne $Entry -and @('Junction', 'SymbolicLink') -contains $Entry.LinkType
 }
@@ -202,11 +202,11 @@ function Add-TrackedChanges($Plan) {
     }
 
     # Refuse rather than replace a linked folder with a real one: the data
-    # behind the link would survive, but VLO would stop seeing it. Only
+    # behind the link would survive, but vlo would stop seeing it. Only
     # symbolic links get here; Git for Windows reads through a junction as if
     # it were a folder and leaves it in place.
     if ($linked.Count -gt 0) {
-        Write-Failure 'These folders are links, but VLO tracks files inside them:'
+        Write-Failure 'These folders are links, but vlo tracks files inside them:'
         $linked | ForEach-Object { [Console]::Error.WriteLine("    $_") }
         Write-Failure 'Updating would replace each link with an empty folder. Move their contents into normal folders, then rerun the updater. Nothing was changed.'
         throw (New-Object UpdateRefused)
@@ -265,8 +265,8 @@ function Confirm-AndBackUp($Plan, [string]$Label, [string]$Intro, [string]$Activ
 
     Write-Host ''
     Write-Info $Intro
-    Show-Preview "Differ from VLO's version (a copy is saved, then the file is replaced):" $Plan.Overwritten
-    Show-Preview "In the way of VLO's files (moved into the backup):" $Plan.InTheWay
+    Show-Preview "Differ from vlo's version (a copy is saved, then the file is replaced):" $Plan.Overwritten
+    Show-Preview "In the way of vlo's files (moved into the backup):" $Plan.InTheWay
     Show-Preview "$LeftoverTitle (moved into the backup):" $Plan.Leftovers
     Write-Host ''
     Write-Host "Everything listed is saved under $($backupDir.Substring($Root.Length + 1))"
@@ -289,10 +289,10 @@ function Confirm-AndBackUp($Plan, [string]$Label, [string]$Intro, [string]$Activ
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
     $manifest = @(
         "Saved by update.bat on $((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')) while $Activity.",
-        'Each entry is stored at its original path relative to the VLO folder.'
+        'Each entry is stored at its original path relative to the vlo folder.'
     )
-    $manifest += Format-ManifestSection "Copied, then replaced by VLO's version:" $Plan.Overwritten
-    $manifest += Format-ManifestSection "Moved aside because it was in the way of VLO's files:" $Plan.InTheWay
+    $manifest += Format-ManifestSection "Copied, then replaced by vlo's version:" $Plan.Overwritten
+    $manifest += Format-ManifestSection "Moved aside because it was in the way of vlo's files:" $Plan.InTheWay
     $manifest += Format-ManifestSection "Moved aside; $($LeftoverTitle):" $Plan.Leftovers
     [System.IO.File]::WriteAllLines((Join-Path $backupDir 'MANIFEST.txt'), [string[]]$manifest, $Utf8)
 
@@ -344,7 +344,7 @@ function Update-GitCheckout {
     Confirm-AndBackUp $plan 'local-changes' `
         'Updating will discard local changes to these files:' `
         'discarding local changes before updating a Git checkout' `
-        'Added locally, not part of VLO'
+        'Added locally, not part of vlo'
     if ($script:ReplacingLocalFiles) {
         Invoke-GitData -Arguments @('-C', $Root, 'reset', '--hard', '--quiet', 'HEAD') | Out-Null
         $script:ReplacingLocalFiles = $false
@@ -365,7 +365,7 @@ function Convert-ZipInstallation {
     $plan.GitDir = Join-Path $stageRepository '.git'
     $plan.IndexFile = Join-Path $plan.GitDir 'index'
 
-    Write-Info 'This VLO folder is not a Git checkout; preparing to convert the ZIP installation...'
+    Write-Info 'This vlo folder is not a Git checkout; preparing to convert the ZIP installation...'
     if ((Invoke-GitVisible @('clone', '--depth', '1', '--branch', $Branch, '--no-checkout', $Repository, $stageRepository)) -ne 0) {
         throw "Git could not fetch $Repository ($Branch)."
     }
@@ -376,7 +376,7 @@ function Convert-ZipInstallation {
     Confirm-AndBackUp $plan 'zip-import' `
         'Converting this folder to a Git checkout will change these local files:' `
         "converting a ZIP installation into a Git checkout of $Repository ($Branch)" `
-        'No longer part of VLO'
+        'No longer part of vlo'
 
     $script:ReplacingLocalFiles = $true
     Invoke-PlanGit $plan @('reset', '--hard', '--quiet', 'HEAD') | Out-Null

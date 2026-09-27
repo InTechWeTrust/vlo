@@ -172,7 +172,7 @@ describe("trusted host access conformance fixture", () => {
         exportApi: vi.fn(),
       } as unknown as ExtensionContext),
     ).toThrow(
-      "This extension requires trusted host entry 'timeline.store' from its supported VLO range.",
+      "This extension requires trusted host entry 'timeline.store' from its supported vlo range.",
     );
     expect(scope.report).toHaveBeenCalledWith(
       "error",

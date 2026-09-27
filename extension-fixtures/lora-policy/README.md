@@ -1,12 +1,12 @@
 # LoRA loader policy conformance fixture
 
-This fixture targets VLO SDK `>=1.0.0`. It is the committed first consumer of
+This fixture targets vlo SDK `>=1.0.0`. It is the committed first consumer of
 the generation extension surface
 (`docs/generation-extension-surface-plan.md`), and it exists to prove that a
 trusted policy extension can be written entirely out of tree: no host store, no
 iframe object, no backend module, and no generation-specific panel API.
 
-VLO also ships a native autodiscovered analogue through its ordinary
+Vlo also ships a native autodiscovered analogue through its ordinary
 `WorkflowWidgetInput` and `panel-bypass` paths. This fixture is deliberately
 retained: the native feature proves the owner-neutral catalogue is useful,
 while this package continues to prove SDK projection, packaging, approval,

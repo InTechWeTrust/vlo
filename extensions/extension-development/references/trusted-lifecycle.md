@@ -123,7 +123,7 @@ revision notification and must be re-resolved. Never persist a live reference.
 
 Import supported Python types from `services.extensions` for SDK compatibility.
 Deeper host imports and reversible monkeypatches are permitted when that surface is
-insufficient, but they are coupled to the claimed VLO version and should be restored
+insufficient, but they are coupled to the claimed vlo version and should be restored
 from `BackendExtensionDefinition.shutdown` where practical.
 Define a factory named by `manifest.json` and accept `BackendExtensionContext`.
 Return `None`, an `APIRouter`, or `BackendExtensionDefinition`.

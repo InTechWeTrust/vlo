@@ -1,4 +1,4 @@
-"""VLO application build version used only for extension compatibility."""
+"""Vlo application build version used only for extension compatibility."""
 
 from __future__ import annotations
 

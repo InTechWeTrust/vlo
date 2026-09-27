@@ -2847,7 +2847,7 @@ export interface ExtensionTrustedHostEntry {
  * shapes are raw host internals and are not SDK compatibility promises.
  */
 export interface ExtensionTrustedHostApi {
-  /** VLO application/build version, distinct from the extension SDK version. */
+  /** vlo application/build version, distinct from the extension SDK version. */
   readonly hostVersion: string | null;
   /** Discovery is isolated: one invalid host entry is reported as unavailable. */
   list(): readonly ExtensionTrustedHostEntry[];

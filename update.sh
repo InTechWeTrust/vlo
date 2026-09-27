@@ -22,7 +22,7 @@ usage() {
     cat <<'USAGE'
 Usage: ./update.sh [--replace-local-files] [installer options]
 
-Fetch the latest VLO source, then rerun install.sh to update dependencies and
+Fetch the latest vlo source, then rerun install.sh to update dependencies and
 rebuild the frontend. Installer options such as --profiles and --update-node
 are passed through unchanged.
 
@@ -160,9 +160,9 @@ plan_tracked_changes() {
     sort -zu "$PLAN_DIR/linked.all" > "$PLAN_DIR/linked"
 
     # Refuse rather than replace a linked folder with a real one: the data
-    # behind the link would survive, but VLO would stop seeing it.
+    # behind the link would survive, but vlo would stop seeing it.
     if [ -s "$PLAN_DIR/linked" ]; then
-        error "These folders are symbolic links, but VLO tracks files inside them:"
+        error "These folders are symbolic links, but vlo tracks files inside them:"
         while IFS= read -r -d '' path; do
             printf '    %s\n' "$path" >&2
         done < "$PLAN_DIR/linked"
@@ -235,9 +235,9 @@ confirm_and_back_up() {
 
     printf '\n'
     info "$intro"
-    preview_list "Differ from VLO's version (a copy is saved, then the file is replaced):" \
+    preview_list "Differ from vlo's version (a copy is saved, then the file is replaced):" \
         "$PLAN_DIR/overwritten"
-    preview_list "In the way of VLO's files (moved into the backup):" "$PLAN_DIR/in-the-way"
+    preview_list "In the way of vlo's files (moved into the backup):" "$PLAN_DIR/in-the-way"
     preview_list "$leftover_title (moved into the backup):" "$PLAN_DIR/leftovers"
     printf '\nEverything listed is saved under %s\n\n' "${BACKUP_DIR#"$SCRIPT_DIR"/}"
 
@@ -261,9 +261,9 @@ confirm_and_back_up() {
     {
         printf 'Saved by update.sh on %s while %s.\n' \
             "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$activity"
-        printf 'Each entry is stored at its original path relative to the VLO folder.\n'
-        manifest_section "Copied, then replaced by VLO's version:" "$PLAN_DIR/overwritten"
-        manifest_section "Moved aside because it was in the way of VLO's files:" \
+        printf 'Each entry is stored at its original path relative to the vlo folder.\n'
+        manifest_section "Copied, then replaced by vlo's version:" "$PLAN_DIR/overwritten"
+        manifest_section "Moved aside because it was in the way of vlo's files:" \
             "$PLAN_DIR/in-the-way"
         manifest_section "Moved aside; ${leftover_title}:" "$PLAN_DIR/leftovers"
     } > "$BACKUP_DIR/MANIFEST.txt"
@@ -307,7 +307,7 @@ update_git_checkout() {
     confirm_and_back_up "local-changes" \
         "Updating will discard local changes to these files:" \
         "discarding local changes before updating a Git checkout" \
-        "Added locally, not part of VLO"
+        "Added locally, not part of vlo"
     if [ "$REPLACING_LOCAL_FILES" -eq 1 ]; then
         git -C "$SCRIPT_DIR" reset --hard --quiet HEAD
         REPLACING_LOCAL_FILES=0
@@ -330,7 +330,7 @@ convert_zip_installation() {
     PLAN_GIT_DIR="$STAGE_DIR/repository/.git"
     PLAN_INDEX="$PLAN_GIT_DIR/index"
 
-    info "This VLO folder is not a Git checkout; preparing to convert the ZIP installation..."
+    info "This vlo folder is not a Git checkout; preparing to convert the ZIP installation..."
     git clone --depth 1 --branch "$branch" --no-checkout "$repository" "$STAGE_DIR/repository"
     plan_git read-tree HEAD
     plan_tracked_changes
@@ -339,7 +339,7 @@ convert_zip_installation() {
     confirm_and_back_up "zip-import" \
         "Converting this folder to a Git checkout will change these local files:" \
         "converting a ZIP installation into a Git checkout of ${repository} (${branch})" \
-        "No longer part of VLO"
+        "No longer part of vlo"
 
     REPLACING_LOCAL_FILES=1
     plan_git reset --hard --quiet HEAD
@@ -362,16 +362,16 @@ for argument in "$@"; do
     esac
 done
 
-info "VLO Updater"
+info "vlo Updater"
 printf '\n'
 
 if ! command -v git >/dev/null 2>&1 || ! git --version >/dev/null 2>&1; then
-    error "Git is required to update VLO. Install it from https://git-scm.com/downloads, then rerun this script."
+    error "Git is required to update vlo. Install it from https://git-scm.com/downloads, then rerun this script."
     exit 1
 fi
 
 if [ ! -f "$SCRIPT_DIR/install.sh" ] || [ ! -f "$SCRIPT_DIR/package.json" ]; then
-    error "This script must remain in the root of a VLO installation."
+    error "This script must remain in the root of a vlo installation."
     exit 1
 fi
 
@@ -384,5 +384,5 @@ else
 fi
 
 printf '\n'
-info "Rebuilding VLO with the updated installer..."
+info "Rebuilding vlo with the updated installer..."
 "$SCRIPT_DIR/install.sh" ${INSTALL_ARGS[@]+"${INSTALL_ARGS[@]}"}

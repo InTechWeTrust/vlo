@@ -584,7 +584,7 @@ class BackendExtensionRuntime:
             if item.manifest.vlo is not None:
                 if VLO_APPLICATION_VERSION is None:
                     logging.getLogger("vlo.extensions").warning(
-                        "Extension '%s' declares VLO range '%s', but the host "
+                        "Extension '%s' declares vlo range '%s', but the host "
                         "application version is unknown; compatibility was not verified.",
                         extension_id,
                         item.manifest.vlo,
@@ -594,7 +594,7 @@ class BackendExtensionRuntime:
                     VLO_APPLICATION_VERSION,
                 ):
                     raise BackendExtensionActivationError(
-                        f"extension VLO range does not include host application "
+                        f"extension vlo range does not include host application "
                         f"{VLO_APPLICATION_VERSION}"
                     )
             staged = self._artifacts.stage(item, digest)

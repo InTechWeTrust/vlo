@@ -149,7 +149,7 @@ export class TrustedHostAccessDirectory {
           );
         }
         if (resolution.status === "unavailable") {
-          const message = `Trusted host entry '${id}' is unavailable in this VLO build or editor state.`;
+          const message = `Trusted host entry '${id}' is unavailable in this vlo build or editor state.`;
           scope.report("error", message);
           throw new Error(`[Extension ${scope.extension.id}] ${message}`);
         }

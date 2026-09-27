@@ -173,7 +173,7 @@ export class ProjectSchemaVersionError extends Error {
     supportedSchemaVersion: number,
   ) {
     super(
-      `This project was created with a newer version of VLO and can't be opened here yet. ` +
+      `This project was created with a newer version of vlo and can't be opened here yet. ` +
         `${documentLabel} uses schema version ${foundSchemaVersion}, but this build supports up to version ${supportedSchemaVersion}.`,
     );
     this.name = "ProjectSchemaVersionError";

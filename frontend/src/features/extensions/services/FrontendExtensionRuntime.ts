@@ -556,7 +556,7 @@ export class FrontendExtensionRuntime<TApi extends object> {
           stage: "compatibility",
           message:
             vloCompatibility.reason ??
-            "The extension VLO application range is incompatible.",
+            "The extension vlo application range is incompatible.",
           digest: item.digest,
         };
       }

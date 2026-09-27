@@ -32,7 +32,7 @@ async function setupEditor(
 }
 
 /**
- * Custom Playwright fixtures for VLO e2e tests.
+ * Custom Playwright fixtures for vlo e2e tests.
  *
  * Usage:
  *   import { test, expect } from '../fixtures';

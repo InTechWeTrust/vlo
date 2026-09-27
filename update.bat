@@ -48,7 +48,7 @@ shift
 goto :parse_args
 :args_done
 
-echo [INFO]  VLO Updater
+echo [INFO]  vlo Updater
 echo.
 
 where git >nul 2>&1
@@ -67,17 +67,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%scripts\update-
 if errorlevel 1 goto :failed
 
 echo.
-echo [INFO]  Rebuilding VLO with the updated installer...
+echo [INFO]  Rebuilding vlo with the updated installer...
 call "%SCRIPT_DIR%install.bat"%INSTALL_ARGS%
 set "RC=%errorlevel%"
 goto :finish
 
 :not_installation
-echo [ERROR] This script must remain in the root of a VLO installation.
+echo [ERROR] This script must remain in the root of a vlo installation.
 goto :failed
 
 :git_missing
-echo [ERROR] Git is required to update VLO. Install it from:
+echo [ERROR] Git is required to update vlo. Install it from:
 echo [ERROR] https://git-scm.com/downloads
 echo [ERROR] Then open a new terminal and rerun this script.
 goto :failed
@@ -85,7 +85,7 @@ goto :failed
 :usage
 echo Usage: update.bat [--replace-local-files] [installer options]
 echo.
-echo Fetch the latest VLO source, then rerun install.bat to update dependencies
+echo Fetch the latest vlo source, then rerun install.bat to update dependencies
 echo and rebuild the frontend. Installer options such as --profiles and
 echo --update-node are passed through unchanged.
 echo.
