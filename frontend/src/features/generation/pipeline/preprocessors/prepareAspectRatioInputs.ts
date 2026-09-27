@@ -1,6 +1,8 @@
+import { getAspectRatioStage } from "../../services/workflowRules";
 import type { WorkflowInput } from "../../types";
 import {
   buildWorkflowInputLookup,
+  getRepeatableRequestKeyIndex,
   matchesNodeInputRequestKey,
 } from "../../utils/workflowInputs";
 import type { FrontendPreprocessContext, Processor } from "../types";
@@ -17,11 +19,69 @@ import {
  * A pinned selection wins outright; only "Auto" probes the supplied media,
  * falling back to the project ratio when nothing can be probed.
  */
+interface AnchorFile {
+  kind: "image" | "video";
+  requestKey: string;
+  file: File;
+}
+
+/**
+ * The file that frames the output when the stage declares an anchor input:
+ * the anchor's own file, or the first item of a repeatable anchor. `null`
+ * when no anchor is declared; `undefined` when one is declared but empty.
+ */
+function resolveAnchorFile(
+  ctx: FrontendPreprocessContext,
+): AnchorFile | null | undefined {
+  const anchorNodeId =
+    getAspectRatioStage(ctx.workflowRules)?.config?.anchor_input ?? null;
+  if (!anchorNodeId) return null;
+
+  const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
+  let best: (AnchorFile & { index: number }) | undefined;
+  for (const input of ctx.workflowInputs) {
+    if (input.nodeId !== anchorNodeId) continue;
+    if (input.inputType !== "image" && input.inputType !== "video") continue;
+    const files = input.inputType === "image" ? ctx.imageInputs : ctx.videoInputs;
+    for (const [requestKey, file] of Object.entries(files)) {
+      if (!matchesNodeInputRequestKey(requestKey, input, inputById)) continue;
+      const index = getRepeatableRequestKeyIndex(requestKey) ?? 0;
+      if (!best || index < best.index) {
+        best = { kind: input.inputType, requestKey, file, index };
+      }
+    }
+  }
+  return best
+    ? { kind: best.kind, requestKey: best.requestKey, file: best.file }
+    : undefined;
+}
+
+async function probeAnchorAspectRatio(anchor: AnchorFile): Promise<string | null> {
+  try {
+    return await probeVisualFileAspectRatio(anchor.file);
+  } catch (error) {
+    console.warn(
+      "[Generation] Failed to probe anchor aspect ratio",
+      anchor.requestKey,
+      error,
+    );
+    return null;
+  }
+}
+
 async function resolveRequestedTargetAspectRatio(
   ctx: FrontendPreprocessContext,
+  anchor: AnchorFile | null | undefined,
 ): Promise<string> {
   if (ctx.requestedAspectRatio) {
     return ctx.requestedAspectRatio;
+  }
+
+  // A declared anchor alone frames the output; the other inputs are
+  // references whose shapes say nothing about the frame.
+  if (anchor !== null) {
+    const anchorAspectRatio = anchor ? await probeAnchorAspectRatio(anchor) : null;
+    return anchorAspectRatio ?? ctx.projectConfig.aspectRatio;
   }
 
   const inputById = buildWorkflowInputLookup(ctx.workflowInputs);
@@ -115,6 +175,7 @@ export const prepareAspectRatioInputs: Processor<FrontendPreprocessContext> = {
   meta: {
     name: "prepareAspectRatioInputs",
     reads: [
+      "workflowRules",
       "workflowInputs",
       "derivedMaskMappings",
       "projectConfig",
@@ -133,8 +194,9 @@ export const prepareAspectRatioInputs: Processor<FrontendPreprocessContext> = {
   },
 
   async execute(ctx) {
+    const anchor = resolveAnchorFile(ctx);
     const requestedTargetAspectRatio =
-      await resolveRequestedTargetAspectRatio(ctx);
+      await resolveRequestedTargetAspectRatio(ctx, anchor);
     const targetAspectRatio = ctx.exactAspectRatio
       ? requestedTargetAspectRatio
       : normalizeToSupportedProjectAspectRatio(requestedTargetAspectRatio, [
@@ -144,6 +206,22 @@ export const prepareAspectRatioInputs: Processor<FrontendPreprocessContext> = {
     ctx.targetAspectRatio = targetAspectRatio;
 
     if (ctx.exactAspectRatio) {
+      return;
+    }
+
+    if (anchor !== null) {
+      // Fit only the framing item; cropping the references would cut away
+      // the very detail they were supplied for.
+      if (!anchor) return;
+      const cropped = await maybeCropVisualFileToAspectRatio(
+        anchor.file,
+        targetAspectRatio,
+      );
+      if (anchor.kind === "image") {
+        ctx.imageInputs = { ...ctx.imageInputs, [anchor.requestKey]: cropped };
+      } else {
+        ctx.videoInputs = { ...ctx.videoInputs, [anchor.requestKey]: cropped };
+      }
       return;
     }
 

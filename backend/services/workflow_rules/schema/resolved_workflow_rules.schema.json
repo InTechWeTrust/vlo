@@ -1149,6 +1149,18 @@
     },
     "WorkflowAspectRatioStageConfig": {
       "properties": {
+        "anchor_input": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor Input"
+        },
         "postprocess": {
           "$ref": "#/$defs/WorkflowAspectRatioPostprocessConfig"
         },

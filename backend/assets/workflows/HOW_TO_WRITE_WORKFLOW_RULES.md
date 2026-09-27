@@ -798,6 +798,24 @@ model-valid (width, height) pair and writes it back into the workflow.
 | `postprocess.mode`     | Currently only `"stretch_exact"`                                       |
 | `postprocess.apply_to` | Currently only `"all_visual_outputs"`                                  |
 | `postprocess.targets`  | Resize nodes after the decode that receive the *requested* size         |
+| `anchor_input`         | Node id of the input that frames the output (see below)                |
+
+### Anchor input
+
+By default, "Auto" probes every visual input in panel order, and when exact
+matching is off, every visual input is cropped to the best supported fit. That
+suits single-input workflows. For multi-reference workflows it is wrong,
+because references would be cropped to the output's frame.
+
+`anchor_input` names the input that frames the output, such as the batch
+loader of an image-edit workflow:
+
+- **Auto** probes only that input. For a repeatable input it probes the
+  first item. With nothing supplied, it falls back to the project ratio.
+- **The supported-fit crop** applies to that one item. All other visual
+  inputs, including later items of the same batch, pass through uncropped.
+
+A pinned ratio still wins over the probe, and still crops only the anchor.
 
 ### Targets
 

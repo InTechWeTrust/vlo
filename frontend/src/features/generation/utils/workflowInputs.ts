@@ -193,6 +193,17 @@ export function getNodeInputRequestKeyForSlot(
   return `${requestKey}${REPEATABLE_REQUEST_KEY_SEPARATOR}${index}`;
 }
 
+/** Batch position encoded in a repeatable request key, or `null` for a
+ * single-value key. */
+export function getRepeatableRequestKeyIndex(requestKey: string): number | null {
+  const separatorIndex = requestKey.lastIndexOf(REPEATABLE_REQUEST_KEY_SEPARATOR);
+  if (separatorIndex <= 0) return null;
+  const rawIndex = requestKey.slice(
+    separatorIndex + REPEATABLE_REQUEST_KEY_SEPARATOR.length,
+  );
+  return /^\d+$/.test(rawIndex) ? Number.parseInt(rawIndex, 10) : null;
+}
+
 export function matchesNodeInputRequestKey(
   requestKey: string,
   input: Pick<WorkflowInput, "id" | "nodeId" | "param" | "presentation">,

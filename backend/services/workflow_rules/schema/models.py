@@ -627,6 +627,14 @@ class WorkflowAspectRatioStageConfig(WorkflowRuleBaseModel):
     postprocess: WorkflowAspectRatioPostprocessConfig = Field(
         default_factory=WorkflowAspectRatioPostprocessConfig
     )
+    """
+    Node id of the input that frames the output, for workflows that take
+    several visual inputs. "Auto" probes only this input (the first item of a
+    repeatable input) and otherwise falls back to the project ratio, and the
+    supported-fit crop applies to that item alone, leaving the other inputs
+    untouched. Unset, every visual input is probed in order and cropped.
+    """
+    anchor_input: str | None = None
 
     @model_validator(mode="after")
     def validate_resolution_presentation(self) -> "WorkflowAspectRatioStageConfig":

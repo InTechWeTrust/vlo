@@ -10,6 +10,8 @@ import * as inputSelection from "../../utils/inputSelection";
 import * as mediaUtils from "../../pipeline/utils/media";
 import { buildGenerationFamilyAutoMatchKey } from "../familyAssignment";
 import { buildDerivedMaskRenderSignature } from "../derivedMaskRenderSignature";
+import type { WorkflowRules } from "../../services/workflowRules";
+import type { WorkflowInput } from "../../types";
 
 const {
   mockAddLocalAsset,
@@ -267,6 +269,115 @@ describe("generation pipeline", () => {
     expect(request.imageInputs).toEqual({
       "141__repeat_0": first,
       "141__repeat_1": second,
+    });
+  });
+
+  describe("with an anchor input", () => {
+    const anchorRules = {
+      version: 3,
+      nodes: {},
+      pipeline: [
+        {
+          id: "aspect_ratio",
+          kind: "aspect_ratio",
+          enabled: true,
+          config: { stride: 32, search_steps: 2, anchor_input: "141" },
+        },
+      ],
+    } as unknown as WorkflowRules;
+    const inputs: WorkflowInput[] = [
+      {
+        id: "200:image",
+        nodeId: "200",
+        classType: "LoadImage",
+        inputType: "image",
+        param: "image",
+        label: "Style reference",
+        currentValue: null,
+        origin: "rule",
+      },
+      {
+        id: "141:images",
+        nodeId: "141",
+        classType: "vloMemoryLoadImageBatch",
+        inputType: "image",
+        param: "images",
+        label: "Reference images",
+        currentValue: null,
+        origin: "rule",
+        presentation: { repeatable: { max: 10 } },
+      },
+    ];
+    const style = new File(["style"], "style.png", { type: "image/png" });
+    const first = new File(["first"], "first.png", { type: "image/png" });
+    const second = new File(["second"], "second.png", { type: "image/png" });
+    // Inserted out of batch order, so "first" can only win on its index.
+    const slotValues = {
+      "200:image": { type: "image" as const, file: style },
+      "141:images::repeat::1": { type: "image" as const, file: second },
+      "141:images": { type: "image" as const, file: first },
+    };
+
+    beforeEach(() => {
+      const ratios = new Map([
+        [style, "16:9"],
+        [first, "179:100"],
+        [second, "1:1"],
+      ]);
+      vi.spyOn(mediaUtils, "probeVisualFileAspectRatio").mockImplementation(
+        async (file) => ratios.get(file as File) ?? null,
+      );
+    });
+
+    it("probes only the first batch item for Auto", async () => {
+      const cropSpy = vi.spyOn(mediaUtils, "maybeCropVisualFileToAspectRatio");
+
+      const request = await frontendPreprocess(
+        {},
+        "workflow.json",
+        anchorRules,
+        inputs,
+        slotValues,
+        "client-id",
+        [],
+        undefined,
+        { exactAspectRatio: true },
+      );
+
+      expect(request.targetAspectRatio).toBe("179:100");
+      expect(cropSpy).not.toHaveBeenCalled();
+    });
+
+    it("crops only the first batch item to the supported fit", async () => {
+      useProjectStore.setState((state) => ({
+        ...state,
+        config: { ...state.config, aspectRatio: "16:9" },
+      }));
+      const cropped = new File(["cropped"], "cropped.png", { type: "image/png" });
+      const cropSpy = vi
+        .spyOn(mediaUtils, "maybeCropVisualFileToAspectRatio")
+        .mockResolvedValue(cropped);
+
+      const request = await frontendPreprocess(
+        {},
+        "workflow.json",
+        anchorRules,
+        inputs,
+        slotValues,
+        "client-id",
+        [],
+        undefined,
+        { exactAspectRatio: false },
+      );
+
+      expect(request.targetAspectRatio).toBe("16:9");
+      expect(cropSpy).toHaveBeenCalledTimes(1);
+      expect(cropSpy).toHaveBeenCalledWith(first, "16:9");
+      expect(request.imageInputs).toEqual({
+        "200": style,
+        "141__repeat_0": cropped,
+        "141__repeat_1": second,
+      });
     });
   });
 

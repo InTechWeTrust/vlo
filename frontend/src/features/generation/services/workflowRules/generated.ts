@@ -151,6 +151,7 @@ export interface WorkflowAspectRatioStageConfig {
   resolutions?: Array<number>;
   resolution_ladder?: WorkflowResolutionLadder | null;
   postprocess?: WorkflowAspectRatioPostprocessConfig;
+  anchor_input?: string | null;
 }
 
 export interface WorkflowAtLeastNInputValidationRule {
