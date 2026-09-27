@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Alert,
   Box,
@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogTitle,
   LinearProgress,
+  TextField,
   Typography,
 } from "@mui/material";
 import {
@@ -17,12 +18,20 @@ import {
   installComfyui,
   pickComfyuiDirectory,
   updateRuntimeSettings,
+  verifyComfyuiInstall,
   type ComfyuiInstallStatus,
 } from "../../services/runtimeApi";
+import type { ComfyuiInstallVerification } from "../../types/RuntimeStatus";
+
+type SetupPurpose = "install" | "existing";
 
 export function ComfyUiSetupPrompt() {
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [pickerPurpose, setPickerPurpose] = useState<SetupPurpose | null>(null);
+  const [manualPurpose, setManualPurpose] = useState<SetupPurpose | null>(null);
+  const [manualPath, setManualPath] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const pickerRequestRef = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [installStatus, setInstallStatus] =
     useState<ComfyuiInstallStatus | null>(null);
@@ -74,52 +83,100 @@ export function ComfyUiSetupPrompt() {
     return () => window.clearInterval(interval);
   }, [installStatus?.running]);
 
-  const handleChooseExisting = async () => {
-    setBusy(true);
+  // The native picker is a separate OS window that can open behind the
+  // browser or, under WSLg, never become usable at all. Its request can then
+  // block for minutes, so a typed path supersedes it and any late picker
+  // result is ignored.
+  const supersedePicker = () => {
+    pickerRequestRef.current += 1;
+    setPickerPurpose(null);
+  };
+
+  const applyExistingInstall = async (
+    verification: ComfyuiInstallVerification | null,
+  ) => {
+    if (!verification?.valid) {
+      throw new Error(
+        verification?.warnings[0] ??
+          "The selected folder is not a recognized ComfyUI install",
+      );
+    }
+    await updateRuntimeSettings({
+      comfyuiInstallDir: verification.installPath,
+      comfyuiInstallDirPromptStatus: "accepted",
+    });
+    setOpen(false);
+  };
+
+  const applyInstallParent = async (parentPath: string) => {
+    const status = await installComfyui(parentPath);
+    setInstallStatus(status);
+  };
+
+  const handlePick = async (purpose: SetupPurpose) => {
+    const requestId = ++pickerRequestRef.current;
+    setPickerPurpose(purpose);
+    setManualPurpose(purpose);
+    setManualPath("");
     setError(null);
     try {
-      const result = await pickComfyuiDirectory("existing");
+      const result = await pickComfyuiDirectory(purpose);
+      if (pickerRequestRef.current !== requestId) return;
+      setPickerPurpose(null);
       if (result.cancelled || !result.path) return;
-      if (!result.verification?.valid) {
-        throw new Error(
-          result.verification?.warnings[0] ??
-            "The selected folder is not a recognized ComfyUI install",
-        );
+      setSubmitting(true);
+      if (purpose === "existing") {
+        await applyExistingInstall(result.verification);
+      } else {
+        await applyInstallParent(result.path);
       }
-      await updateRuntimeSettings({
-        comfyuiInstallDir: result.verification.installPath,
-        comfyuiInstallDirPromptStatus: "accepted",
-      });
-      setOpen(false);
     } catch (err) {
+      if (pickerRequestRef.current !== requestId) return;
+      setPickerPurpose(null);
       setError(
-        err instanceof Error ? err.message : "Failed to choose ComfyUI",
+        err instanceof Error
+          ? err.message
+          : purpose === "existing"
+            ? "Failed to choose ComfyUI"
+            : "Failed to start installation",
       );
     } finally {
-      setBusy(false);
+      if (pickerRequestRef.current === requestId) {
+        setSubmitting(false);
+      }
     }
   };
 
-  const handleInstall = async () => {
-    setBusy(true);
+  const handleManualSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const path = manualPath.trim();
+    if (!manualPurpose || !path) return;
+    supersedePicker();
+    setSubmitting(true);
     setError(null);
     try {
-      const result = await pickComfyuiDirectory("install");
-      if (result.cancelled || !result.path) return;
-      const status = await installComfyui(result.path);
-      setInstallStatus(status);
+      if (manualPurpose === "existing") {
+        await applyExistingInstall(await verifyComfyuiInstall(path));
+      } else {
+        await applyInstallParent(path);
+      }
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to start installation",
+        err instanceof Error
+          ? err.message
+          : manualPurpose === "existing"
+            ? "Failed to choose ComfyUI"
+            : "Failed to start installation",
       );
     } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
   };
 
   const handleDecline = async () => {
+    supersedePicker();
     setOpen(false);
-    setBusy(true);
+    setSubmitting(true);
     setError(null);
     try {
       await updateRuntimeSettings({
@@ -131,11 +188,12 @@ export function ComfyUiSetupPrompt() {
         err,
       );
     } finally {
-      setBusy(false);
+      setSubmitting(false);
     }
   };
 
   const installing = installStatus?.running === true;
+  const busy = pickerPurpose !== null || submitting;
 
   return (
     <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
@@ -167,14 +225,14 @@ export function ComfyUiSetupPrompt() {
             <Box sx={{ display: "flex", gap: 1 }}>
               <Button
                 variant="contained"
-                onClick={() => void handleInstall()}
+                onClick={() => void handlePick("install")}
                 disabled={busy}
               >
                 Install ComfyUI For Me
               </Button>
               <Button
                 variant="outlined"
-                onClick={() => void handleChooseExisting()}
+                onClick={() => void handlePick("existing")}
                 disabled={busy}
               >
                 Choose Existing Install
@@ -182,10 +240,54 @@ export function ComfyUiSetupPrompt() {
               {busy ? <CircularProgress size={24} /> : null}
             </Box>
           ) : null}
+          {pickerPurpose ? (
+            <Typography variant="body2" color="text.secondary">
+              A folder picker opened in a separate window. If you can&apos;t
+              find it, check your taskbar or type the path below.
+            </Typography>
+          ) : null}
+          {manualPurpose && !installing ? (
+            <Box
+              component="form"
+              onSubmit={(event: FormEvent<HTMLFormElement>) =>
+                void handleManualSubmit(event)
+              }
+              sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}
+            >
+              <TextField
+                label={
+                  manualPurpose === "install"
+                    ? "Install location"
+                    : "ComfyUI folder"
+                }
+                helperText={
+                  manualPurpose === "install"
+                    ? "vlo creates a ComfyUI folder inside this folder."
+                    : "The folder that contains ComfyUI's main.py."
+                }
+                value={manualPath}
+                onChange={(event) => setManualPath(event.target.value)}
+                disabled={submitting}
+                size="small"
+                fullWidth
+              />
+              <Button
+                type="submit"
+                variant="outlined"
+                disabled={submitting || manualPath.trim().length === 0}
+                sx={{ flexShrink: 0 }}
+              >
+                {manualPurpose === "install" ? "Install Here" : "Use Folder"}
+              </Button>
+            </Box>
+          ) : null}
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => void handleDecline()} disabled={busy || installing}>
+        <Button
+          onClick={() => void handleDecline()}
+          disabled={submitting || installing}
+        >
           Continue without generative AI
         </Button>
       </DialogActions>

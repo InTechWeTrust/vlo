@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const api = vi.hoisted(() => ({
   getComfyuiInstallStatus: vi.fn(),
   getRuntimeSettings: vi.fn(),
+  installComfyui: vi.fn(),
+  pickComfyuiDirectory: vi.fn(),
   updateRuntimeSettings: vi.fn(),
+  verifyComfyuiInstall: vi.fn(),
 }));
 
 vi.mock("../../../services/runtimeApi", async () => {
@@ -15,7 +18,10 @@ vi.mock("../../../services/runtimeApi", async () => {
     ...actual,
     getComfyuiInstallStatus: api.getComfyuiInstallStatus,
     getRuntimeSettings: api.getRuntimeSettings,
+    installComfyui: api.installComfyui,
+    pickComfyuiDirectory: api.pickComfyuiDirectory,
     updateRuntimeSettings: api.updateRuntimeSettings,
+    verifyComfyuiInstall: api.verifyComfyuiInstall,
   };
 });
 
@@ -30,7 +36,11 @@ describe("ComfyUiSetupPrompt", () => {
     api.getRuntimeSettings.mockResolvedValue({
       recommendations: { shouldPromptForComfyuiInstallDir: true },
     });
+    api.updateRuntimeSettings.mockReset();
     api.updateRuntimeSettings.mockResolvedValue({});
+    api.installComfyui.mockReset();
+    api.pickComfyuiDirectory.mockReset();
+    api.verifyComfyuiInstall.mockReset();
   });
 
   it("explicitly prompts for an existing install or a new installation", async () => {
@@ -104,5 +114,125 @@ describe("ComfyUiSetupPrompt", () => {
     });
     expect(warningSpy).toHaveBeenCalled();
     warningSpy.mockRestore();
+  });
+
+  it("lets a typed install location supersede a picker that never returns", async () => {
+    let resolvePicker: (value: unknown) => void = () => {};
+    api.pickComfyuiDirectory.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePicker = resolve;
+      }),
+    );
+    api.installComfyui.mockResolvedValue({
+      phase: "cloning",
+      running: true,
+      targetPath: "/home/me/ComfyUI",
+      message: "Cloning ComfyUI…",
+      error: null,
+    });
+    render(<ComfyUiSetupPrompt />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Install ComfyUI For Me" }),
+    );
+
+    expect(
+      await screen.findByText(/folder picker opened in a separate window/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Install ComfyUI For Me" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Continue without generative AI" }),
+    ).toBeEnabled();
+
+    fireEvent.change(screen.getByLabelText("Install location"), {
+      target: { value: "  /home/me  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Install Here" }));
+
+    await waitFor(() => {
+      expect(api.installComfyui).toHaveBeenCalledWith("/home/me");
+    });
+    expect(await screen.findByText("Cloning ComfyUI…")).toBeInTheDocument();
+
+    // The abandoned picker finally answering must not start a second install.
+    resolvePicker({ cancelled: false, path: "/elsewhere", verification: null });
+    await Promise.resolve();
+    expect(api.installComfyui).toHaveBeenCalledTimes(1);
+  });
+
+  it("verifies a typed existing install before accepting it", async () => {
+    api.pickComfyuiDirectory.mockReturnValue(new Promise(() => {}));
+    api.verifyComfyuiInstall.mockResolvedValue({
+      valid: true,
+      installPath: "/opt/ComfyUI",
+      warnings: [],
+    });
+    render(<ComfyUiSetupPrompt />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose Existing Install" }),
+    );
+    fireEvent.change(await screen.findByLabelText("ComfyUI folder"), {
+      target: { value: "/opt/ComfyUI/" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use Folder" }));
+
+    await waitFor(() => {
+      expect(api.updateRuntimeSettings).toHaveBeenCalledWith({
+        comfyuiInstallDir: "/opt/ComfyUI",
+        comfyuiInstallDirPromptStatus: "accepted",
+      });
+    });
+    expect(api.verifyComfyuiInstall).toHaveBeenCalledWith("/opt/ComfyUI/");
+  });
+
+  it("rejects a typed folder that is not a ComfyUI install", async () => {
+    api.pickComfyuiDirectory.mockReturnValue(new Promise(() => {}));
+    api.verifyComfyuiInstall.mockResolvedValue({
+      valid: false,
+      installPath: "/tmp",
+      warnings: [
+        "main.py did not contain a recognized ComfyUI entry-point marker.",
+      ],
+    });
+    render(<ComfyUiSetupPrompt />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose Existing Install" }),
+    );
+    fireEvent.change(await screen.findByLabelText("ComfyUI folder"), {
+      target: { value: "/tmp" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use Folder" }));
+
+    expect(
+      await screen.findByText(/recognized ComfyUI entry-point marker/),
+    ).toBeInTheDocument();
+    expect(api.updateRuntimeSettings).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("ComfyUI folder")).toBeInTheDocument();
+  });
+
+  it("keeps the path field available when the picker cannot open", async () => {
+    api.pickComfyuiDirectory.mockRejectedValue(
+      new Error("The native directory picker could not open."),
+    );
+    render(<ComfyUiSetupPrompt />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Install ComfyUI For Me" }),
+    );
+
+    expect(
+      await screen.findByText("The native directory picker could not open."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Install location")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/folder picker opened in a separate window/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Install ComfyUI For Me" }),
+    ).toBeEnabled();
   });
 });
