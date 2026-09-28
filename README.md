@@ -9,22 +9,27 @@ It is extensible, with the goal of making it a playground for cutting-edge tools
 Ultimately I want vlo to be useful for *anyone* who wants to make videos, so it is free, extensible and open source.  It aims to handle the tricky design problems of building a proper frame-accurate nonlinear video editor so that you can build extensions and code (or vibe) your own effects.
 
 
-## Demo videos
+## Screenshots
 
 
-1. Patch-based inpainting. This is necessary for optimising quality and avoiding degradation both from VAE and video encoding.
+Vlo is project-based. All projects are stored locally on your PC, and can be edited whether running vlo locally or on a remote GPU.
+
+![landing](
+https://github.com/PxTicks/vlo/releases/download/v0.3.0/landing.png)
+
+It has dedicated generative workflows, and a live bridge to ComfyUI which can be used to edit video anywhere on the timeline.
+
+![main_editor](
+https://github.com/PxTicks/vlo/releases/download/v0.3.0/main_editor.png)
+
+These are combined with traditional video editing features, such as color grading.
+
+![color_grade](
+https://github.com/PxTicks/vlo/releases/download/v0.3.0/color_grade.png)
 
 
-<video src="https://github.com/user-attachments/assets/a29d1b1d-097d-4526-b2c8-1dc99ec4fcc2" controls width="720"></video>
-
-
-2. Motion guidance. This is using the [time-to-move](https://time-to-move.github.io/) framework. In this case we show precise control by animating the input 6332 - the default vlo port - on a keypad.
-
-<video src="https://github.com/user-attachments/assets/d66962c4-7b37-4fea-b05a-4e0a073140ff" controls width="720"></video>
-
-3. An sample video of a longer workflow can be [downloaded](
-https://github.com/PxTicks/vlo/releases/download/v0.2.0/vlo_full_2.mp4) from the release assets (too big a file to upload inline). Some steps have been skipped for brevity, but it demonstrates the interaction between timeline and generation
-
+### Demo
+A short trailer for vlo made within the app itself: https://www.youtube.com/watch?v=G7HgMuUyfS0
 
 ## IMPORTANT
 
@@ -47,25 +52,29 @@ Vlo requires chromium-based browsers to work. I have tested in Edge and Chrome, 
 - ComfyUI-backed workflows for image and video generation, inpainting and upscaling.
 - Mask algebera (unions, intersections etc)
 - Draggable motion paths
-- Sam-audio 
-
-## Extensions
-
-You can add extensions to vlo. The 
-[`extension-template`](extension-template/README.md).
+- Sam-audio for audio stem separation
+- Adjustment clips for whole-timeline operations
+- Blending modes for clip layers.
+- Color grading
+- Transitions (dissolve, slide in etc.)
 
 ## Changelog (v0.3.0)
 
-- New Live ComfyUI bridge, allows any workflow.
-- Sam-audio
-- Added new workflows, including Minimax workflows.
-- Added composite clips
-- Added extension SDK
-- Unified backend and ComfyUI queuing to prevent conflict.
+- New Live ComfyUI bridge, allows asset sharing and live media capture
+- Sam-audio for ai-driven stem separation
+- New workflows, including Minimax workflows.
+- Composite clips and subtimelines
+- Extension SDK
+- Unified backend and ComfyUI queuing.
+- Adjustment Clips
+- Color grading
+- New frame-graph renderer: live preview and export use the same render plan
+- Managed installs for ComfyUI, SAM2, Sam-Audio etc.
+- Transitions
 
-## Try it on runpod
 
-Runpod is a paid GPU-rental service. You can try vlo on runpod [here](https://console.runpod.io/deploy?template=vunh5oyg9t&ref=7o87c4ii).
+## What's next?
+v0.4.0 will have a new graph-data model for efficient resource management and parameter sharing (e.g. of masks between clips), as well as graph-based shader execution to enhance the transformations and color grading features (think Davinci Resolve's node-based color page). To make proper use of these, a per-clip workspace mode will be introduced.
 
 ## Install
 
@@ -116,62 +125,6 @@ The updater uses the checkout's existing branch and upstream. Projects, models,
 virtual environments, runtime settings, and other ignored local data stay where
 they are.
 
-The updater may need to replace or move some local files:
-
-- **Git checkout:** tracked source files with local changes are replaced by
-  the committed version before the update.
-- **GitHub ZIP download:** the first update converts the folder into a shallow
-  Git checkout. Source files that differ from the latest version are
-  overwritten, and source files the latest version no longer includes are moved
-  aside.
-
-In both cases, the updater lists those files and asks for confirmation before
-touching any of them. Each one is saved under
-`.vlo-update-backups/<kind>-<time>/` at its original path, with a
-`MANIFEST.txt`. Pass `--replace-local-files` to approve without a prompt, for
-example from a script. The updater refuses if a symbolic link stands in for a
-folder that holds vlo's own files, because the update would replace the link
-with an empty folder.
-
-`install.sh` / `install.bat`:
-
-- verifies that Git is available before changing the installation. The updater,
-  managed ComfyUI and custom-node installs, and the optional SAM profiles all
-  use Git directly or through VCS-backed Python packages;
-- finds a compatible Node.js (20.19+ or 22.13+) and Python (3.10+), or offers to
-  install vlo-managed copies. Those are per-user, and change neither your PATH
-  nor your shell profile;
-- installs the npm and Python dependencies and builds the frontend;
-- offers the optional local-AI profiles — SAM2 for segmentation and masking,
-  SAM-Audio for prompted audio separation — along with PyTorch with CUDA 13.0.
-  Answer yes if you have an Nvidia GPU and want masking. Reruns, including
-  every update, keep and update the profiles and CUDA PyTorch installed
-  earlier, and ask only about profiles you have not chosen yet. To add one
-  afterwards, rerun the installer.
-
-To install without prompts, name the profiles:
-
-```bash
-./install.sh --profiles sam2,sam-audio     # or: --profiles local-ai
-./install.sh --no-optional                 # base backend only
-```
-
-`sam2`, `sam-audio`, `local-ai` (both), `all`, and `none` are accepted, and
-`--cuda-torch` / `--no-cuda-torch` settle the PyTorch question the same way. The
-installer runs non-interactively whenever it is given `--profiles`,
-`--no-optional`, or a stdin that is not a terminal, so it works from a
-provisioning script.
-
-Whichever way it runs, it records what it was asked for and how each profile
-went in `backend/runtime/install-profiles.json`. That is what lets **Runtime &
-Diagnostics** tell an optional feature you never wanted apart from one whose
-install failed — the optional steps warn and continue rather than aborting the
-whole install, and without the marker that warning is lost with the terminal.
-
-`run.sh` / `run.bat` starts vlo and opens `http://127.0.0.1:6332`. Pass
-`--no-browser` to skip opening the browser.
-
-That is the whole install. The rest of the setup happens inside the app.
 
 ### First launch: connecting ComfyUI
 
@@ -199,12 +152,6 @@ Models are fetched from inside the app as well:
 - **SAM-Audio models** — offered by the audio separation flow.
 
 Models gated on Hugging Face ask for an access token in the download dialog.
-
-> **Nvidia users on Windows:** ComfyUI's own `requirements.txt` takes PyTorch
-> from PyPI, whose Windows wheels are CPU-only, so vlo installs CUDA 13.0
-> PyTorch into the environment first. If that step fails, the install still
-> finishes and says so; run it again by hand with
-> `<ComfyUI>\.venv\Scripts\python.exe -m pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130`
 
 ### Existing ComfyUI installs
 
@@ -277,56 +224,6 @@ Copy-Item backend\.env.example backend\.env
 When backend dependencies change, update `backend/pyproject.toml` and regenerate the
 pip requirements files with `python scripts/sync-backend-requirements.py`.
 
-### SAM2 (manual setup)
-
-The installer does this for you; follow these steps only if you declined its
-SAM2 prompt or are installing manually. Checkpoints themselves are easier to
-fetch from the mask editor than by hand.
-
-First make sure that torch with CUDA is installed in the backend venv, e.g.
-
-```bash
-uv pip install --python backend/.venv/bin/python torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
-```
-
-Being sure to install the version for your correct cuda environment, see <https://pytorch.org/>.
-
-Then install SAM2 as one unit:
-
-```bash
-uv pip install --python backend/.venv/bin/python -r backend/requirements-sam2.txt
-```
-
-The venv `uv sync` creates does not contain `pip`, which is why these go through
-`uv pip --python` rather than `python -m pip`. Runtime & Diagnostics shows this
-exact command against a failing SAM2 check, so you can copy it from the app
-instead of from here. See <https://github.com/facebookresearch/sam2> for the
-upstream project.
-
-Place any downloaded models and their associated `.yaml` in `vlo/backend/assets/models/sams`. Models can be found on Hugging Face, for example <https://huggingface.co/facebook/sam2.1-hiera-large>. Use the native `.pt` checkpoint from the official repository, such as `sam2.1_hiera_large.pt`. Do not use the repository's `model.safetensors` file with vlo's native SAM2 runtime, because that artifact uses Hugging Face Transformers parameter naming and is not compatible with `facebookresearch/sam2`.
-
-### SAM-Audio
-
-SAM-Audio is optional and requires Python 3.11 or newer. It is intentionally not part of `backend/requirements.txt` because Meta's package owns VCS-only dependencies such as `dacvae`, ImageBind, and perception-models. Install SAM-Audio into the backend virtual environment as one unit:
-
-```bash
-uv pip install --python backend/.venv/bin/python \
-  --overrides backend/overrides-sam-audio.txt \
-  -r backend/requirements-sam-audio.txt
-```
-
-The `--overrides` file is required, not optional: `dacvae` inherits a stale
-`protobuf<3.20` cap, and SAM-Audio's tokenizer needs a newer protobuf than that.
-An override replaces the cap, where a plain requirement would only intersect
-with it and make the resolve unsatisfiable.
-
-If you are working from a local checkout, install that checkout into the backend virtual environment, or set `SAM_AUDIO_PYTHONPATH` to a path such as `~/sam-audio` after installing its dependencies.
-
-The default model is `facebook/sam-audio-large-tv`, which is gated on Hugging Face. Accept the license and either authenticate the backend environment with `hf auth login`, pass a token through the model download flow, or place the downloaded files manually. SAM-Audio model downloads live under `vlo/backend/assets/models/sam_audio/<model-key>`, for example `vlo/backend/assets/models/sam_audio/sam-audio-large-tv/config.json` and `checkpoint.pt`. This is intentionally one folder deeper than SAM2 because SAM-Audio loads a Hugging Face-style model directory, not loose checkpoint/config files. `extra_model_paths.yaml` supports a `sam_audio` root with the same `<model-key>/{config.json,checkpoint.pt}` layout.
-
-Transient source uploads, generated stems, and Hugging Face scratch files use `projects/.sam_audio_cache`. First runtime load can also fetch dependent T5 and PE assets, so the backend environment still needs Hugging Face access or a pre-populated cache even when the main SAM-Audio checkpoint is already present.
-
-The app currently uses the lean isolate path and does not expose SAM-Audio's optional high-quality reranking/span-prediction mode. The backend still guards that experimental API path behind `SAM_AUDIO_LOAD_OPTIONAL_MODELS=1`; only enable it after explicitly caching/installing the CLAP, ImageBind, judge, and PE span-predictor dependencies. Compatible `xformers`, `flash-attn`, and `torchcodec` installs are used when available; if those version-sensitive packages are absent or mismatched, vlo falls back to import shims for the default tensor-based path. Restart the backend after changing any of these packages.
 
 ## Run
 
@@ -393,6 +290,12 @@ which is useful for headless or scripted setups:
 - `SAM2_MAX_PROPAGATION_FRAMES`: maximum visible source-window length accepted by SAM2 (defaults to `900`; set to `0` to disable the limit)
 
 ## Development
+
+### Extensions
+
+You can add extensions to vlo. The 
+[`extension-template`](extension-template/README.md). The extensions subfolder has some skills for ai-assisted development. I don't like putting out ai-written documentation which I haven't reviewed myself, so human-friendly docs still outstanding.
+
 
 ### End-to-end tests
 
@@ -479,6 +382,7 @@ The work of the following users has also been valuable:
 - [kijai](https://github.com/kijai) nodes, workflows and reference code.
 - [kosinkadink](https://github.com/kosinkadink) nodes and reference code.
 - [RuneXX](https://huggingface.co/RuneXX) workflows.
+- [drozbay](https://github.com/drozbay) (aka AbleJones) - ideas for workflows.
 
 ## License
 
