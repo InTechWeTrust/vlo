@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { WorkflowHowToButton } from "../WorkflowHowTo";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { WorkflowHowToButton, WorkflowHowToDialog } from "../WorkflowHowTo";
 
 const fetchMock = vi.fn();
 // jsdom has no scrollIntoView; the anchor test installs a spy.
@@ -195,5 +195,43 @@ describe("WorkflowHowToButton", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close how-to" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("ignores a response for a workflow the dialog has switched away from", async () => {
+    // A's response is held back and ignores its abort, so it lands after B's.
+    let resolveFirst: (response: unknown) => void = () => {};
+    fetchMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirst = resolve;
+      }),
+    );
+    respondWith({
+      workflow_id: "b.json",
+      fragments: [{ kind: "markdown", markdown: "# Workflow B", base: "bundle:" }],
+    });
+
+    const { rerender } = render(
+      <WorkflowHowToDialog workflowId="a.json" workflowLabel="A" onClose={() => {}} />,
+    );
+    rerender(
+      <WorkflowHowToDialog workflowId="b.json" workflowLabel="B" onClose={() => {}} />,
+    );
+    expect(await screen.findByRole("heading", { name: "Workflow B" })).toBeInTheDocument();
+
+    await act(async () => {
+      resolveFirst({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({
+          workflow_id: "a.json",
+          fragments: [{ kind: "markdown", markdown: "# Workflow A", base: "bundle:" }],
+        }),
+        text: async () => "",
+      });
+    });
+
+    expect(screen.getByRole("heading", { name: "Workflow B" })).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 });

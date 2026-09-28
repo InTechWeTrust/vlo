@@ -152,6 +152,7 @@
 /frontend/src/features/userAssets/useAssetBrowserSelectionStore.ts extension-surface=adapter
 /frontend/src/features/generation/GenerationPanel.tsx extension-surface=adapter
 /frontend/src/features/generation/components/GenerationInputs.tsx extension-surface=adapter
+/frontend/src/features/generation/components/ComfyUIEditor.tsx extension-surface=adapter
 /frontend/src/features/generation/hooks/useGenerationPanel.ts extension-surface=adapter
 /frontend/src/features/generation/types.ts extension-surface=adapter
 /frontend/src/features/generation/utils/loraLoaderWidgets.ts extension-surface=adapter

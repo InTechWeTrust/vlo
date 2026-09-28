@@ -80,12 +80,23 @@ type HowToLoadState =
   | { status: "ready"; document: WorkflowHowToDocument }
   | { status: "error"; message: string };
 
+/** A settled load, tagged with the workflow it was fetched for. */
+type SettledHowToState = Exclude<HowToLoadState, { status: "loading" }> & {
+  workflowId: string;
+};
+
+const LOADING_STATE: HowToLoadState = { status: "loading" };
+
 export function WorkflowHowToDialog({
   workflowId,
   workflowLabel,
   onClose,
 }: WorkflowHowToDialogProps) {
-  const [state, setState] = useState<HowToLoadState>({ status: "loading" });
+  // Loading is derived rather than stored: a result for another workflow (or
+  // none yet) reads as loading, so switching workflows needs no reset.
+  const [settled, setSettled] = useState<SettledHowToState | null>(null);
+  const state: HowToLoadState =
+    settled?.workflowId === workflowId ? settled : LOADING_STATE;
   const contentRef = useRef<HTMLDivElement>(null);
   const headingIds = useMemo(
     () =>
@@ -109,12 +120,17 @@ export function WorkflowHowToDialog({
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: "loading" });
     getWorkflowHowTo(workflowId, controller.signal)
-      .then((document) => setState({ status: "ready", document }))
+      .then((document) => {
+        // A response can still arrive after its request was aborted; letting
+        // it land would replace the current workflow's result with a stale one.
+        if (controller.signal.aborted) return;
+        setSettled({ workflowId, status: "ready", document });
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setState({
+        setSettled({
+          workflowId,
           status: "error",
           message:
             error instanceof Error ? error.message : "Failed to load the how-to",

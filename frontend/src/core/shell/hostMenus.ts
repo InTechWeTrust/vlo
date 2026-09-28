@@ -72,6 +72,12 @@ export interface HostMenuSubjectMap {
       readonly workflowId: string | null;
     };
   };
+  readonly "generation.timeline.select": {
+    readonly slot: "generation.timeline.select";
+    readonly generation: {
+      readonly workflowId: string | null;
+    };
+  };
   readonly "app.view.select": {
     readonly slot: "app.view.select";
     readonly region: {
@@ -250,6 +256,19 @@ function validateGenerateOptionsSubject(subject: unknown): boolean {
   );
 }
 
+/** Subject: `{ slot, generation: { workflowId } }`. */
+function validateTimelineSelectSubject(subject: unknown): boolean {
+  if (!isRecord(subject) || subject.slot !== "generation.timeline.select") {
+    return false;
+  }
+  const generation = subject.generation;
+  return (
+    isRecord(generation) &&
+    (typeof generation.workflowId === "string" ||
+      generation.workflowId === null)
+  );
+}
+
 /** Subject: `{ slot, region: { id, selectedViewId } }`. */
 function validateViewSelectSubject(subject: unknown): boolean {
   if (!isRecord(subject) || subject.slot !== "app.view.select") {
@@ -400,6 +419,7 @@ const HOST_MENU_SUBJECT_VALIDATORS = {
   "masks.add.options": validateMasksAddSubject,
   "transformations.path.add": validatePathAddSubject,
   "generation.generate.options": validateGenerateOptionsSubject,
+  "generation.timeline.select": validateTimelineSelectSubject,
   "app.view.select": validateViewSelectSubject,
   "app.view.move": validateViewMoveSubject,
   "library.item.actions": validateLibraryItemSubject,
@@ -460,6 +480,10 @@ const HOST_MENU_SUBJECT_SCHEMAS = {
   },
   "generation.generate.options": {
     slot: "'generation.generate.options'",
+    generation: { workflowId: "string | null" },
+  },
+  "generation.timeline.select": {
+    slot: "'generation.timeline.select'",
     generation: { workflowId: "string | null" },
   },
   "app.view.select": {

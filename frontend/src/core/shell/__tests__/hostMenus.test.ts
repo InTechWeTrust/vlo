@@ -28,6 +28,13 @@ describe("Wave 3 host menu subjects", () => {
       },
     ],
     [
+      "generation.timeline.select",
+      {
+        slot: "generation.timeline.select",
+        generation: { workflowId: "vlo_wan_vace.json" },
+      },
+    ],
+    [
       "app.view.select",
       {
         slot: "app.view.select",

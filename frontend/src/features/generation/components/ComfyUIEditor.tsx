@@ -5,10 +5,6 @@ import {
   ButtonGroup,
   IconButton,
   Dialog,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
   Tooltip,
   Typography,
   CircularProgress,
@@ -67,6 +63,7 @@ import {
   type IframeAssetDockTab,
 } from "../iframeTimelineSelection/IframeAssetDock";
 import { IframeTimelineSelectionSettingsDialog } from "../iframeTimelineSelection/IframeTimelineSelectionSettingsDialog";
+import { AppMenu } from "../../../core/shell/AppMenu";
 
 const HEALTH_WATCHDOG_MS = 10_000;
 const IFRAME_PROGRESS_THROTTLE_MS = 250;
@@ -235,6 +232,7 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
   );
   const connectionStatus = useGenerationStore((s) => s.connectionStatus);
   const comfyQueueRemaining = useGenerationStore((s) => s.comfyQueueRemaining);
+  const selectedWorkflowId = useGenerationStore((s) => s.selectedWorkflowId);
   const iframeWorkflowInstanceId = useGenerationStore(
     (s) => s.iframeWorkflowInstanceId,
   );
@@ -1308,37 +1306,37 @@ export function ComfyUIEditor({ open, onClose }: ComfyUIEditorProps) {
               </Button>
             </Tooltip>
           </ButtonGroup>
-          <Menu
+          <AppMenu
+            menuId="generation.timeline.select"
+            subject={{
+              slot: "generation.timeline.select",
+              generation: { workflowId: selectedWorkflowId },
+            }}
+            items={[
+              {
+                kind: "action",
+                id: "video",
+                label: "Video",
+                group: "1_capture",
+                icon: <Movie fontSize="small" />,
+                testId: "comfyui-select-from-timeline-video",
+                run: handleSelectFromTimeline,
+              },
+              {
+                kind: "action",
+                id: "frame",
+                label: "Frame",
+                group: "1_capture",
+                icon: <PhotoCamera fontSize="small" />,
+                testId: "comfyui-select-from-timeline-frame",
+                run: handleSelectFrameFromTimeline,
+              },
+            ]}
             id="comfyui-timeline-selection-menu"
             anchorEl={selectionMenuAnchor}
             open={Boolean(selectionMenuAnchor)}
             onClose={() => setSelectionMenuAnchor(null)}
-          >
-            <MenuItem
-              onClick={() => {
-                setSelectionMenuAnchor(null);
-                handleSelectFromTimeline();
-              }}
-              data-testid="comfyui-select-from-timeline-video"
-            >
-              <ListItemIcon>
-                <Movie fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Video</ListItemText>
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                setSelectionMenuAnchor(null);
-                handleSelectFrameFromTimeline();
-              }}
-              data-testid="comfyui-select-from-timeline-frame"
-            >
-              <ListItemIcon>
-                <PhotoCamera fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Frame</ListItemText>
-            </MenuItem>
-          </Menu>
+          />
           {typeof comfyQueueRemaining === "number" && comfyQueueRemaining > 0 && (
             <Typography
               variant="caption"
