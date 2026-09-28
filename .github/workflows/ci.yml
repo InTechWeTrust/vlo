@@ -83,7 +83,9 @@ jobs:
         # why here rather than letting CI and dev silently diverge.
         python-version: "3.14"
         cache: pip
-        cache-dependency-path: backend/requirements-test.txt
+        cache-dependency-path: |
+          backend/requirements-test.txt
+          backend/uv.lock
 
     # The requirements files (including the requirements-test.txt this job
     # installs) are generated from pyproject.toml. Fail fast if someone changed
@@ -107,8 +109,22 @@ jobs:
     # install would also pull the mandatory dependencies (torch and the rest of
     # the ML stack). `pythonpath = ["."]` in backend/pyproject.toml makes the
     # backend importable without installing the package at all.
+    #
+    # The set is pinned to the versions installs get from `uv sync --frozen`.
+    # The lock is exported as a constraints file, not installed: a constraint
+    # only fixes the version of a package something else pulls in, so the
+    # locked torch stack is never installed. `uv lock --check` fails if
+    # pyproject.toml changed without re-locking, which would otherwise leave CI
+    # testing against stale pins.
     - name: Install backend test dependencies
-      run: pip install -r backend/requirements-test.txt
+      working-directory: backend
+      run: |
+        pip install uv
+        uv lock --check
+        uv export --frozen --no-hashes --all-extras --no-emit-project \
+          --output-file "$RUNNER_TEMP/backend-constraints.txt"
+        pip install -r requirements-test.txt \
+          -c "$RUNNER_TEMP/backend-constraints.txt"
 
     # Run from backend/ so pytest picks up its config and coverage discovers the
     # [tool.coverage.*] config (both live in backend/pyproject.toml). The one
