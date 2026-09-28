@@ -72,9 +72,14 @@ test.describe('Live render pipeline resilience', () => {
     });
 
     // Enable debug mode so the frame planner emits its per-frame diagnostics.
-    await page.getByTestId('project-settings-button').click();
-    await page.getByTestId('project-settings-debug-toggle').click();
-    await page.keyboard.press('Escape');
+    // The menu's debug toggle exists only in dev builds; the diagnostics
+    // bridge reaches the same app-wide flag in the production build CI serves.
+    await expect
+      .poll(() =>
+        page.evaluate(() => typeof window.__vloE2E?.setExportDebugMode),
+      )
+      .toBe('function');
+    await page.evaluate(() => window.__vloE2E!.setExportDebugMode!(true));
 
     // Nudge the playhead to force fresh live renders now that diagnostics are
     // published. On the healthy code clip_002 keeps rendering and emits

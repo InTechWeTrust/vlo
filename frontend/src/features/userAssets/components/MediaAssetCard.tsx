@@ -188,7 +188,10 @@ function MediaAssetThumbnail({
       ) : (
         <Box sx={EMPTY_PREVIEW_STYLES}>
           {asset?.type === "audio" ? (
-            <MusicNoteIcon sx={{ fontSize: 40, color: "#888" }} />
+            <MusicNoteIcon
+              data-testid="asset-card-audio-icon"
+              sx={{ fontSize: 40, color: "#888" }}
+            />
           ) : asset?.type === "lut" ? (
             <GradientIcon sx={{ fontSize: 40, color: "#888" }} />
           ) : (

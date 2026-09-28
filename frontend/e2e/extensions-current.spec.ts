@@ -40,17 +40,27 @@ export const activate = (context) => {
     const [count, setCount] = React.useState(0);
     React.useEffect(() => {
       let active = true;
+      let unsubscribeStorage;
       const refresh = async () => {
         const next = await readCount();
         if (active) setCount(next);
       };
-      void refresh();
-      const unsubscribe = context.api.storage.project?.subscribe(() => {
+      // Project storage hydrates after the project opens, so storage.project
+      // can still be null here. api.project.subscribe fires again when it
+      // lands; re-bind then instead of keeping a subscription to nothing.
+      const bindStorage = () => {
+        unsubscribeStorage?.();
+        unsubscribeStorage = context.api.storage.project?.subscribe(() => {
+          void refresh();
+        });
         void refresh();
-      });
+      };
+      bindStorage();
+      const unsubscribeProject = context.api.project.subscribe(bindStorage);
       return () => {
         active = false;
-        unsubscribe?.();
+        unsubscribeStorage?.();
+        unsubscribeProject();
       };
     }, []);
     return React.createElement(

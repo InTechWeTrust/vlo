@@ -67,7 +67,7 @@ test.describe('Project Settings Menu', () => {
         await expect(classic).toBeVisible();
 
         // Default is "compact" — Classic should have a check icon
-        await expect(classic.getByTestId('CheckIcon')).toBeVisible();
+        await expect(classic.getByTestId('menu-item-selected')).toBeVisible();
     });
 
     test('Shows all FPS options with current selection checked', async ({ editor }) => {
@@ -81,7 +81,7 @@ test.describe('Project Settings Menu', () => {
 
         // Default is 30fps — should have a check
         const fps30 = menu.getByRole('menuitem', { name: '30 fps' });
-        await expect(fps30.getByTestId('CheckIcon')).toBeVisible();
+        await expect(fps30.getByTestId('menu-item-selected')).toBeVisible();
     });
 
     test('Shows all aspect ratio options with current selection checked', async ({ editor }) => {
@@ -96,7 +96,7 @@ test.describe('Project Settings Menu', () => {
 
         // Default is 16:9 — should have a check
         const ratio169 = menu.getByRole('menuitem', { name: '16:9 (Landscape)' });
-        await expect(ratio169.getByTestId('CheckIcon')).toBeVisible();
+        await expect(ratio169.getByTestId('menu-item-selected')).toBeVisible();
     });
 
     test('Change FPS setting', async ({ editor }) => {
@@ -110,11 +110,11 @@ test.describe('Project Settings Menu', () => {
         // Re-open and verify 24 fps now has check
         await editor.page.getByTestId('project-settings-button').click();
         const fps24 = editor.page.getByRole('menuitem', { name: '24 fps' });
-        await expect(fps24.getByTestId('CheckIcon')).toBeVisible();
+        await expect(fps24.getByTestId('menu-item-selected')).toBeVisible();
 
         // 30 fps should no longer have check
         const fps30 = editor.page.getByRole('menuitem', { name: '30 fps' });
-        await expect(fps30.getByTestId('CheckIcon')).toHaveCount(0);
+        await expect(fps30.getByTestId('menu-item-selected')).toHaveCount(0);
     });
 
     test('Change aspect ratio setting', async ({ editor }) => {
@@ -127,11 +127,11 @@ test.describe('Project Settings Menu', () => {
         // Re-open and verify 1:1 now has check
         await editor.page.getByTestId('project-settings-button').click();
         const square = editor.page.getByRole('menuitem', { name: '1:1 (Square)' });
-        await expect(square.getByTestId('CheckIcon')).toBeVisible();
+        await expect(square.getByTestId('menu-item-selected')).toBeVisible();
 
         // 16:9 should no longer have check
         const landscape = editor.page.getByRole('menuitem', { name: '16:9 (Landscape)' });
-        await expect(landscape.getByTestId('CheckIcon')).toHaveCount(0);
+        await expect(landscape.getByTestId('menu-item-selected')).toHaveCount(0);
     });
 
     test('Change layout setting', async ({ editor }) => {
@@ -144,11 +144,11 @@ test.describe('Project Settings Menu', () => {
         // Re-open and verify Full Height now has check
         await editor.page.getByTestId('project-settings-button').click();
         const fullHeight = editor.page.getByRole('menuitem', { name: /Full Height Sidebars/i });
-        await expect(fullHeight.getByTestId('CheckIcon')).toBeVisible();
+        await expect(fullHeight.getByTestId('menu-item-selected')).toBeVisible();
 
         // Classic should no longer have check
         const classic = editor.page.getByRole('menuitem', { name: /Classic.*Wide Timeline/i });
-        await expect(classic.getByTestId('CheckIcon')).toHaveCount(0);
+        await expect(classic.getByTestId('menu-item-selected')).toHaveCount(0);
     });
 
 });

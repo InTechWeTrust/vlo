@@ -88,8 +88,7 @@ test.describe('Asset Browser', () => {
         const card = assetBrowser.assetCards.first();
         await expect(card).toBeVisible();
 
-        // Audio cards show MusicNoteIcon (an SVG with data-testid="MusicNoteIcon")
-        await expect(card.locator('[data-testid="MusicNoteIcon"]')).toBeVisible();
+        await expect(card.getByTestId('asset-card-audio-icon')).toBeVisible();
 
         // No <img> element (no thumbnail for audio)
         await expect(card.locator('img')).toHaveCount(0);

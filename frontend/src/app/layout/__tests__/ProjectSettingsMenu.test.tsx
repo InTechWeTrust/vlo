@@ -61,10 +61,10 @@ describe("ProjectSettingsMenu", () => {
     };
 
     expect(
-      within(menuItemFor("720p (HD)")).getByTestId("CheckIcon"),
+      within(menuItemFor("720p (HD)")).getByTestId("menu-item-selected"),
     ).toBeInTheDocument();
     expect(
-      within(menuItemFor("1080p (FHD)")).queryByTestId("CheckIcon"),
+      within(menuItemFor("1080p (FHD)")).queryByTestId("menu-item-selected"),
     ).not.toBeInTheDocument();
   });
 

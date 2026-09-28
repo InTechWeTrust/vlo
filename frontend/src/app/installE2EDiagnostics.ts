@@ -1,7 +1,11 @@
 import { playbackClock, playbackFrameClock } from "../core/playback/PlaybackClock";
 import { audioSystem } from "../features/player/services/AudioSystem";
 import { usePlayerStore } from "../features/player/usePlayerStore";
-import { getTimelineViewGeometry } from "../features/timeline/api";
+import { useMaskViewStore } from "../features/masks";
+import {
+  getSelectedTimelineClipId,
+  getTimelineViewGeometry,
+} from "../features/timeline/api";
 import { TRACK_HEADER_WIDTH } from "../features/timeline/constants";
 
 /**
@@ -75,11 +79,19 @@ export interface E2ETimelineTickGeometry {
   playheadTicks: number;
 }
 
+/** SAM2 preview state for the selected clip, as the player reads it. */
+export interface E2ESam2PreviewDiagnostics {
+  selectedClipId: string | null;
+  /** Whether a live SAM2 preview frame is held for the selected clip. */
+  hasLivePreview: boolean;
+}
+
 declare global {
   interface Window {
     __vloE2E?: {
       getPlaybackDiagnostics: () => E2EPlaybackDiagnostics;
       getTimelineTickGeometry: (tick: number) => E2ETimelineTickGeometry;
+      getSam2PreviewDiagnostics: () => E2ESam2PreviewDiagnostics;
       /**
        * Installed only under the strict flag. Absent in development builds and
        * tree-shaken out of production ones entirely.
@@ -178,6 +190,17 @@ export function installE2EDiagnostics(): void {
         trackHeaderWidth: TRACK_HEADER_WIDTH,
         zoomScale: view.zoomScale,
         playheadTicks: playbackClock.time,
+      };
+    },
+    getSam2PreviewDiagnostics: () => {
+      const selectedClipId = getSelectedTimelineClipId();
+      return {
+        selectedClipId,
+        hasLivePreview:
+          selectedClipId !== null &&
+          Boolean(
+            useMaskViewStore.getState().sam2LivePreviewByClipId[selectedClipId],
+          ),
       };
     },
   };

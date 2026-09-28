@@ -21,7 +21,16 @@ export class LeftSidebarComponent {
     }
 
     async switchTo(name: LeftSidebarTab) {
-        await this.getTab(name).click();
+        const tab = this.getTab(name);
+        await tab.click();
+        // The tab's label tooltip opens to the right, over the panel, and is
+        // interactive: a pointer moving onto the panel can land on it and hold
+        // it open over the controls beneath. Park the pointer at the strip's
+        // left edge, off the icon, so the tooltip closes.
+        const box = await tab.boundingBox();
+        if (box) {
+            await this.page.mouse.move(box.x + 1, box.y + box.height / 2);
+        }
     }
 
     get compositePanel() {

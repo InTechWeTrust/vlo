@@ -224,7 +224,13 @@ export function AppMenu<TMenuId extends HostMenuId>({
         {item.icon ? <ListItemIcon>{item.icon}</ListItemIcon> : null}
         <ListItemText>{item.label}</ListItemText>
         {item.selected ? (
-          <CheckIcon fontSize="small" color="primary" sx={{ ml: 1 }} />
+          // Explicit test id: MUI only adds its icon test ids to dev builds.
+          <CheckIcon
+            data-testid="menu-item-selected"
+            fontSize="small"
+            color="primary"
+            sx={{ ml: 1 }}
+          />
         ) : null}
       </MenuItem>,
     );

@@ -17,47 +17,23 @@ async function setupSam2Editor(page: Page, options: Parameters<typeof installApi
 }
 
 async function waitForSam2Preview(page: Page) {
-    await page.waitForFunction(async () => {
-        const [{ useMaskViewStore }, { useTimelineStore }] = await Promise.all([
-            import('/src/features/masks/store/useMaskViewStore.ts'),
-            import('/src/features/timeline/useTimelineStore.ts'),
-        ]);
-
-        const clipId = useTimelineStore.getState().selectedClipIds[0] ?? null;
-        if (!clipId) return false;
-
-        return Boolean(useMaskViewStore.getState().sam2LivePreviewByClipId[clipId]);
-    });
+    await expect
+        .poll(() =>
+            page.evaluate(
+                () => window.__vloE2E?.getSam2PreviewDiagnostics().hasLivePreview ?? false,
+            ),
+        )
+        .toBe(true);
 }
 
-async function addSam2PointAtCurrentFrame(page: Page) {
-    await page.evaluate(async () => {
-        const [{ useTimelineStore }, { useMaskViewStore }] = await Promise.all([
-            import('/src/features/timeline/useTimelineStore.ts'),
-            import('/src/features/masks/store/useMaskViewStore.ts'),
-        ]);
-
-        const clipId = useTimelineStore.getState().selectedClipIds[0] ?? null;
-        if (!clipId) {
-            throw new Error('No selected clip for SAM2 point insertion');
-        }
-
-        const maskId = useMaskViewStore.getState().selectedMaskByClipId[clipId] ?? null;
-        if (!maskId) {
-            throw new Error('No selected SAM2 mask for point insertion');
-        }
-
-        useTimelineStore.getState().updateClipMask(clipId, maskId, {
-            maskPoints: [
-                {
-                    x: 0.5,
-                    y: 0.5,
-                    label: 1,
-                    timeTicks: 0,
-                },
-            ],
-        });
-    });
+// With the SAM2 editor in add-point mode, a click on the stage places a point
+// on the current frame, the same way a user adds one.
+async function addSam2PointAtCanvasCenter(editor: EditorComponent) {
+    const box = await editor.player.canvasContainer.boundingBox();
+    if (!box) {
+        throw new Error('Player canvas has no layout box');
+    }
+    await editor.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
 test.describe('SAM2 Mask Flow', () => {
@@ -102,7 +78,7 @@ test.describe('SAM2 Mask Flow', () => {
         await editor.maskPanel.addMask('Sam2');
         await editor.maskPanel.sam2AddPointButton.click();
 
-        await addSam2PointAtCurrentFrame(page);
+        await addSam2PointAtCanvasCenter(editor);
         await expect(editor.maskPanel.panel.getByText(/Current frame: 1 point/)).toBeVisible();
 
         await editor.maskPanel.sam2PreviewButton.click();
