@@ -1133,7 +1133,12 @@ class BackendJobManager:
             await started.wait()
 
             async def finish() -> object:
-                value = await asyncio.shield(future)
+                # `asyncio.wait` leaves the worker future running when this
+                # waiter is cancelled, as `shield` would, but without `shield`'s
+                # error log when a worker abandoned by cancellation later
+                # raises (as a cancelled job's worker does).
+                await asyncio.wait((future,))
+                value = future.result()
                 if inspect.isawaitable(value):
                     return await value
                 return value
