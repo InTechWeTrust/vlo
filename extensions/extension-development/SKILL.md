@@ -31,12 +31,16 @@ Locate the repository root, then prefer sources in this order:
 2. `backend/services/extensions/__init__.py` for the supported Python barrel.
 3. `extension-template/` for packaging and build conventions.
 4. `extension-fixtures/` and contract tests for exercised composition.
-5. `docs/extension-dogfooding-plan.md` for host reuse classifications and
-   high-value shared refactors.
-6. `docs/extension-system-plan.md` for rationale and roadmap only.
 
 If a reference in this skill conflicts with source, follow source and update the
-reference in the same change. Do not promote an aspirational plan item into a V1 API.
+reference in the same change. Do not treat a planned or undocumented capability as
+part of the SDK 1 API.
+
+`packages/extension-sdk/package.json` is the SDK version authority. From 1.0.0,
+an additive surface is a minor bump and a breaking change is 2.0.0; manifests
+declare `>=1.0.0 <2.0.0`. No deprecation period is defined yet, so treat anything
+reached through `api.trusted.host` or deep backend imports as removable in any
+vlo release.
 
 ## Load only the needed references
 
@@ -53,6 +57,7 @@ reference in the same change. Do not promote an aspirational plan item into a V1
 | Generation panels: reading the mounted workflow's nodes and widgets reactively, writing an input or widget through the labelled transaction, editing panel inputs in a staged draft before committing, contributing bypass/widget effects to a submission, and choosing between a rule sidecar, an extension, and a gated provider | [ui-and-generation.md](references/ui-and-generation.md) |
 | Python routers, jobs, readiness, progress, cancellation, artifacts; registering a model runtime as a capability and reading its readiness from the frontend | [backend-and-jobs.md](references/backend-and-jobs.md) |
 | Manifest/build work, approval-path fixtures, and verification | [packaging-and-testing.md](references/packaging-and-testing.md) |
+| Changing vlo itself: adding or widening a host service, registry, SDK member, or other surface extensions can reach | [host-contracts.md](references/host-contracts.md) |
 
 Read every reference implicated by a cross-domain extension. Tracking, for example,
 normally needs lifecycle, assets/timeline, UI, backend jobs, and packaging.
@@ -98,32 +103,13 @@ and packaging/testing.
 
 ## Evolve host contracts carefully
 
-Inspect `docs/extension-dogfooding-plan.md` before adding or widening a host facade.
-Classify the surface as an exact first-party API consumer, a shared host seam, or an
-explicit conformance-only concern.
-
-For shared seams, implement policy-free mechanics in the owning core or feature
-domain. Let native code and the extension adapter consume that service, registry,
-controller, transaction engine, or normalized runtime. Keep owner binding,
-activation cancellation/disposal, detached SDK shapes, finite-JSON checks,
-extension limits, public failure mapping, and diagnostics in the adapter. Never
-make core import an owner-bound adapter just to claim dogfooding.
-
-Use the common registry kernel for extension owner binding, duplicate rejection,
-rollback, diagnostics, and disposal. Let host and extension authoring definitions
-converge on one normalized runtime before rendering, scheduling, or presentation.
-Promote repeated raw seams into narrow domain contracts without removing the trusted
-fallback. Generalise from the capability being enabled, not the first example.
-
-When a native analogue exists, add paired behavioural coverage for the native and
-SDK entry points. Always retain an out-of-tree fixture for author-facing packaging,
-approval, ownership, rollback, and missing-provider behaviour. Document why a
-surface is conformance-only when no honest native consumer exists.
-
-Keep declarative descriptors and JSON envelopes compatible with future restricted
-execution where practical, but do not weaken trusted APIs around a speculative
-sandbox. Restricted callbacks, UI, and backend code require separate mediation and
-real process/origin boundaries.
+Read [host-contracts.md](references/host-contracts.md) before adding or widening
+a host facade. In short: classify the surface as an exact first-party API
+consumer, a shared host seam, or conformance-only; put policy-free mechanics in
+the owning domain and keep only owner binding, disposal, detached shapes, limits,
+and failure mapping in the adapter; converge host and extension definitions on
+one normalized runtime; and pair native and SDK behavioural tests while keeping an
+out-of-tree fixture.
 
 ## Verify
 

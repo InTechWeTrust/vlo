@@ -352,9 +352,8 @@ Three rungs, in the order to try them:
    rest. `extension-fixtures/lora-policy/` is the worked example, from
    discovery through the queued plan.
 3. **A rule provider or backend stage.** Neither exists. Each is gated on a
-   named consumer and its own design (see
-   `docs/generation-extension-surface-plan.md` §5); do not approximate one by
-   writing on a timer or mutating state at submission.
+   named consumer and its own design; do not approximate one by writing on a
+   timer or mutating state at submission.
 
 ## Read and write generation inputs
 

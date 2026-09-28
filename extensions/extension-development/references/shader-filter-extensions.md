@@ -66,9 +66,8 @@ Read current repository sources instead of relying on remembered APIs:
   [lifecycle reference](trusted-lifecycle.md), and
   [packaging reference](packaging-and-testing.md).
 
-Use `rg` to find current definitions and exercised tests. Treat plans in `docs/`
-as design context, not stronger evidence than the public SDK and executable
-fixtures.
+Use `rg` to find current definitions and exercised tests. Treat design notes as
+context, never as stronger evidence than the public SDK and executable fixtures.
 
 Read host or adapter code only when necessary to understand or report a contract
 failure. Do not turn that investigation into a native implementation change
