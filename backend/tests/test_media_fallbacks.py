@@ -65,8 +65,7 @@ def test_apply_workflow_media_fallbacks_buffers_dummy_image_as_synthetic(
 
     try:
         comfyui_router._apply_workflow_media_fallbacks(
-            workflow_rules=rules,
-            workflow_id="workflow.json",
+            rules=rules,
             workflow=workflow,
             injections={},
             buffered_media=buffered_media,
@@ -139,8 +138,7 @@ def test_apply_workflow_media_fallbacks_skips_when_input_presence_condition_fail
 
     try:
         comfyui_router._apply_workflow_media_fallbacks(
-            workflow_rules=rules,
-            workflow_id="workflow.json",
+            rules=rules,
             workflow=workflow,
             injections={"999": {"text": "provided"}},
             buffered_media=buffered_media,

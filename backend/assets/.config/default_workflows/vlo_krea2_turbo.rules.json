@@ -18,11 +18,20 @@
   "nodes": {
     "30:19": {
       "present": {
-        "label": "Prompt",
+        "label": "Positive prompt",
         "input_type": "text",
         "param": "value"
       }
     },
+    "30:54": {
+      "present": {
+        "label": "Negative prompt",
+        "input_type": "text",
+        "param": "value"
+      }
+    },
+    "30:6": { "present": { "enabled": false } },
+    "30:28": { "present": { "enabled": false } },
     "30:24": {
       "widgets": {
         "value": {
@@ -83,6 +92,7 @@
       }
     },
     "30:16": {
+      "present": { "enabled": false },
       "widgets": {
         "max_length": {
           "label": "Enhancer max tokens",
@@ -101,20 +111,8 @@
           "discover_when_bypassed": true,
           "default_node_bypass": true,
           "section_id": "lora_loaders",
-          "group_id": "lora_style",
-          "group_title": "Style LoRA"
-        }
-      }
-    },
-    "30:27": {
-      "widgets": {
-        "string_b": {
-          "label": "Trigger word",
-          "value_type": "string",
-          "default": "",
-          "section_id": "lora_loaders",
-          "group_id": "lora_style",
-          "group_title": "Style LoRA"
+          "group_id": "lora_model",
+          "group_title": "Model LoRA"
         }
       }
     },
@@ -142,16 +140,11 @@
   "rewrites": [
     {
       "when": {
-        "kind": "compare",
-        "ref": {
-          "kind": "workflow_param",
-          "node_id": "30:27",
-          "param": "string_b"
-        },
-        "operator": "eq",
-        "value": ""
+        "kind": "input_presence",
+        "inputs": ["30:54"],
+        "match": "all_present"
       },
-      "bypass": ["30:27"]
+      "bypass": ["30:13"]
     }
   ],
   "slots": {},

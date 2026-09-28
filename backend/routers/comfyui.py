@@ -432,36 +432,56 @@ def _classify_uploaded_workflow_filename(filename: str) -> dict[str, str]:
     }
 
 
-def _resolve_workflow_media_fallbacks(
+def _resolve_submission_rules(
     *,
     workflow_rules: dict[str, Any] | None,
     workflow_id: str | None,
     workflow_warnings: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+) -> dict[str, Any] | None:
+    """Resolve the rules a submission runs under: the inline override, else the stored file."""
     if isinstance(workflow_rules, dict):
         rules_model, warning_models = normalize_rules_model(workflow_rules)
-        workflow_warnings.extend(dump_warning_models(warning_models))
-        rules = dump_resolved_rules(rules_model)
-        fallback_defs = rules.get("media_fallbacks")
-        if isinstance(fallback_defs, list):
-            return [entry for entry in fallback_defs if isinstance(entry, dict)]
-        return []
-
-    if not isinstance(workflow_id, str) or not _is_safe_workflow_filename(workflow_id):
-        return []
-
-    rules_model, warning_models = load_rules_model_for_workflow(
-        WORKFLOWS_DIR,
-        workflow_id,
-        fallback_dirs=[get_packaged_workflows_dir()],
-    )
+    elif isinstance(workflow_id, str) and _is_safe_workflow_filename(workflow_id):
+        rules_model, warning_models = load_rules_model_for_workflow(
+            WORKFLOWS_DIR,
+            workflow_id,
+            fallback_dirs=[get_packaged_workflows_dir()],
+        )
+    else:
+        return None
     workflow_warnings.extend(dump_warning_models(warning_models))
-    rules = dump_resolved_rules(rules_model)
-    fallback_defs = rules.get("media_fallbacks")
+    return dump_resolved_rules(rules_model)
+
+
+def _resolve_workflow_media_fallbacks(
+    rules: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    fallback_defs = rules.get("media_fallbacks") if rules else None
     if not isinstance(fallback_defs, list):
         return []
-
     return [entry for entry in fallback_defs if isinstance(entry, dict)]
+
+
+def _resolve_rule_text_params(rules: dict[str, Any] | None) -> dict[str, str]:
+    """Map node id -> param for rule-declared text inputs.
+
+    A rule can present any string param as a prompt (e.g. a
+    ``PrimitiveStringMultiline`` feeding a prompt enhancer), but object_info
+    only auto-detects dynamic-prompt STRING inputs. Without this, text aimed
+    at such a node has no mapping and is silently dropped.
+    """
+    nodes = rules.get("nodes") if rules else None
+    if not isinstance(nodes, dict):
+        return {}
+    params: dict[str, str] = {}
+    for node_id, node_rule in nodes.items():
+        present = node_rule.get("present") if isinstance(node_rule, dict) else None
+        if not isinstance(present, dict) or present.get("enabled") is False:
+            continue
+        param = present.get("param")
+        if present.get("input_type") == "text" and isinstance(param, str) and param:
+            params[str(node_id)] = param
+    return params
 
 
 def _parse_workflow_menu(path: Path, metadata_by_workflow_id: dict[str, dict[str, Any]]) -> None:
@@ -800,19 +820,14 @@ def _parse_repeatable_node_input_form_key(
 
 def _apply_workflow_media_fallbacks(
     *,
-    workflow_rules: dict[str, Any] | None,
-    workflow_id: str | None,
+    rules: dict[str, Any] | None,
     workflow: dict[str, Any],
     injections: dict[str, dict[str, Any]],
     buffered_media: dict[str, dict[str, Any]],
     workflow_warnings: list[dict[str, Any]],
     node_map: dict[str, list[dict[str, Any]]],
 ) -> None:
-    fallback_defs = _resolve_workflow_media_fallbacks(
-        workflow_rules=workflow_rules,
-        workflow_id=workflow_id,
-        workflow_warnings=workflow_warnings,
-    )
+    fallback_defs = _resolve_workflow_media_fallbacks(rules)
     if not fallback_defs:
         return
 
@@ -1659,6 +1674,12 @@ async def generate(request: Request):
     buffered_media: dict[str, dict[str, Any]] = {}
 
     node_map = _resolve_input_node_map()
+    submission_rules = _resolve_submission_rules(
+        workflow_rules=workflow_rules,
+        workflow_id=workflow_id,
+        workflow_warnings=workflow_warnings,
+    )
+    rule_text_params = _resolve_rule_text_params(submission_rules)
 
     async def _buffer_uploaded_media(
         *,
@@ -1787,6 +1808,10 @@ async def generate(request: Request):
                 )
                 if mapping:
                     injections.setdefault(node_id, {})[mapping["param"]] = value
+                else:
+                    rule_param = rule_text_params.get(node_id)
+                    if rule_param and explicit_param in (None, rule_param):
+                        injections.setdefault(node_id, {})[rule_param] = value
 
         # image_<nodeId>_<param> -> buffer image upload
         elif key.startswith("image_"):
@@ -1882,8 +1907,7 @@ async def generate(request: Request):
             prepared_media_group_stored = True
 
     _apply_workflow_media_fallbacks(
-        workflow_rules=workflow_rules,
-        workflow_id=workflow_id,
+        rules=submission_rules,
         workflow=workflow,
         injections=injections,
         buffered_media=buffered_media,
