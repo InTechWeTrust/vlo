@@ -1,75 +1,129 @@
 # Minimal vlo extension
 
-This directory is the official SDK 1 starting point for a trusted extension with
-both frontend and backend entry points.
+The official SDK 1 starting point for an extension with a frontend and a
+backend entry point.
+
+**The extension SDK is under active development.** Its scoped APIs don't yet
+cover everything the editor can do, so building a real extension may mean
+reaching into host internals. That can mean looking up live objects through
+`context.api.trusted.host`, patching them with `patchProperty(...)`, or
+importing deeper backend modules. This is expected and allowed, but these
+internals carry no compatibility promise and can change between vlo releases.
+If you find yourself patching around an obvious gap, such as a missing hook, a
+value you can read but not write, or the same workaround in several places,
+please [open an issue](https://github.com/PxTicks/vlo/issues) or send a pull
+request so it can become a supported API.
+
+It is also the case that even the supported API may change - development is still in the alpha stage. However, this will be monitored much more closely than unscoped host internals.
+
+**Extensions are not sandboxed.** Any extension that contains code runs with
+the same access as vlo itself. Its frontend runs in the editor's page and can
+reach any live host object, and its backend runs inside the backend process.
+Approving a package in the extension manager is the only gate, so install only
+extensions you would trust with your projects and your machine. Approval
+applies to the package's exact digest, so a changed package isn't covered by an
+earlier approval. The manifest's `capabilities` list is shown to the user but
+not enforced. A restricted mode with real isolation is planned but not built.
+The declarative contributions mentioned below, such as notices, host filters,
+and look packs, are designed to fit it.
+
+| Path                             | Purpose                                                 |
+| -------------------------------- | ------------------------------------------------------- |
+| `manifest.json`                  | Package ID, version, SDK range, and entry points        |
+| `frontend/src/index.ts`          | Frontend `activate(context)` entry                      |
+| `backend/extension/__init__.py`  | Backend `create_extension(context)` entry               |
+| `vite.config.mjs`                | Build config, including the host-singleton bundle guard |
 
 ## Use the template
 
 1. Copy this directory next to `packages/extension-sdk/`, or replace the local
-   `@vlo/extension-sdk` dependency with the published package when one exists.
-2. Change the package directory name and `manifest.json` ID together. IDs use
-   lowercase letters, numbers, dots, underscores, and hyphens.
-3. Run `npm install`, then `npm run build`.
-4. Copy the package into `extensions/installed/<manifest-id>/` (or the root set
-   by `VLO_EXTENSIONS_ROOT`).
-5. Review and approve its exact digest in the extension manager. Backend activation
-   occurs after a backend restart; frontend activation occurs on the following page
-   load after the matching backend digest reports active.
+   `@vlo/extension-sdk` dependency with the published package once one exists.
+2. Pick an extension ID and set it in `manifest.json`. IDs use lowercase letters,
+   numbers, dots, underscores, and hyphens, and start and end with a letter or
+   number.
+3. Run `npm install`, then `npm run build`. The build type-checks and writes the
+   bundle to `frontend/dist/`. Don't edit that directory by hand.
+4. Copy the package to `extensions/installed/<manifest-id>/`, or under the root
+   set by `VLO_EXTENSIONS_ROOT`. The directory name must match the manifest ID.
+5. Approve the package in the extension manager. Approval covers the package's
+   exact digest, so rebuild before approving. The backend activates after a
+   backend restart, and the frontend on the next page load once the matching
+   backend digest reports active.
 
-The build writes immutable browser artifacts to `frontend/dist/`. Do not edit that
-directory by hand; rebuild it before approval.
+The template's `/status` route is served at
+`/app/extensions/<extension-id>/api/status`. Remove it when you replace the
+template with a real backend.
 
-## SDK 1 boundaries
+## How to build on SDK 1
 
-Use this decision ladder: start with scoped contribution and transaction APIs; use
-`context.api.trusted.host`, browser APIs, raw registries, or deeper Python imports
-when the scoped surface cannot express the feature; promote a repeated raw seam into
-a host contract when reuse, portability, or future restricted-mode value warrants
-it. The fallback is expected trusted-alpha behaviour, but it is version-coupled.
+Start with the scoped contribution and transaction APIs. If they can't express
+the feature, fall back to `context.api.trusted.host`, browser APIs, raw
+registries, or deeper Python imports. That fallback is tied to the host
+version, so pin a narrow `vlo` range in `manifest.json` and report the gap as
+described above.
 
-- `@vlo/extension-sdk` is type-only. Import it with `import type`; runtime access is
-  supplied through the host-owned activation context.
-- Trusted frontend extensions receive the host's exact Pixi and React singletons as
-  `context.api.runtime.pixi` and `context.api.runtime.react`, plus host-curated MUI and
-  native panel-control namespaces as `runtime.mui` and `runtime.panelUi`. `panelUi`
-  is the complete live barrel, including its raw custom-control registry. Transformation
-  factories may create arbitrary Pixi filters, including custom GLSL/WGSL shaders;
-  trusted React component slots may use the supplied React runtime. Declarative
-  host filters and native notices remain available as simpler, restricted-ready
-  alternatives.
-- All trusted React surfaces use the same host mount and error boundary. Register
-  ordinary content with `context.api.ui.registerComponent(...)` in a declared slot
-  such as `transformation-panel.before` or `generation.toolbar`; register larger
-  workflows with `registerModal(...)` and open them by local id with `openModal(...)`.
-  The host owns dialog placement, escape/close behaviour, lifecycle, and isolation.
-- Persistent tools can register a `trusted-view` in `right-sidebar`,
-  `left-sidebar`, or `projects-page.main` and select it with `openView(localId)`.
-  The view mounts lazily on first use and then remains mounted while hidden,
-  receiving an `active` prop so animation loops,
-  cameras, and AI previews can pause off-screen. This supports arbitrary trusted
-  React content such as HTML/SVG/WebGL canvases while the host retains tab placement,
-  navigation, error isolation, and teardown. User visibility choices take
-  precedence: `openView` returns `false` for a hidden view.
-- Generation tools read the mounted workflow through `context.api.generation`:
-  `listInputs()` for the panel's input slots, or `getSession()` with
-  `subscribe()`/`getRevision()` for the node and widget catalogue, reactively. Put
-  one or more input and widget changes in a labelled, synchronous
-  `generation.transaction(...)`; the host validates the complete batch and applies
-  it as one panel-state update. To reach a widget the panel renders no control for,
-  register a submission contributor and return `bypass-nodes`/`set-widget` effects,
-  which the host validates and captures into the queued plan. The API deliberately
-  targets workflow nodes, widgets, and inputs rather than ComfyUI DOM nodes; see
-  `extension-fixtures/lora-policy` for the worked example.
-- A workflow can opt into an extension-owned generation section by adding an
-  `extension` reference to one of its `.rules.json` `sections`. Register the
-  matching body with `context.api.generation.ui.registerSection(...)`; the
-  rule owns its title, order, default-open state, and finite-JSON `config`, while
-  the component continues to read and write through `context.api.generation`.
-  Collapsing the section keeps the body mounted and sets `active` to `false`, so
-  canvas state survives and animation or pointer-processing loops can pause.
-  The manifest id is the rule's `extension_id`, and the package-local section id
-  is its `contribution_id`. See `extension-fixtures/layout-prompt` for the
-  rule-selected rich-UI pattern.
+For task-by-task guidance beyond this summary, see the
+[extension-development skill](../extensions/extension-development/SKILL.md) and
+its references.
+
+### Frontend runtime and bundling
+
+- `@vlo/extension-sdk` is type-only. Import it with `import type`. Everything you
+  call at runtime comes from the activation `context`.
+- React, React DOM, MUI/emotion, Zustand, and Pixi are host singletons. Use the
+  injected copies: `context.api.runtime.react`, `.pixi`, `.mui`, `.panelUi` (the
+  complete host panel-control barrel, including its custom-control registry), and
+  `.generationUi`.
+- The bundle guard in `vite.config.mjs` fails the build if you import a host
+  singleton at runtime, or if the bundle has an import it didn't include.
+  Type-only imports are erased, so a singleton package can still be a dev
+  dependency for editor typings.
+- The guard catches common mistakes but is not a security boundary. A hand-written
+  build can bypass it and then fail at activation or load a second copy of a
+  singleton. The host doesn't validate bundles yet.
+- Reach other live frontend internals through `context.api.trusted.host`, not
+  runtime imports from `frontend/src/...`. Production can't resolve source paths,
+  and bundling them creates detached copies of module state.
+
+### UI
+
+- Every extension React surface shares one host mount and error boundary.
+- Use `context.api.ui.registerComponent(...)` for content in a declared slot such
+  as `generation.inputs.after`. Registering against a slot the host hasn't
+  declared throws.
+- Use `registerModal(...)` for larger flows and open it by local ID with
+  `openModal(...)`. The host owns placement, close behaviour, and lifecycle.
+  Modals can't receive library drags.
+- Use `registerView(...)` with `kind: "trusted-view"` for persistent tools. Views
+  go in a shell region: `left-sidebar`, `right-sidebar`, `player-aside`,
+  `bottom-dock`, `editor-overlay`, or `projects-page.main`. A view mounts on first
+  use and then stays mounted while hidden. It receives an `active` prop so
+  animation loops, cameras, and previews can pause. `openView(localId)` returns
+  `false` if the user has hidden the view.
+- For simple UI, prefer native notices (`registerNotice`) and declarative host
+  filters. They are also the parts most likely to carry over to a restricted
+  mode.
+
+### Generation panel
+
+- Read the mounted workflow through `context.api.generation`. Use `listInputs()`
+  for the panel's input slots, and `getSession()` with `subscribe()` and
+  `getRevision()` for the node and widget catalogue.
+- Put input and widget writes in one labelled, synchronous
+  `generation.transaction(...)`. The host validates the whole batch and applies
+  it as a single panel update.
+- To change a widget that has no panel control, register a submission
+  contributor that returns `bypass-nodes` or `set-widget` effects. The host
+  validates them and stores them in the queued plan. See
+  `extension-fixtures/lora-policy`.
+- The API addresses workflow nodes, widgets, and inputs, never ComfyUI DOM nodes.
+- A workflow can host an extension-owned section. Register the body with
+  `context.api.generation.ui.registerSection(...)` and reference it from a
+  `sections` entry in the workflow's `.rules.json`. `extension_id` is your
+  manifest ID and `contribution_id` is the section's local ID. The rule owns
+  the title, order, default-open state, and a finite-JSON `config`. A collapsed
+  section stays mounted with `active: false`. See
+  `extension-fixtures/layout-prompt`.
 
   ```json
   {
@@ -87,85 +141,96 @@ it. The fallback is expected trusted-alpha behaviour, but it is version-coupled.
     ]
   }
   ```
-- Pixi factories return `{ object, update, destroy? }`. The host validates and
-  attaches `object`, calls `update` with resolved parameters, detaches it, and owns
-  final Pixi destruction. `destroy` is only for additional extension-owned
-  resources. This is the parity-safe default; trusted code may use raw
-  `renderer.runtime`/stage access when necessary and then owns teardown and export
-  parity.
-- Host-adapted static parameter presets register through
-  `context.api.transformations.presets.register(...)`. API version 1 supports
-  partial `ColorGradeFilter` patches: omitted grade fields remain unchanged, while
-  animation values and `lutAssetId` are rejected. Use
-  `context.api.color.grade.filterName` for the target identity. Registration is
-  owner-scoped and rolls back with activation.
-- `context.api.entityProviders.register(...)` is the trusted-first custom entity
-  path. A provider combines its versioned payload codec with an arbitrary host-Pixi
-  `Container`/`Graphics`/`Sprite` factory, optional trusted React inspector, timeline
-  presentation, asset lookup, and frame timing. The host flattens that private Pixi
-  tree into its ordinary content boundary, so common transformations, filters,
-  masks, selection bounds, still capture, and video export remain host-owned and
-  identical to built-in content. Use `context.api.timeline.transaction(...)` to
-  create and update instances through undoable, owner-checked commands.
-  Static providers should implement `getRenderSignature`; identical signatures
-  reuse the current GPU texture. The signature must include every provider-owned
-  pixel input, including frame time or asset hashes when applicable. Omitting it
-  deliberately renders every requested frame, which is the safe default for
-  animated or externally mutable objects.
-- `context.api.animation` has three deliberately separate trusted-first registries:
-  `scalarSources` for arbitrary procedural/random-access scalar mathematics,
-  `interpolations` for provider-owned outgoing keyframe segments, and `spatialPaths`
-  for independently sampled 2D geometry. Every definition supplies a label,
-  versioned validated default data, migration and compile functions, plus optional
-  remap/reverse and trusted editor hooks. Spatial paths may also return a trusted Pixi
-  overlay through the same `{ object, update, destroy? }` lifecycle used elsewhere;
-  the host owns its scene slot and final destruction. Procedural sources used as speed
-  factors must explicitly supply a two-way `timeMap`. The host ships no sample curve
-  strategy beyond its existing compatibility behaviour.
-- `context.renderer` is the full host Pixi renderer, not a restricted facade.
-  Mutating it has the same trusted-mode blast radius as using
-  `context.api.runtime.pixi`; restricted providers will not receive this object.
-- React, React DOM, MUI/emotion, Zustand, and Pixi remain host singletons. The
-  template rejects runtime package imports instead of bundling duplicate copies;
-  use the injected runtime namespaces. Type-only package imports are erased and are
-  permitted for richer editor typings when the package is a development dependency.
-- Resolve other live frontend internals through `context.api.trusted.host`. Runtime
-  imports from `frontend/src/...` are not canonical: production cannot resolve
-  arbitrary source paths, and bundling them may create detached module state.
-- That bundle guard prevents common duplicate-singleton mistakes; it is not an
-  authority boundary. A
-  hand-written build can bypass it, but may then fail at activation or silently load
-  incompatible singleton copies. Host-side bundle validation is future work.
-- The backend is trusted in-process Python. Keep `create_extension` lightweight;
-  defer model loading and long work to a `BackendJobDefinition`. Jobs receive
-  extension-scoped uploaded inputs and output-artifact creation, progress,
-  cancellation checks, and structured diagnostics. Declare readiness and validate
-  both input and output. A job deadline marks ignored work terminal but cannot kill a
-  synchronous Python thread; cooperative runners must call
-  `context.raise_if_cancelled()` regularly. Keep synchronous readiness and validation
-  callbacks lightweight as well; use the job runner for expensive work.
-- Trusted frontend code uses `context.api.assets.readBlob(...)` followed by
-  `context.api.backend.uploadArtifact(...)`; the backend must not assume it can open
-  browser-selected project paths. Prefer the standard `submitJob`/`waitForJob` API.
-  `backend.call(...)` remains the owner-bound raw-route escape hatch.
-- `context.api.assets.ingest(...)` copies bytes into the active project, waits
-  for persistence, and returns the existing or newly created asset on a hash
-  match. Use it for generated resources; never persist extension package paths
-  in timeline data. LUT-only packages can instead use the declarative look-pack
-  format documented in `docs/extension-look-and-filter-packs.md`.
-- Tracking-style integrations can use `context.api.timeline.sourceFrameToTicks(...)`
-  plus `clipProgressToSourceTicks(...)`/`sourceTicksToClipProgress(...)` to cross a
-  clip's crop and speed clock. `sourcePointToProject(...)` maps declared source pixels
-  into centred project coordinates. Show a local/non-committing preview first, then
-  put all persisted writes in one labelled `timeline.transaction(...)`.
-- Backend SDK 1 uses `services.extensions` as its supported compatibility barrel.
-  Trusted code may import deeper modules or patch process objects when necessary;
-  declare a narrow `vlo` range and restore hooks from `shutdown`, because those
-  shapes have no SDK compatibility guarantee.
-- Backend staging contains only this package's `backend/` subtree. Put Python
-  runtime resources below `backend/`, not in a sibling directory.
-- Capability declarations are visible trust metadata, not enforced permissions.
 
-The `/status` backend route is mounted by the host at
-`/app/extensions/<extension-id>/api/status`. Remove it when replacing the template
-with a real extension contract.
+### Rendering and animation
+
+- Pixi factories return `{ object, update, destroy? }`. The host attaches
+  `object`, calls `update` with resolved parameters, detaches it, and destroys
+  it. Use `destroy` only for extra resources you created. Transformation filters
+  can be any Pixi filter, including custom GLSL/WGSL shaders. If you bypass this
+  lifecycle and touch the renderer or stage directly, you own teardown and export
+  parity.
+- **Planned change:** as effects move to a node graph, extension filters stay
+  opaque steps. They
+  won't be fused into a single shader with host effects, and no public shader
+  API is planned yet. A filter that keeps history between frames
+  (`rendering.timeDependency: "history"`) may need a new declaration of the GPU
+  memory it holds before it can run on the new render path. Until then it
+  stays on the current path.
+- `context.api.entityProviders.register(...)` adds custom timeline entities. A
+  provider supplies a versioned payload codec, a Pixi factory (`Container`,
+  `Graphics`, `Sprite`, …), and optionally a React inspector. The host treats the
+  result like built-in content, so transformations, filters, masks, selection
+  bounds, stills, and export all work unchanged. Create and update entities with
+  `context.api.timeline.transaction(...)`.
+- Entity providers can implement `getRenderSignature` to reuse the cached
+  texture while the signature is unchanged. The signature must cover every pixel
+  input the provider owns, such as frame time or asset hashes. Leave it out for
+  animated or externally mutable content, and the host renders every frame.
+- The entity render context's `renderer` is the host's live Pixi `Renderer`
+  instance, not a restricted facade. Changes to it affect the whole editor.
+  It is a different object from `context.api.runtime.pixi`, which is the Pixi
+  module namespace you construct objects from.
+- `context.api.animation` has three separate registries: `scalarSources`
+  (procedural scalar functions), `interpolations` (keyframe segment curves), and
+  `spatialPaths` (2D geometry). Each definition has a label, versioned default
+  data, validate/migrate/compile functions, and optional remap or reverse and
+  editor hooks. Spatial paths can add a Pixi overlay using the same
+  `{ object, update, destroy? }` lifecycle. A scalar source used as a speed
+  factor must provide a two-way `timeMap`.
+- `context.api.transformations.presets.register(...)` adds static presets. API
+  version 1 supports only partial `ColorGradeFilter` patches: omitted fields
+  stay unchanged, and animated values and `lutAssetId` are rejected. Use
+  `context.api.color.grade.filterName` as the target.
+
+### Assets and timeline
+
+- `context.api.assets.ingest(...)` copies bytes into the active project and
+  returns the asset, reusing an existing one on a hash match. Use it for
+  generated files, and never store extension package paths in timeline data.
+- LUT-only packages don't need code. Use a declarative look pack instead; see
+  [packaging and testing](../extensions/extension-development/references/packaging-and-testing.md)
+  and `extension-fixtures/look-pack/`.
+- For tracking-style features, `context.api.timeline` converts between clip and
+  source time (`sourceFrameToTicks`, `clipProgressToSourceTicks`,
+  `sourceTicksToClipProgress`) and maps source pixels to centred project
+  coordinates (`sourcePointToProject`). Show a non-committing preview first, then
+  write everything in one labelled `timeline.transaction(...)`.
+- `upsertTransform` replaces a transform wholesale. Updating an existing filter
+  drops fields the transform input can't carry, such as its effect mask.
+
+> **Planned changes.** Effects and masks are moving to a node graph, which will
+> change two parts of the timeline API:
+>
+> - **Filters become graph nodes.** A clip's `transformations` from `listClips()`
+>   becomes a read-only view of its filter nodes in render order. Once branching
+>   graphs are enabled, that view can't show how nodes connect, and list writes
+>   that would flatten a branch are rejected. Don't assume `transformations` is
+>   the clip's complete, linear filter chain. Graph-shaped access would come as
+>   a separate, versioned API.
+> - **Masks become shareable.** A mask's content (shape, points, assets,
+>   inversion, and its own transforms) moves into a library entity that several
+>   clips can use. Mode and active range stay per clip. Once sharing is
+>   enabled, editing a mask's parameters through one clip changes it on every
+>   clip that uses it. Mask IDs from `listClipMasks()` stay valid.
+
+### Backend
+
+- The backend runs as in-process Python with the host's full access.
+  `services.extensions` is the supported import surface. You may import deeper
+  modules or patch process objects, but those have no compatibility guarantee: declare a narrow `vlo`
+  version range in `manifest.json` and undo patches in `shutdown`.
+- Keep `create_extension` and any readiness or validation callbacks fast. Put
+  model loading and other long work in a `BackendJobDefinition`. Jobs get
+  scoped input artifacts, output-artifact creation, progress reporting,
+  cancellation, and diagnostics. Declare readiness and validate both input and
+  output.
+- A job timeout marks the job as finished but can't stop a running synchronous
+  Python thread. Long-running jobs should call `context.raise_if_cancelled()`
+  regularly.
+- The backend can't open files the user picked in the browser. On the frontend,
+  read them with `context.api.assets.readBlob(...)`, upload them with
+  `context.api.backend.uploadArtifact(...)`, then use `submitJob` and
+  `waitForJob`. `backend.call(...)` is the raw-route escape hatch.
+- Only the package's `backend/` directory is staged for the backend, so keep
+  Python resources inside it.
