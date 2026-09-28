@@ -366,13 +366,16 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
     // backend dependency must be deliberately represented in this harness:
     // an unmatched request would otherwise reach the dev server's proxy, which
     // succeeds against a locally running backend and fails in CI.
-    for (const backendPrefix of ['api', 'app', 'comfy', 'sam2']) {
-        await page.route(`**/${backendPrefix}/**`, async (route) => {
+    // Matched on the path's first segment: the dev server serves source under
+    // /src/app/..., which a `**/app/**` glob would also catch.
+    await page.route(
+        (url) => /^\/(api|app|comfy|sam2)\//.test(url.pathname),
+        async (route) => {
             throw new Error(
                 `Unexpected API request in Playwright test: ${route.request().method()} ${route.request().url()}`,
             );
-        });
-    }
+        },
+    );
 
     const workflowList = options.workflowList
         ?? JSON.parse(readFixture('workflow-list.json'));
