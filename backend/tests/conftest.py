@@ -105,6 +105,7 @@ def capability_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str
 
     import config
     from services.sam2 import sam2_discovery
+    from services.sam_audio import sam_audio_discovery
 
     directories = {
         "sam2_models": tmp_path / "sam2-models",
@@ -117,10 +118,15 @@ def capability_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str
         path.mkdir(parents=True, exist_ok=True)
 
     monkeypatch.setattr(config, "SAM2_SEARCH_PATHS", [directories["sam2_models"]])
-    # ``sam2_discovery`` binds the search paths at import time, so patching the
-    # config module alone would not reach it.
+    # ``sam2_discovery`` and ``sam_audio_discovery`` bind their search paths at
+    # import time, so patching the config module alone would not reach them.
     monkeypatch.setattr(
         sam2_discovery, "SAM2_SEARCH_PATHS", [directories["sam2_models"]]
+    )
+    monkeypatch.setattr(
+        sam_audio_discovery,
+        "SAM_AUDIO_SEARCH_PATHS",
+        [directories["sam_audio_models"]],
     )
     monkeypatch.setattr(config, "SAM2_CACHE_DIR", directories["sam2_cache"])
     monkeypatch.setattr(

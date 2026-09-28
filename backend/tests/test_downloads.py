@@ -158,6 +158,9 @@ def test_start_download_route_supports_workflow_models(monkeypatch, tmp_path):
         "routers.downloads.is_workflow_model_gated",
         lambda workflow_id, model_key, workflow_graph=None: False,
     )
+    monkeypatch.setattr(
+        "routers.downloads.is_comfyui_model_downloads_enabled", lambda: True
+    )
 
     def fake_start_download(
         label: str,

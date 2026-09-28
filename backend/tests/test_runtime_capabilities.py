@@ -32,6 +32,7 @@ from services.ai_models.capabilities import (
     list_capabilities,
     list_capability_ids,
 )
+from services.ai_models.capabilities.profiles import backend_python
 from services.ai_models.capabilities import (
     environment as environment_module,
 )
@@ -128,7 +129,7 @@ def test_checkpoint_present_without_package_is_blocked(
     assert package.remediation.kind is RemediationKind.COMMAND
     assert package.remediation.requires_restart is True
     assert package.remediation.command == (
-        "uv pip install --python backend/.venv/bin/python "
+        f"uv pip install --python {backend_python()} "
         "--overrides backend/overrides-sam-audio.txt "
         "-r backend/requirements-sam-audio.txt"
     )

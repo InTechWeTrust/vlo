@@ -36,6 +36,7 @@ from services.ai_models.capabilities.profiles import (
     PROFILES,
     SAM2_PROFILE_ID,
     SAM_AUDIO_PROFILE_ID,
+    backend_python,
     capability_was_requested,
     expand_profile_ids,
     failed_install_check,
@@ -82,7 +83,7 @@ def test_install_remediation_is_the_documented_command_when_uv_is_on_path(
     assert remediation is not None
     assert remediation.kind is RemediationKind.COMMAND
     assert remediation.command == (
-        "uv pip install --python backend/.venv/bin/python "
+        f"uv pip install --python {backend_python()} "
         "--overrides backend/overrides-sam-audio.txt "
         "-r backend/requirements-sam-audio.txt"
     )

@@ -48,6 +48,7 @@ from services.ai_models.capabilities import (
     register_descriptor,
     unregister_descriptor,
 )
+from services.ai_models.capabilities.profiles import backend_python
 from services.ai_models.capabilities.contract import (
     Check,
     CheckStatus,
@@ -403,7 +404,7 @@ def test_a_capability_with_no_profile_still_offers_an_install_command(
         assert package.remediation.kind is RemediationKind.COMMAND
         assert package.remediation.summary == "Install the Acme tracker runtime"
         assert package.remediation.command == (
-            "uv pip install --python backend/.venv/bin/python vlo-fake==1.2.3"
+            f"uv pip install --python {backend_python()} vlo-fake==1.2.3"
         )
         assert package.remediation.requires_restart is True
     finally:
@@ -461,7 +462,7 @@ def test_a_recorded_package_failure_carries_the_same_command(
         assert last_failure.code is FailureCode.PACKAGE_MISSING
         assert last_failure.remediation is not None
         assert last_failure.remediation.command == (
-            "uv pip install --python backend/.venv/bin/python vlo-fake==1.2.3"
+            f"uv pip install --python {backend_python()} vlo-fake==1.2.3"
         )
     finally:
         unregister_descriptor(FAKE_ID)

@@ -11,7 +11,11 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "strict": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@vlo/extension-sdk": ["../../packages/extension-sdk/src/index.ts"]
+    }
   },
   "include": ["frontend/src"]
 }
