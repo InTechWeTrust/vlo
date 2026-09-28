@@ -97,7 +97,7 @@ def _clear_runtime_state():
     clear_runtime_observations()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_probe_jobs_are_single_flight_and_publish_success(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -141,7 +141,7 @@ async def test_probe_jobs_are_single_flight_and_publish_success(
         await jobs.shutdown()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_probe_job_classifies_and_records_a_load_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -182,7 +182,7 @@ async def test_probe_job_classifies_and_records_a_load_failure(
         await jobs.shutdown()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_probe_preserves_a_failure_recorded_at_the_real_load_boundary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -236,7 +236,7 @@ async def test_probe_preserves_a_failure_recorded_at_the_real_load_boundary(
         await jobs.shutdown()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_gpu_lease_contention_fails_only_the_probe_job(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -276,7 +276,7 @@ async def test_gpu_lease_contention_fails_only_the_probe_job(
         await jobs.shutdown()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancelling_one_submitter_does_not_cancel_the_shared_submission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -315,7 +315,7 @@ async def test_cancelling_one_submitter_does_not_cancel_the_shared_submission(
     assert await connected is expected
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_known_blocked_capability_is_not_queued(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

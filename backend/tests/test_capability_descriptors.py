@@ -880,7 +880,7 @@ def test_a_successful_load_through_the_cell_proves_the_loaded_stage(
     assert capability.device.proven is True
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_the_probe_job_takes_the_gpu_lease_and_reports_loaded(
     fake_capability: CapabilityDescriptor,
     monkeypatch: pytest.MonkeyPatch,

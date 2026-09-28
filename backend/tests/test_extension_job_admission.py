@@ -117,7 +117,7 @@ async def _reach(event: threading.Event, timeout: float = 5.0) -> bool:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_gpu_job_holds_the_local_gpu_as_the_backend_tenant(
     tmp_path,
     model_work_coordinator,
@@ -164,7 +164,7 @@ async def test_a_gpu_job_holds_the_local_gpu_as_the_backend_tenant(
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_gpu_job_cannot_run_beside_native_local_inference(
     tmp_path,
     model_work_coordinator,
@@ -221,7 +221,7 @@ async def test_a_gpu_job_cannot_run_beside_native_local_inference(
     assert ran.is_set()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_execution_timeout_starts_at_admission_not_at_submission(
     tmp_path,
     model_work_coordinator,
@@ -268,7 +268,7 @@ async def test_execution_timeout_starts_at_admission_not_at_submission(
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancelling_a_queued_job_leaves_the_gpu_queue(
     tmp_path,
     model_work_coordinator,
@@ -318,7 +318,7 @@ async def test_cancelling_a_queued_job_leaves_the_gpu_queue(
         await _close(manager)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancelling_a_running_job_marks_the_entry_stopping(
     tmp_path,
     model_work_coordinator,
@@ -425,7 +425,7 @@ def test_a_gpu_job_must_be_synchronous(tmp_path) -> None:
         asyncio.run(_close(manager))
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_gpu_job_returning_an_awaitable_fails_rather_than_releasing_early(
     tmp_path,
     model_work_coordinator,
@@ -459,7 +459,7 @@ async def test_a_gpu_job_returning_an_awaitable_fails_rather_than_releasing_earl
     assert _entries(WORK_SOURCE) == []
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_job_that_does_not_declare_the_gpu_takes_no_lease(
     tmp_path,
     model_work_coordinator,
@@ -509,7 +509,7 @@ def _cpu_and_gpu_manager(tmp_path, *, executor_max_workers: int):
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_queued_gpu_jobs_do_not_occupy_the_general_pool(
     tmp_path,
     model_work_coordinator,
@@ -592,7 +592,7 @@ async def test_queued_gpu_jobs_do_not_occupy_the_general_pool(
         await _close(manager)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_running_gpu_job_does_not_occupy_the_general_pool(
     tmp_path,
     model_work_coordinator,
@@ -652,7 +652,7 @@ async def test_a_running_gpu_job_does_not_occupy_the_general_pool(
         await _close(manager)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_an_admission_no_worker_can_take_is_released_by_the_caller(
     tmp_path,
     model_work_coordinator,
@@ -698,7 +698,7 @@ async def test_an_admission_no_worker_can_take_is_released_by_the_caller(
         await _close(manager)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_cancelling_before_the_worker_starts_releases_the_admission(
     tmp_path,
     model_work_coordinator,
@@ -753,7 +753,7 @@ async def test_cancelling_before_the_worker_starts_releases_the_admission(
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_timed_out_job_whose_worker_returns_normally_stays_failed(
     tmp_path,
     model_work_coordinator,
@@ -811,7 +811,7 @@ async def test_a_timed_out_job_whose_worker_returns_normally_stays_failed(
     ]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_a_result_rejected_after_release_does_not_leave_a_succeeded_entry(
     tmp_path,
     model_work_coordinator,
@@ -850,7 +850,7 @@ async def test_a_result_rejected_after_release_does_not_leave_a_succeeded_entry(
     assert [entry.job_status for entry in history] == ["failed"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_shutting_the_owner_down_does_not_leave_a_succeeded_entry(
     tmp_path,
     model_work_coordinator,
@@ -999,7 +999,7 @@ def create_extension(context):
 '''
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_an_installed_extension_reserves_the_gpu_for_its_own_job(
     tmp_path,
     fake_environment,
