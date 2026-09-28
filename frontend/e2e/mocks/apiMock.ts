@@ -363,12 +363,16 @@ export interface ApiMockOptions {
  */
 export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
     // Registered first so the explicit routes below take precedence. Any new
-    // backend dependency must be deliberately represented in this harness.
-    await page.route('**/api/**', async (route) => {
-        throw new Error(
-            `Unexpected API request in Playwright test: ${route.request().method()} ${route.request().url()}`,
-        );
-    });
+    // backend dependency must be deliberately represented in this harness:
+    // an unmatched request would otherwise reach the dev server's proxy, which
+    // succeeds against a locally running backend and fails in CI.
+    for (const backendPrefix of ['api', 'app', 'comfy', 'sam2']) {
+        await page.route(`**/${backendPrefix}/**`, async (route) => {
+            throw new Error(
+                `Unexpected API request in Playwright test: ${route.request().method()} ${route.request().url()}`,
+            );
+        });
+    }
 
     const workflowList = options.workflowList
         ?? JSON.parse(readFixture('workflow-list.json'));
@@ -577,6 +581,21 @@ export async function installApiMock(page: Page, options: ApiMockOptions = {}) {
             }),
         });
     });
+
+    // The ComfyUI editor binds its iframe client to the open project as soon
+    // as the bridge connects; the client treats anything else as superseded.
+    await page.route(
+        '**/app/generation-delivery/projects/*/iframe-clients/*',
+        async (route) => {
+            const segments = new URL(route.request().url()).pathname.split('/');
+            const projectId = decodeURIComponent(segments.at(-3) ?? '');
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ accepted: true, project_id: projectId }),
+            });
+        },
+    );
 
     await page.route(
         '**/app/generation-delivery/projects/*/pending',
