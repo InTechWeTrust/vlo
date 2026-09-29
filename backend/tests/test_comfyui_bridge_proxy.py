@@ -335,3 +335,94 @@ def test_root_extension_proxy_is_not_decorated(
     )
     assert bytes(response.body) == b'["/extensions/example.js"]'
     assert seen_paths == ["/extensions"]
+
+
+class _FakeUpstreamSocket:
+    def __init__(self) -> None:
+        self._messages = iter(["hello from upstream"])
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return next(self._messages)
+        except StopIteration as exc:
+            raise StopAsyncIteration from exc
+
+    async def send(self, _message) -> None:
+        return None
+
+
+class _FakeUpstreamConnect:
+    def __init__(self, url: str, dialled: list[str]) -> None:
+        dialled.append(url)
+
+    async def __aenter__(self) -> _FakeUpstreamSocket:
+        return _FakeUpstreamSocket()
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+@pytest.fixture
+def dialled_upstream_urls(monkeypatch) -> list[str]:
+    from services.comfyui import comfyui_proxy
+
+    dialled: list[str] = []
+    monkeypatch.setattr(
+        comfyui_proxy,
+        "get_comfyui_url",
+        lambda: "http://127.0.0.1:8188",
+    )
+    monkeypatch.setattr(
+        comfyui_proxy.websockets,
+        "connect",
+        lambda url, **_kwargs: _FakeUpstreamConnect(url, dialled),
+    )
+    return dialled
+
+
+def _receive_first_message(client_path: str) -> str:
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(comfyui_compat.compat_router)
+    with TestClient(app).websocket_connect(client_path) as websocket:
+        return websocket.receive_text()
+
+
+@pytest.mark.parametrize(
+    ("client_path", "upstream_url"),
+    [
+        (
+            "/comfyui-frame/sd-ppp/?api_level=507&EIO=4&transport=websocket",
+            "ws://127.0.0.1:8188/sd-ppp/?api_level=507&EIO=4&transport=websocket",
+        ),
+        (
+            "/comfyui-frame/some-node/nested/socket",
+            "ws://127.0.0.1:8188/some-node/nested/socket",
+        ),
+    ],
+)
+def test_iframe_custom_node_websockets_preserve_path_and_query_values(
+    dialled_upstream_urls: list[str],
+    client_path: str,
+    upstream_url: str,
+) -> None:
+    assert _receive_first_message(client_path) == "hello from upstream"
+    assert dialled_upstream_urls == [upstream_url]
+
+
+@pytest.mark.parametrize(
+    "client_path",
+    ["/comfyui-frame/ws", "/comfyui-frame/api/ws"],
+)
+def test_iframe_comfy_websocket_aliases_still_win_over_catch_all(
+    dialled_upstream_urls: list[str],
+    client_path: str,
+) -> None:
+    _receive_first_message(client_path)
+
+    [url] = dialled_upstream_urls
+    assert url.startswith("ws://127.0.0.1:8188/ws?clientId=")

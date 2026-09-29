@@ -6,6 +6,7 @@ import uuid
 import httpx
 import websockets
 from fastapi import Request, Response, WebSocket, WebSocketDisconnect
+from starlette.requests import HTTPConnection
 from starlette.websockets import WebSocketState
 
 from services.comfyui.comfyui_client import get_comfyui_url, get_http_client
@@ -29,7 +30,7 @@ def _normalize_upstream_path(path: str) -> str:
     return f"/{stripped}" if stripped else "/"
 
 
-def _request_raw_path(request: Request) -> str:
+def _request_raw_path(request: HTTPConnection) -> str:
     raw_path = request.scope.get("raw_path")
     if isinstance(raw_path, (bytes, bytearray)):
         try:
@@ -39,7 +40,10 @@ def _request_raw_path(request: Request) -> str:
     return request.url.path
 
 
-def upstream_path_from_raw_request(request: Request, strip_prefix: str = "") -> str:
+def upstream_path_from_raw_request(
+    request: HTTPConnection,
+    strip_prefix: str = "",
+) -> str:
     raw_path = _request_raw_path(request)
     if strip_prefix and raw_path.startswith(strip_prefix):
         raw_path = raw_path[len(strip_prefix):]
@@ -129,7 +133,10 @@ async def proxy_websocket(ws: WebSocket, upstream_path: str = "/ws"):
     await ws.accept()
 
     query_pairs = list(ws.query_params.multi_items())
-    if not any(key == "clientId" for key, _ in query_pairs):
+    # clientId is ComfyUI's own /ws contract; do not add it to custom-node sockets.
+    if _normalize_upstream_path(upstream_path) == "/ws" and not any(
+        key == "clientId" for key, _ in query_pairs
+    ):
         query_pairs.append(("clientId", str(uuid.uuid4())))
     ws_query = urllib.parse.urlencode(query_pairs)
 

@@ -449,3 +449,11 @@ async def websocket_proxy_comfyui_frame_alias(ws: WebSocket):
 @compat_router.websocket("/comfyui-frame/api/ws")
 async def websocket_proxy_comfyui_frame_api_alias(ws: WebSocket):
     await proxy_websocket(ws, "/ws")
+
+
+# Registered after the /ws aliases so they keep matching first. Custom nodes
+# open their own sockets relative to the iframe (sd-ppp's Socket.IO lives at
+# /sd-ppp/); the raw path keeps the trailing slash aiohttp routes match on.
+@compat_router.websocket("/comfyui-frame/{path:path}")
+async def websocket_proxy_comfyui_frame(ws: WebSocket):
+    await proxy_websocket(ws, upstream_path_from_raw_request(ws, "/comfyui-frame"))
