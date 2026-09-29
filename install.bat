@@ -2,6 +2,9 @@
 setlocal enabledelayedexpansion
 
 set "SCRIPT_DIR=%~dp0"
+:: Call Windows find.exe by path: Git Bash/MSYS put a Unix find on PATH that
+:: treats "/I" as a directory and walks the whole drive.
+set "FIND_EXE=%SystemRoot%\System32\find.exe"
 set "UV_BIN="
 set "NODE_CMD="
 set "NODE_DIR="
@@ -285,7 +288,7 @@ for %%P in (python python3) do (
 )
 
 for /f "tokens=*" %%F in ('where py 2^>nul') do (
-    echo %%~fF | find /I "\WindowsApps\" >nul
+    echo %%~fF | "%FIND_EXE%" /I "\WindowsApps\" >nul
     if errorlevel 1 (
         call :try_py_launcher "%%~fF"
         if !errorlevel! equ 0 goto :python_found
@@ -293,7 +296,7 @@ for /f "tokens=*" %%F in ('where py 2^>nul') do (
 )
 
 for /f "tokens=*" %%F in ('where pymanager 2^>nul') do (
-    echo %%~fF | find /I "\WindowsApps\" >nul
+    echo %%~fF | "%FIND_EXE%" /I "\WindowsApps\" >nul
     if errorlevel 1 (
         call :try_pymanager_launcher "%%~fF"
         if !errorlevel! equ 0 goto :python_found
@@ -511,7 +514,7 @@ set "CANDIDATE_MAJOR="
 set "CANDIDATE_MINOR="
 if not exist "%CANDIDATE_NODE%" exit /b 1
 if not exist "%CANDIDATE_NPM%" exit /b 1
-echo %CANDIDATE_NODE% | find /I "\WindowsApps\" >nul
+echo %CANDIDATE_NODE% | "%FIND_EXE%" /I "\WindowsApps\" >nul
 if not errorlevel 1 exit /b 1
 for /f "tokens=1,2 delims=v." %%A in ('"%CANDIDATE_NODE%" -v 2^>nul') do (
     set "CANDIDATE_MAJOR=%%A"
@@ -629,7 +632,7 @@ exit /b %errorlevel%
 set "CANDIDATE_PATH=%~1"
 set "CANDIDATE_SOURCE=%~2"
 if not exist "%CANDIDATE_PATH%" exit /b 1
-echo %CANDIDATE_PATH% | find /I "\WindowsApps\" >nul
+echo %CANDIDATE_PATH% | "%FIND_EXE%" /I "\WindowsApps\" >nul
 if not errorlevel 1 exit /b 1
 "%CANDIDATE_PATH%" -c "import sys; raise SystemExit(0 if sys.version_info[:2] >= (3, 10) else 1)" >nul 2>&1
 if errorlevel 1 exit /b 1
