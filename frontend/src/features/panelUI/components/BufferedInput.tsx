@@ -1,4 +1,4 @@
-import { useState, useEffect, forwardRef } from "react";
+import { useState, useEffect, useRef, forwardRef } from "react";
 import { TextField, InputAdornment } from "@mui/material";
 
 interface BufferedInputProps {
@@ -45,7 +45,21 @@ export const BufferedInput = forwardRef<HTMLInputElement, BufferedInputProps>(
       setLocalValue(String(value));
     }, [value]);
 
+    // Text shown when the input gained focus. It can differ from `value`
+    // (e.g. an animated parameter written to the DOM at the playhead), so it
+    // becomes the edit baseline, and leaving the field untouched commits
+    // nothing rather than keyframing `value` at the playhead.
+    const focusTextRef = useRef<string | null>(null);
+
+    const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+      focusTextRef.current = e.target.value;
+      setLocalValue(e.target.value);
+    };
+
     const commit = () => {
+      const focusText = focusTextRef.current;
+      focusTextRef.current = null;
+      if (focusText !== null && localValue === focusText) return;
       if (localValue.trim() === "") {
         setLocalValue(String(value));
         return;
@@ -80,6 +94,7 @@ export const BufferedInput = forwardRef<HTMLInputElement, BufferedInputProps>(
           type="number"
           value={localValue}
           onChange={(e) => setLocalValue(e.target.value)}
+          onFocus={handleFocus}
           onBlur={commit}
           onKeyDown={handleKeyDown}
           slotProps={{
@@ -114,6 +129,7 @@ export const BufferedInput = forwardRef<HTMLInputElement, BufferedInputProps>(
         type="number"
         value={localValue}
         onChange={(e) => setLocalValue(e.target.value)}
+        onFocus={handleFocus}
         onBlur={commit}
         onKeyDown={handleKeyDown}
         slotProps={{ htmlInput: { step } }}

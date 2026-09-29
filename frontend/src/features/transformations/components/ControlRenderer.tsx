@@ -18,7 +18,7 @@ import { BufferedColorInput } from "../../panelUI/components/BufferedColorInput"
 import { Timeline } from "@mui/icons-material";
 import { SplineEditorPopover } from "./SplineEditorPopover";
 import { useSplinePopover } from "../hooks/useSplinePopover";
-import { liveParamStore } from "../../../core/liveParams/liveParamStore";
+import { useLiveParamSync } from "../hooks/useLiveParamSync";
 import { livePreviewParamStore } from "../../../core/liveParams/livePreviewParamStore";
 import type { GraphTimeAxis } from "../utils/clipTimeDomains";
 
@@ -109,17 +109,14 @@ function ScalarControl({
   // Updated imperatively by liveParamStore during playback — no React re-render.
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!transformId) return;
-    return liveParamStore.subscribe(transformId, control.name, (modelVal) => {
-      const displayVal = control.valueTransform?.toView
-        ? (control.valueTransform.toView(modelVal) as number)
-        : modelVal;
-      if (inputRef.current && document.activeElement !== inputRef.current) {
-        inputRef.current.value = String(+displayVal.toFixed(4));
-      }
-    });
-  }, [transformId, control.name, control.valueTransform]);
+  useLiveParamSync(transformId, control.name, numericValue, (modelVal) => {
+    const displayVal = control.valueTransform?.toView
+      ? (control.valueTransform.toView(modelVal) as number)
+      : modelVal;
+    if (inputRef.current && document.activeElement !== inputRef.current) {
+      inputRef.current.value = String(+displayVal.toFixed(4));
+    }
+  });
 
   return (
     <Box>
@@ -224,47 +221,35 @@ function TransformSliderControl({
   // Guard: don't override DOM while the user is dragging the slider handle.
   const isDraggingRef = useRef(false);
 
-  useEffect(() => {
-    if (!transformId) return;
+  useLiveParamSync(transformId, control.name, localValue, (modelVal) => {
+    const displayVal = control.valueTransform?.toView
+      ? (control.valueTransform.toView(modelVal) as number)
+      : modelVal;
 
-    return liveParamStore.subscribe(transformId, control.name, (modelVal) => {
-      const displayVal = control.valueTransform?.toView
-        ? (control.valueTransform.toView(modelVal) as number)
-        : modelVal;
+    // --- text input ---
+    if (
+      textInputRef.current &&
+      document.activeElement !== textInputRef.current
+    ) {
+      textInputRef.current.value = String(+displayVal.toFixed(4));
+    }
 
-      // --- text input ---
-      if (
-        textInputRef.current &&
-        document.activeElement !== textInputRef.current
-      ) {
-        textInputRef.current.value = String(+displayVal.toFixed(4));
-      }
-
-      // --- slider thumb + track ---
-      // MUI Slider positions the thumb with `style.left = '${pct}%'` (horizontal)
-      // and the filled track with `style.width = '${pct}%'`.
-      if (!isDraggingRef.current && sliderRef.current) {
-        const clamped = Math.min(Math.max(displayVal, min), max);
-        const pct = ((clamped - min) / (max - min)) * 100;
-        const thumb = sliderRef.current.querySelector(
-          ".MuiSlider-thumb",
-        ) as HTMLElement | null;
-        const track = sliderRef.current.querySelector(
-          ".MuiSlider-track",
-        ) as HTMLElement | null;
-        if (thumb) thumb.style.left = `${pct}%`;
-        if (track) track.style.width = `${pct}%`;
-      }
-    });
-  }, [
-    transformId,
-    control.name,
-    control.min,
-    control.max,
-    control.valueTransform,
-    min,
-    max,
-  ]);
+    // --- slider thumb + track ---
+    // MUI Slider positions the thumb with `style.left = '${pct}%'` (horizontal)
+    // and the filled track with `style.width = '${pct}%'`.
+    if (!isDraggingRef.current && sliderRef.current) {
+      const clamped = Math.min(Math.max(displayVal, min), max);
+      const pct = ((clamped - min) / (max - min)) * 100;
+      const thumb = sliderRef.current.querySelector(
+        ".MuiSlider-thumb",
+      ) as HTMLElement | null;
+      const track = sliderRef.current.querySelector(
+        ".MuiSlider-track",
+      ) as HTMLElement | null;
+      if (thumb) thumb.style.left = `${pct}%`;
+      if (track) track.style.width = `${pct}%`;
+    }
+  });
 
   const handleChange = (_: Event, newValue: number | number[]) => {
     const nextValue = newValue as number;
