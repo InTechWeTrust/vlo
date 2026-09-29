@@ -15,6 +15,7 @@
 /backend/services/extensions/jobs.py extension-surface=adapter
 /backend/services/extensions/job_artifacts.py extension-surface=adapter
 /backend/routers/extensions.py extension-surface=host
+/backend/web_media_types.py extension-surface=host
 /backend/main.py extension-surface=adapter
 
 # Portable V1 contracts. Keep these after broader host rules so they override.

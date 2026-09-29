@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import mimetypes
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Annotated
@@ -40,6 +39,7 @@ from services.extensions.local_storage import (
     ExtensionLocalStorageError,
     ExtensionLocalStorageStore,
 )
+from web_media_types import guess_web_media_type
 
 router = APIRouter(prefix="/app/extensions", tags=["extensions"])
 
@@ -668,15 +668,9 @@ def get_frontend_artifact(
             retryable=False,
         )
 
-    suffix = PurePosixPath(artifact_path).suffix
-    media_type = (
-        "text/javascript"
-        if suffix in {".js", ".mjs"}
-        else mimetypes.guess_type(artifact_path)[0] or "application/octet-stream"
-    )
     return Response(
         content=content,
-        media_type=media_type,
+        media_type=guess_web_media_type(artifact_path) or "application/octet-stream",
         headers={
             "Cache-Control": "public, max-age=31536000, immutable",
             "ETag": f'"{digest}"',
@@ -706,9 +700,7 @@ def get_extension_resource(
 
     return Response(
         content=content,
-        media_type=(
-            mimetypes.guess_type(artifact_path)[0] or "application/octet-stream"
-        ),
+        media_type=guess_web_media_type(artifact_path) or "application/octet-stream",
         headers={
             "Cache-Control": "public, max-age=31536000, immutable",
             "ETag": f'"{digest}"',

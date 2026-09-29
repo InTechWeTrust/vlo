@@ -36,6 +36,7 @@ from routers.extensions import (
     get_extension_services,
     router as extensions_router,
 )
+from web_media_types import guess_web_media_type
 from pathlib import Path
 from typing import List
 
@@ -315,10 +316,16 @@ def _resolve_frontend_file(full_path: str) -> Path | None:
     return FRONTEND_INDEX_FILE
 
 
+def _frontend_file_response(file_path: Path) -> FileResponse:
+    # The type must not come from the host's mimetypes table: a Windows
+    # registry mapping .js to text/plain stops the module bundles executing.
+    return FileResponse(file_path, media_type=guess_web_media_type(file_path))
+
+
 if FRONTEND_INDEX_FILE.exists():
     @app.get("/", include_in_schema=False)
     async def serve_frontend_index():
-        return FileResponse(FRONTEND_INDEX_FILE)
+        return _frontend_file_response(FRONTEND_INDEX_FILE)
 
 
     @app.get("/{full_path:path}", include_in_schema=False)
@@ -326,4 +333,4 @@ if FRONTEND_INDEX_FILE.exists():
         file_path = _resolve_frontend_file(full_path)
         if file_path is None:
             raise HTTPException(status_code=404, detail="Not found")
-        return FileResponse(file_path)
+        return _frontend_file_response(file_path)
