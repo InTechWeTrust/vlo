@@ -32,6 +32,9 @@ _BRIDGE_ASSET_ROOT = (
 _BRIDGE_ASSETS = {
     "extensions/vlo-host/vlo-bridge.js": _BRIDGE_ASSET_ROOT / "vlo-bridge.js",
     "extensions/vlo-host/bridge-core.mjs": _BRIDGE_ASSET_ROOT / "bridge-core.mjs",
+    "extensions/vlo-host/root-url-rewrite.mjs": (
+        _BRIDGE_ASSET_ROOT / "root-url-rewrite.mjs"
+    ),
 }
 _BRIDGE_BOOTSTRAP_TAG = (
     b'<script type="module" '

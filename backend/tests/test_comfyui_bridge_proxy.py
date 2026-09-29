@@ -296,6 +296,7 @@ def test_iframe_html_decoration_leaves_non_html_responses_untouched() -> None:
     [
         ("extensions/vlo-host/vlo-bridge.js", "vlo-bridge.js"),
         ("extensions/vlo-host/bridge-core.mjs", "bridge-core.mjs"),
+        ("extensions/vlo-host/root-url-rewrite.mjs", "root-url-rewrite.mjs"),
     ],
 )
 def test_iframe_serves_allowlisted_bridge_assets(path: str, filename: str) -> None:
