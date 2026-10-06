@@ -22,7 +22,7 @@ const schemas = {
   "project.open": z.object({ folder: name }).strict(),
   "project.save": z.object({}).strict(),
   "project.configure": config,
-  "assets.import": z.object({ root: z.enum(["projects", "reference", "temp"]), path: z.string().min(1) }).strict(),
+  "assets.import": z.object({ root: z.enum(["projects", "reference", "temp", "rubyapp"]), path: z.string().min(1) }).strict(),
   "timeline.insert": z.object({ assetId: id, startTick: tick }).strict(),
   "timeline.remove": z.object({ clipIds: z.array(id).min(1).max(1000) }).strict(),
   "timeline.split": z.object({ clipId: id, splitTick: tick }).strict(),

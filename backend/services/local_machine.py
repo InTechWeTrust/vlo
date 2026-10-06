@@ -9,11 +9,12 @@ ENABLED = os.environ.get("VLO_LOCAL_MACHINE") == "1"
 PROJECT_ROOT = Path(os.environ.get("VLO_PROJECTS_ROOT", "E:/Media/VLO/Project")).resolve()
 TEMP_ROOT = Path(os.environ.get("VLO_TEMP_ROOT", "E:/Media/VLO/Temp")).resolve()
 REFERENCE_ROOT = Path(os.environ.get("VLO_REFERENCE_ROOT", "E:/Media/Rubyapp/KeyAsset")).resolve()
+RUBYAPP_ROOT = Path(os.environ.get("VLO_RUBYAPP_ROOT", "E:/Media/Rubyapp/Project")).resolve()
 MACHINE_URL = os.environ.get("VLO_MACHINE_URL", "http://127.0.0.1:5679/api/v1/machine")
-ROOTS = {"projects": PROJECT_ROOT, "temp": TEMP_ROOT, "reference": REFERENCE_ROOT}
+ROOTS = {"projects": PROJECT_ROOT, "temp": TEMP_ROOT, "reference": REFERENCE_ROOT, "rubyapp": RUBYAPP_ROOT}
 
 def resolve_path(root: str, relative: str, *, write: bool = False) -> Path:
-    if root not in ROOTS or (write and root == "reference"):
+    if root not in ROOTS or (write and root not in ("projects", "temp")):
         raise HTTPException(403, "Storage root is unavailable or read-only")
     if "\\" in relative or ":" in relative or any(p in {"..", "."} for p in relative.split("/")):
         raise HTTPException(400, "Only contained relative paths are accepted")

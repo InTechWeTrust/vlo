@@ -22,6 +22,23 @@ def test_reference_root_is_read_only_and_normal_projects_allowed(roots):
     with pytest.raises(HTTPException):
         resolve_path("reference", "image.png", write=True)
 
+def test_rubyapp_scene_root_is_readable_but_never_writable(roots):
+    # Issue (Rubyapp board #146): takes must import straight from the
+    # Rubyapp project folders, read-only.
+    configured = {**roots, "rubyapp": roots["projects"].parent / "rubyapp"}
+    configured["rubyapp"].mkdir()
+    monkey_roots = pytest.MonkeyPatch()
+    monkey_roots.setattr(local_machine, "ROOTS", configured)
+    try:
+        scene = configured["rubyapp"] / "film/06 Scenes/Scene 01/Takes/take.mp4"
+        scene.parent.mkdir(parents=True)
+        scene.write_bytes(b"x")
+        assert resolve_path("rubyapp", "film/06 Scenes/Scene 01/Takes/take.mp4") == scene
+        with pytest.raises(HTTPException):
+            resolve_path("rubyapp", "film/rewrite.mp4", write=True)
+    finally:
+        monkey_roots.undo()
+
 def test_native_project_temporary_paths_use_shared_temp_root(roots):
     assert resolve_path("projects", "Film/.vloproject/temporary/iframe-selections/ref.png", write=True) == roots["temp"] / "project_temporary/Film/iframe-selections/ref.png"
 
