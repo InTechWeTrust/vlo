@@ -120,7 +120,7 @@ def test_list_response_for_loose_workflows_is_unchanged(roots):
 
     workflows = asyncio.run(comfyui.list_workflows())
 
-    assert workflows == [{"id": "wf.json", "name": "Loose"}]
+    assert workflows == [{"id": "wf.json", "name": "Loose", "group": "Active", "library_state": "active"}]
 
 
 def test_save_and_upload_of_new_workflows_stay_loose(roots):

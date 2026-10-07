@@ -21,7 +21,7 @@ def status():
 @router.get("/capabilities")
 def capabilities():
     import os
-    return {"commands": COMMANDS, "requires_browser_editor": True, "storage": "shared E media roots", "units": "timeline canonical ticks", "workflow_prefixes": [prefix.strip() for prefix in os.environ.get("VLO_ENABLED_WORKFLOW_PREFIXES", "vlo_minimax_h3_,vlo_qwen_image_2_1_").split(",") if prefix.strip()],"library":{"catalogue":"GET /api/machine/library/presets","schema":"GET /api/machine/library/presets/{preset_id}/schema","import":"POST /api/machine/library/workflow","validate":"GET /api/machine/library/workflows/{workflow_id}/validate"}}
+    return {"commands": COMMANDS, "requires_browser_editor": True, "storage": "shared E media roots", "units": "timeline canonical ticks", "workflow_prefixes": [prefix.strip() for prefix in os.environ.get("VLO_ENABLED_WORKFLOW_PREFIXES", "vlo_minimax_h3_,vlo_qwen_image_2_1_").split(",") if prefix.strip()],"library":{"catalogue":"GET /api/machine/library/presets","schema":"GET /api/machine/library/presets/{preset_id}/schema","import":"POST /api/machine/library/workflow","validate":"GET /api/machine/library/workflows/{workflow_id}/validate","refile":"POST /api/machine/library/refile"}}
 
 class Command(BaseModel):
     command: str
@@ -163,6 +163,34 @@ async def bridge(path: str, request: Request):
             raise HTTPException(503, "Huobao machine bridge unavailable; start both apps")
     return Response(upstream.content, status_code=upstream.status_code, media_type=upstream.headers.get("content-type", "application/json"))
 
+# One owner-neutral host service supplies explicit refresh and picker refresh.
+_library_refiler = None
+
+async def refile_library_workflows(*,force=False,strict=True):
+    global _library_refiler
+    if not ENABLED:return {}
+    from config import RUNTIME_ROOT
+    from services.library_refile import LibraryRefiler,UnresolvedLibraryFiling
+    from services.workflow_modes import WORKFLOWS_DIR
+    if _library_refiler is None or _library_refiler.workflows!=WORKFLOWS_DIR:
+        _library_refiler=LibraryRefiler(WORKFLOWS_DIR,RUNTIME_ROOT/'library_receipts')
+    async def catalogue():
+        async with httpx.AsyncClient(timeout=30,headers={'X-Machine-App':'vlo'}) as client:
+            response=await client.get(f'{MACHINE_URL}/library',params={'kind':'preset','state':'all'})
+        if response.status_code!=200:raise HTTPException(503,'Ruby all-state catalogue unavailable')
+        return response.json().get('entries',[])
+    try:
+        return await _library_refiler.refresh(catalogue,force=force)
+    except UnresolvedLibraryFiling as error:
+        raise HTTPException(503,str(error)) from error
+    except (httpx.HTTPError,OSError,ValueError,HTTPException) as error:
+        if strict:raise HTTPException(503,'Library refile refused; existing workflow bytes kept') from error
+        return {key:{**value,'source_unconfirmed':True,'stale':True} for key,value in _library_refiler.metadata.items()}
+
+@router.post('/library/refile')
+async def refresh_library_workflows():
+    return {'entries':await refile_library_workflows(force=True)}
+
 class OwnerShot(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: Literal["comfyui"] = "comfyui"
@@ -206,6 +234,7 @@ async def import_library_workflow(body: LibraryWorkflow):
             if entry_response.status_code != 200:
                 raise HTTPException(entry_response.status_code, "Ruby Active preset unavailable")
             entry = entry_response.json()
+            if entry.get("state","active")!="active":raise HTTPException(409,"Only an Active Library preset can be imported")
             if body.expected_source_hash and entry.get("content_hash") != body.expected_source_hash:
                 raise HTTPException(409, "Selected Library controls changed; refresh the card before importing")
             payload = entry.get("body", entry.get("data", {}).get("body", {}))
@@ -254,16 +283,13 @@ async def import_library_workflow(body: LibraryWorkflow):
     bound_hash = graph_hash(graph)
     suffix = hashlib.sha256(f"{body.preset_id}:{source_hash}:{bound_hash}".encode()).hexdigest()[:16]
     workflow_id = f"vlo_{family}_ruby_{suffix}.json"
-    workflows = RUNTIME_ROOT / "workflows"
-    workflows.mkdir(parents=True, exist_ok=True)
-    destination = workflows / workflow_id
-    temporary = destination.with_suffix(".writing")
-    temporary.write_text(json.dumps(graph), encoding="utf-8")
-    os.replace(temporary, destination)
-    receipts = RUNTIME_ROOT / "library_receipts"
-    receipts.mkdir(parents=True, exist_ok=True)
     manifest = {"preset_id":body.preset_id,"workflow_id":workflow_id,"source_hash":source_hash,"source_revision":entry.get("revision"),"source_graph_sha256":payload.get("sha256"),"bound_graph_sha256":bound_hash,"consultation":receipt,"preview":preview}
-    (receipts / f"{workflow_id}.json").write_text(json.dumps(manifest),encoding="utf-8")
+    from services.owned_library_imports import publish_import
+    try:
+        publish_import(RUNTIME_ROOT,workflow_id,graph,manifest,graph_hash)
+    except (OSError,ValueError) as error:
+        raise HTTPException(409,"Pinned workflow/receipt could not be published; existing evidence kept") from error
+    if _library_refiler is not None:_library_refiler.checked_at=None
     return {"workflow_id":workflow_id,"library_use_id":receipt["library_use_id"],"receipt":receipt,"card":card,"preview":preview,"source_hash":source_hash,"source_revision":entry.get("revision"),"bound_graph_sha256":bound_hash}
 
 @router.get("/library/presets/{preset_id}/schema")
@@ -283,19 +309,19 @@ async def library_preset_schema(preset_id: str):
         return {"entry":active.json(),"schema":schema.json(),"capability":capabilities_response.json().get("capabilities",{}).get(preset_id,{})}
 
 @router.get("/library/presets")
-async def library_enabled_presets():
+async def library_enabled_presets(state: Literal["active","lab","old","all"]="active"):
     """Current catalogue with usable families verified from actual owner graphs."""
     from urllib.parse import quote
     from services.workflow_modes import machine_graph_family
     async with httpx.AsyncClient(timeout=30,headers={"X-Machine-App":"vlo"}) as client:
-        catalogue = await client.get(f"{MACHINE_URL}/library",params={"kind":"preset"})
+        catalogue = await client.get(f"{MACHINE_URL}/library",params={"kind":"preset","state":state})
         if catalogue.status_code != 200:
             raise HTTPException(catalogue.status_code,"Ruby Active catalogue unavailable")
         result = catalogue.json()
         enabled = []
         for entry in result.get("entries",[]):
-            if entry.get("state") != "active": continue
-            response = await client.get(f"{MACHINE_URL}/library/preset/{quote(entry['owner_id'],safe='')}")
+            if state!="all" and entry.get("state")!=state:continue
+            response = await client.get(f"{MACHINE_URL}/library/preset/{quote(entry['owner_id'],safe='')}",params={'state':'all'})
             if response.status_code != 200: continue
             current = response.json()
             graph = current.get("body",{}).get("graph")

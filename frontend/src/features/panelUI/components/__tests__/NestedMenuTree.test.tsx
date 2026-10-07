@@ -437,3 +437,36 @@ describe("resolveMenuNodeIcon", () => {
     );
   });
 });
+
+
+describe("source-owned presentation groups", () => {
+  const groups = [
+    { id: "active", label: "Active", leafIds: ["flux"] },
+    { id: "lab", label: "Lab", leafIds: ["other"] },
+  ];
+  it.each([
+    { id: "native.json", label: "Native workflow" },
+    { id: "extension:example/workflow", label: "Extension workflow" },
+  ])("preserves normalized registered leaf $id during activation", (leaf) => {
+    const onActivate = vi.fn();
+    const nativeLayout: MenuTreeLayout = { nodes: [], leafPlacements: [{ leafId: leaf.id, parentId: null, order: 0 }] };
+    render(<NestedMenuTree ariaLabel="Registered workflows" layout={nativeLayout} defaultLayout={nativeLayout}
+      leaves={[leaf]} presentationGroups={[{ id: "lab", label: "Lab", leafIds: [leaf.id] }]}
+      onLeafActivate={onActivate} />);
+    expect(screen.getByRole("heading", { name: "Lab" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Old" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: leaf.label }));
+    expect(onActivate).toHaveBeenCalledWith(leaf);
+  });
+  it("empty state headings remain visible and Old appears only when supplied", () => {
+    renderTree({ presentationGroups: [...groups, { id: "old", label: "Old", leafIds: [] }] });
+    expect(screen.getByRole("heading", { name: "Old" })).toBeInTheDocument();
+  });
+  it("editing and saving preserve the original layout without derived namespaces", async () => {
+    const { onSave } = renderTree({ presentationGroups: groups });
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByRole("heading", { name: "Active" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(LAYOUT));
+  });
+});

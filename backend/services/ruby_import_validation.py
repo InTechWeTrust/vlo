@@ -14,8 +14,12 @@ async def validate_import(workflow_id):
     if not re.fullmatch(r"[a-zA-Z0-9_.-]+\.json", workflow_id):
         raise HTTPException(422, "Invalid imported workflow ID")
     try:
-        manifest = json.loads((RUNTIME_ROOT / "library_receipts" / f"{workflow_id}.json").read_text(encoding="utf-8"))
-        graph = json.loads((RUNTIME_ROOT / "workflows" / workflow_id).read_text(encoding="utf-8"))
+        from services.owned_library_imports import read_receipt, _read
+        manifest = read_receipt(RUNTIME_ROOT / "library_receipts", workflow_id)
+        from services.workflow_bundles import find_workflow
+        graph_path=find_workflow([RUNTIME_ROOT/"workflows"],workflow_id)
+        if graph_path is None:raise ValueError("Pinned workflow not found")
+        graph = _read(graph_path)
     except (OSError, ValueError):
         raise HTTPException(409, "This Library import has no current pinned receipt; refresh and reimport")
     if graph_hash(graph) != manifest.get("bound_graph_sha256"):
@@ -28,6 +32,7 @@ async def validate_import(workflow_id):
     if current.status_code != 200:
         raise HTTPException(409, "The Library preset is no longer Active/available; refresh and reimport")
     entry = current.json()
+    if entry.get("state","active")!="active":raise HTTPException(409,"The Library preset is no longer Active")
     if entry.get("content_hash") != manifest.get("source_hash") or entry.get("revision") != manifest.get("source_revision"):
         raise HTTPException(409, "The Library preset changed after import; refresh and reimport before a new submission")
     return {"imported":True,"current":True,"source_hash":manifest["source_hash"],"source_revision":manifest["source_revision"],"bound_graph_sha256":manifest["bound_graph_sha256"]}

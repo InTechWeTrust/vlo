@@ -366,3 +366,12 @@
 /backend/services/ruby_owner.py extension-surface=host
 /backend/services/ruby_import_validation.py extension-surface=host
 /backend/routers/local_machine.py extension-surface=host
+
+/backend/services/library_refile.py extension-surface=host
+
+/backend/services/owned_workflow_moves.py extension-surface=host
+
+/frontend/src/core/shell/menuTreePresentation.ts extension-surface=host
+/frontend/src/features/panelUI/components/NestedMenuTree.tsx extension-surface=host
+
+backend/services/owned_library_imports.py extension-surface=host

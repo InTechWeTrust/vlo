@@ -13,6 +13,8 @@ import {
   Button,
   LinearProgress,
   CircularProgress,
+  Checkbox,
+  FormControlLabel,
   Chip,
   IconButton,
   Popover,
@@ -551,17 +553,35 @@ export function GenerationPanel() {
   const syncedWorkflow = useGenerationStore((s) => s.syncedWorkflow);
   const syncedGraphData = useGenerationStore((s) => s.syncedGraphData);
   const rawObjectInfo = useGenerationStore((s) => s.rawObjectInfo);
+  const includeOldWorkflows = useGenerationStore((s) => s.includeOldWorkflows);
+  const visibleWorkflowOptions = useMemo(
+    () => availableWorkflows.filter((workflow) => {
+      // The import namespace identifies owned copies, not their current state.
+      // A cold-loaded copy needs catalogue metadata before entering a group.
+      if (!workflow.libraryGroup && workflow.id.includes("_ruby_")) return false;
+      return includeOldWorkflows || workflow.libraryGroup !== "Old";
+    }),
+    [availableWorkflows, includeOldWorkflows],
+  );
+  const workflowPresentationGroups = useMemo(
+    () => (["Active", "Lab", ...(includeOldWorkflows ? ["Old"] : [])] as const).map((group) => ({
+      id: `library-${group.toLowerCase()}`, label: group,
+      leafIds: visibleWorkflowOptions.filter((workflow) => (workflow.libraryGroup ?? "Active") === group).map((workflow) => workflow.id),
+    })), [visibleWorkflowOptions, includeOldWorkflows],
+  );
   const workflowLeafIds = useMemo(
     () => availableWorkflows.map((workflow) => workflow.id),
     [availableWorkflows],
   );
   const workflowMenuLeaves = useMemo(
     () =>
-      availableWorkflows.map((workflow) => ({
+      visibleWorkflowOptions.map((workflow) => ({
         id: workflow.id,
         label: workflow.name,
+        libraryGroup: workflow.libraryGroup,
+        stale: workflow.stale,
       })),
-    [availableWorkflows],
+    [visibleWorkflowOptions],
   );
   const selectedWorkflowLabel = selectedWorkflowId
     ? workflowMenuLeaves.find((workflow) => workflow.id === selectedWorkflowId)
@@ -1408,8 +1428,18 @@ export function GenerationPanel() {
             ) : null}
           </Box>
         ) : (
+          <Box>
+          <FormControlLabel control={<Checkbox checked={includeOldWorkflows} onChange={(_, checked) => { setWorkflowMenuParentId(null); void fetchWorkflows(checked); }} />} label="Show Old" />
           <NestedMenuTree
             ariaLabel="Generation workflows"
+            presentationGroups={workflowPresentationGroups}
+            renderLeaf={(workflow, state) => (
+              <Button fullWidth variant={state.selected ? "contained" : "outlined"} disabled={state.editing} onClick={state.activate}>
+                {workflow.label}
+                {workflow.libraryGroup === "Lab" && <Chip size="small" label="Lab" sx={{ ml: 1 }} />}
+                {workflow.stale && <Chip size="small" label="stale" sx={{ ml: 1 }} />}
+              </Button>
+            )}
             layout={workflowMenuLayout.layout}
             defaultLayout={defaultWorkflowMenuLayout}
             leaves={workflowMenuLeaves}
@@ -1424,6 +1454,7 @@ export function GenerationPanel() {
             isSaving={workflowMenuLayout.isSaving}
             persistenceError={workflowMenuLayout.error}
           />
+          </Box>
         )}
         {comfyuiIsReady &&
         !selectedWorkflowId &&

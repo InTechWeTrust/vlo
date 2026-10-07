@@ -2088,6 +2088,81 @@ describe("useGenerationStore workflow editor sync", () => {
     expect(state.workflowLoadState).toBe("ready");
   });
 
+  it("keeps the latest Show Old request when catalogue replies arrive out of order", async () => {
+    let finishOld!: (value: Awaited<ReturnType<typeof comfyApi.listWorkflows>>) => void;
+    vi.spyOn(comfyApi, "listWorkflows")
+      .mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }))
+      .mockResolvedValueOnce([{ id: "active.json", name: "Active", libraryGroup: "Active" }]);
+    useGenerationStore.setState({ connectionStatus: "disconnected", includeOldWorkflows: false });
+    const first = useGenerationStore.getState().fetchWorkflows(true);
+    expect(useGenerationStore.getState().includeOldWorkflows).toBe(true);
+    await useGenerationStore.getState().fetchWorkflows(false);
+    finishOld([{ id: "old.json", name: "Old", libraryGroup: "Old" }]);
+    await first;
+    expect(useGenerationStore.getState().includeOldWorkflows).toBe(false);
+    expect(useGenerationStore.getState().availableWorkflows.map((item) => item.id)).toEqual(["active.json"]);
+  });
+
+  it("ignores a failed superseded catalogue request", async () => {
+    let rejectOld!: (reason: Error) => void;
+    vi.spyOn(comfyApi, "listWorkflows")
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectOld = reject; }))
+      .mockResolvedValueOnce([{ id: "active.json", name: "Active" }]);
+    useGenerationStore.setState({ connectionStatus: "disconnected" });
+    const first = useGenerationStore.getState().fetchWorkflows(true);
+    await useGenerationStore.getState().fetchWorkflows(false);
+    rejectOld(new Error("stale request failed"));
+    await first;
+    expect(useGenerationStore.getState().workflowLoadError).toBeNull();
+    expect(useGenerationStore.getState().includeOldWorkflows).toBe(false);
+  });
+
+  it("refreshes selected workflow state metadata without replacing its saved label", async () => {
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
+      { id: "saved.json", name: "Source label", libraryGroup: "Lab", stale: false },
+    ]);
+    useGenerationStore.setState({ connectionStatus: "disconnected", selectedWorkflowId: "saved.json",
+      availableWorkflows: [{ id: "saved.json", name: "Owner label", libraryGroup: "Active", stale: true }] });
+    await useGenerationStore.getState().fetchWorkflows(false);
+    expect(useGenerationStore.getState().availableWorkflows).toEqual([
+      { id: "saved.json", name: "Owner label", libraryGroup: "Lab", stale: false },
+    ]);
+  });
+
+  it("hides a selected former Active item absent from the filtered catalogue without dropping its loaded graph", async () => {
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([]);
+    const loadedGraph = { source: "pinned saved workflow" };
+    useGenerationStore.setState({ connectionStatus: "disconnected", selectedWorkflowId: "retired.json",
+      syncedGraphData: loadedGraph, availableWorkflows: [
+        { id: "retired.json", name: "Previously Active", libraryGroup: "Active", stale: false },
+      ] });
+    await useGenerationStore.getState().fetchWorkflows(false);
+    expect(useGenerationStore.getState().availableWorkflows).toEqual([]);
+    expect(useGenerationStore.getState().selectedWorkflowId).toBe("retired.json");
+    expect(useGenerationStore.getState().syncedGraphData).toBe(loadedGraph);
+    expect(useGenerationStore.getState().includeOldWorkflows).toBe(false);
+  });
+
+  it("keeps a cold-restored Library graph loaded without presenting its unknown state as Active", async () => {
+    vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([]);
+    const savedId = "vlo_minimax_h3_ruby_saved.json";
+    const loadedGraph = { source: "saved pinned Library graph" };
+    // Saved projects and backend graph loads preserve bare identity; they do
+    // not carry a fresh source-state catalogue receipt on cold restore.
+    useGenerationStore.setState({ connectionStatus: "disconnected", selectedWorkflowId: savedId,
+      syncedGraphData: loadedGraph, availableWorkflows: [{ id: savedId, name: "Saved workflow" }] });
+    await useGenerationStore.getState().fetchWorkflows(false);
+    expect(useGenerationStore.getState().availableWorkflows).toEqual([]);
+    expect(useGenerationStore.getState().selectedWorkflowId).toBe(savedId);
+    expect(useGenerationStore.getState().syncedGraphData).toBe(loadedGraph);
+    vi.mocked(comfyApi.listWorkflows).mockResolvedValue([{ id: savedId, name: "Source workflow", libraryGroup: "Old" }]);
+    await useGenerationStore.getState().fetchWorkflows(true);
+    expect(useGenerationStore.getState().availableWorkflows).toEqual([
+      { id: savedId, name: "Source workflow", libraryGroup: "Old" },
+    ]);
+    expect(useGenerationStore.getState().syncedGraphData).toBe(loadedGraph);
+  });
+
   it("refreshes the selector from backend workflows only", async () => {
     vi.spyOn(comfyApi, "listWorkflows").mockResolvedValue([
       { id: "wf.json", name: "Workflow" },

@@ -966,12 +966,15 @@ def _mark_how_to(workflow_item: dict[str, Any], how_to_roots: list[Path]) -> Non
 
 
 @router.get("/workflow/list")
-async def list_workflows():
+async def list_workflows(show_old: bool=False):
     """Returns a list of available workflows from main and default directories.
 
     Workflows in the main directory shadow identically-named defaults.
     """
     try:
+        from routers.local_machine import refile_library_workflows
+        from services.library_refile import workflow_state_metadata
+        library_metadata=await refile_library_workflows(strict=False)
         seen: set[str] = set()
         workflows = []
         workflow_menu_metadata = _load_workflow_menu_metadata()
@@ -994,6 +997,7 @@ async def list_workflows():
                     name = rules.name
                 workflow_item: dict[str, Any] = {"id": path.name, "name": name}
                 workflow_item.update(workflow_menu_metadata.get(path.name, {}))
+                workflow_item.update(workflow_state_metadata(path,library_metadata))
                 if workflow_item.get("hidden"):
                     continue
                 _mark_how_to(workflow_item, how_to_roots)
@@ -1012,13 +1016,16 @@ async def list_workflows():
                     name = rules.name
                 workflow_item = {"id": path.name, "name": name}
                 workflow_item.update(workflow_menu_metadata.get(path.name, {}))
+                workflow_item.update(workflow_state_metadata(path,library_metadata))
                 if workflow_item.get("hidden"):
                     continue
                 _mark_how_to(workflow_item, how_to_roots)
                 workflows.append(workflow_item)
 
         workflows = [item for item in workflows if machine_workflow_allowed(item["id"])]
-        workflows.sort(key=_workflow_list_sort_key)
+        workflows=[item for item in workflows if show_old or item.get("group")!="Old"]
+        group_order={"Active":0,"Lab":1,"Old":2}
+        workflows.sort(key=lambda item:(group_order[item["group"]],_workflow_list_sort_key(item)))
         return workflows
     except OSError as exc:
         return error_response(

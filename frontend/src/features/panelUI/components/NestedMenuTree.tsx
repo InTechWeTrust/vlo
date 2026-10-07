@@ -1,3 +1,4 @@
+import { projectMenuTreeGroups, type MenuTreePresentationGroup } from "../../../core/shell/menuTreePresentation";
 import {
   useMemo,
   useState,
@@ -91,6 +92,7 @@ export interface NestedMenuTreeProps<TLeaf extends NestedMenuLeaf> {
   readonly layout: MenuTreeLayout;
   readonly defaultLayout: MenuTreeLayout;
   readonly leaves: readonly TLeaf[];
+  readonly presentationGroups?: readonly MenuTreePresentationGroup[];
   readonly selectedLeafId?: string | null;
   /**
    * Optional controlled navigation: pass both to keep the browsed folder alive
@@ -325,6 +327,7 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
   layout,
   defaultLayout,
   leaves,
+  presentationGroups,
   selectedLeafId = null,
   currentParentId: controlledParentId,
   onCurrentParentIdChange,
@@ -361,7 +364,8 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const activeLayout = editing ? draft : layout;
+  const presentation = useMemo(() => presentationGroups ? projectMenuTreeGroups(layout, presentationGroups) : layout, [layout, presentationGroups]);
+  const activeLayout = editing ? draft : presentation;
   const leavesById = useMemo(
     () => new Map(leaves.map((leaf) => [leaf.id, leaf])),
     [leaves],
@@ -371,11 +375,14 @@ export function NestedMenuTree<TLeaf extends NestedMenuLeaf>({
     [activeLayout.nodes],
   );
   const visibleIds = useMemo(
-    () =>
-      editing
-        ? new Set(activeLayout.nodes.map((node) => node.id))
-        : visibleNodeIds(activeLayout),
-    [activeLayout, editing],
+    () => {
+      const ids = editing ? new Set(activeLayout.nodes.map((node) => node.id)) : visibleNodeIds(activeLayout);
+      if (!editing && presentationGroups) {
+        for (const group of presentationGroups) ids.add(`presentation/${group.id}`);
+      }
+      return ids;
+    },
+    [activeLayout, editing, presentationGroups],
   );
 
   const activeParentId =
