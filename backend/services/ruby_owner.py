@@ -91,3 +91,14 @@ async def build_bound_graph(card, values, receipt_id):
 
 def graph_hash(graph):
     return hashlib.sha256(json.dumps(graph, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def bound_graph_family(card, graph):
+    """Called only on the original current-hash Card.build result at import."""
+    from services.workflow_modes import machine_graph_family, canonical_companion_graph_family
+    family = machine_graph_family(graph)
+    if family is not None:
+        return family
+    if card.id != "seed_hunter_combo" or not owner_module("seed_hunter_card").is_canonical(card):
+        return None
+    return canonical_companion_graph_family(graph)

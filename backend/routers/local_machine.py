@@ -251,6 +251,7 @@ async def import_library_workflow(body: LibraryWorkflow):
             if requires_source and (not body.shot or not body.shot.extend_from):
                 raise HTTPException(422, "This preset requires its actual source clip; configure and bind it before importing")
             preview = None
+            canonical_companion_family = None
             source_hash = entry.get("content_hash")
             if body.shot:
                 from services.ruby_owner import RUBY_URL, source_card
@@ -274,8 +275,11 @@ async def import_library_workflow(body: LibraryWorkflow):
                 from services.ruby_owner import build_bound_graph, source_card
                 graph = await build_bound_graph(owner_card, preview["values"], receipt["library_use_id"])
                 source_card(body.preset_id, source_hash)
-                if machine_graph_family(graph) != family:
+                from services.ruby_owner import bound_graph_family
+                if bound_graph_family(owner_card, graph) != family:
                     raise HTTPException(422, "Bound graph changed its approved model family")
+                if machine_graph_family(graph) is None:
+                    canonical_companion_family = family
         except (httpx.HTTPError, ValueError) as error:
             raise HTTPException(503, "Ruby Library graph/receipt unavailable") from error
     import hashlib
@@ -284,6 +288,8 @@ async def import_library_workflow(body: LibraryWorkflow):
     suffix = hashlib.sha256(f"{body.preset_id}:{source_hash}:{bound_hash}".encode()).hexdigest()[:16]
     workflow_id = f"vlo_{family}_ruby_{suffix}.json"
     manifest = {"preset_id":body.preset_id,"workflow_id":workflow_id,"source_hash":source_hash,"source_revision":entry.get("revision"),"source_graph_sha256":payload.get("sha256"),"bound_graph_sha256":bound_hash,"consultation":receipt,"preview":preview}
+    if canonical_companion_family is not None:
+        manifest["canonical_companion_family"] = canonical_companion_family
     from services.owned_library_imports import publish_import
     try:
         publish_import(RUNTIME_ROOT,workflow_id,graph,manifest,graph_hash)

@@ -30,12 +30,21 @@ def machine_workflow_allowed(workflow_id: str) -> bool:
     return any(workflow_id.startswith(prefix.strip()) for prefix in prefixes if prefix.strip())
 
 
-def machine_submission_allowed(workflow_id: str | None, workflow: dict) -> bool:
+def machine_submission_allowed(workflow_id: str | None, workflow: dict, *, validated_import: dict | None = None) -> bool:
     if not LOCAL_MACHINE_MODE:
         return True
     if not workflow_id or not machine_workflow_allowed(workflow_id):
         return False
     family = machine_graph_family(workflow)
+    if family is None and validated_import:
+        # Only the private, freshly validated immutable owner binding can add
+        # canonical source companions. No form field supplies this proof.
+        from services.ruby_owner import graph_hash
+        if (validated_import.get("imported") is True and validated_import.get("current") is True
+                and validated_import.get("preset_id") == "seed_hunter_combo"
+                and validated_import.get("canonical_companion_family") == "minimax_h3"
+                and validated_import.get("bound_graph_sha256") == graph_hash(workflow)):
+            family = canonical_companion_graph_family(workflow)
     return family is not None and workflow_id.startswith(f"vlo_{family}_")
 
 
@@ -71,3 +80,29 @@ def machine_graph_family(workflow: dict) -> str | None:
                 return None
             families.update(matches)
     return next(iter(families)) if len(families) == 1 else None
+
+
+def canonical_companion_graph_family(workflow: dict) -> str | None:
+    """Classify an owner-built graph, never authorize an arbitrary submission.
+
+    Ignore only the exact native VoxCPM2 Clone/TTS model and the original
+    Foley CPU face detector model field. Every other primary field and loader
+    still goes through the original gate.
+    The caller must prove the hash-checked canonical builder or pinned receipt.
+    """
+    checked = {}
+    companions = 0
+    exact_models = {"VoxCPM2_Clone": "VoxCPM2", "VoxCPM2_TTS": "VoxCPM2",
+                    "UltralyticsDetectorProvider": "bbox/face_yolov8m.pt"}
+    for key, node in workflow.items():
+        if not isinstance(node, dict) or not isinstance(node.get("inputs", {}), dict):
+            return None
+        if node.get("class_type") in exact_models:
+            if node["inputs"].get("model_name") != exact_models[node["class_type"]]:
+                return None
+            checked[key] = {**node, "inputs": {name:value for name,value in node["inputs"].items() if name != "model_name"}}
+            companions += 1
+        else:
+            checked[key] = node
+    family = machine_graph_family(checked)
+    return family if companions and family == "minimax_h3" else None

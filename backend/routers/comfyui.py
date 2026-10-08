@@ -1507,14 +1507,15 @@ async def generate(request: Request):
             retryable=False,
         )
 
-    if not machine_submission_allowed(workflow_id, workflow):
-        return error_response(403, "workflow_disabled", "Only registered MiniMax H3 and Qwen Image 2.1 workflows are enabled", retryable=False)
-    if LOCAL_MACHINE_MODE:
+    validated_import = None
+    if LOCAL_MACHINE_MODE and workflow_id:
         from services.ruby_import_validation import validate_import
         try:
-            await validate_import(workflow_id)
+            validated_import = await validate_import(workflow_id)
         except HTTPException as error:
             return error_response(error.status_code, "library_import_stale", str(error.detail), retryable=False)
+    if not machine_submission_allowed(workflow_id, workflow, validated_import=validated_import):
+        return error_response(403, "workflow_disabled", "Only registered MiniMax H3 and Qwen Image 2.1 workflows are enabled", retryable=False)
 
     # --- Optional visual graph data (for embedding in output file metadata) ---
     graph_data: dict | None = None

@@ -35,4 +35,4 @@ async def validate_import(workflow_id):
     if entry.get("state","active")!="active":raise HTTPException(409,"The Library preset is no longer Active")
     if entry.get("content_hash") != manifest.get("source_hash") or entry.get("revision") != manifest.get("source_revision"):
         raise HTTPException(409, "The Library preset changed after import; refresh and reimport before a new submission")
-    return {"imported":True,"current":True,"source_hash":manifest["source_hash"],"source_revision":manifest["source_revision"],"bound_graph_sha256":manifest["bound_graph_sha256"]}
+    return {"imported":True,"current":True,"preset_id":manifest["preset_id"],"source_hash":manifest["source_hash"],"source_revision":manifest["source_revision"],"bound_graph_sha256":manifest["bound_graph_sha256"],"canonical_companion_family":manifest.get("canonical_companion_family")}

@@ -38,7 +38,7 @@ def read_receipt(receipts,workflow_id):
     with pinned_directory(history):
         candidates=sorted(history.glob('*.json'))
         latest=_read(candidates[-1]) if candidates else original
-    for field in ('workflow_id','preset_id','source_hash','bound_graph_sha256'):
+    for field in ('workflow_id','preset_id','source_hash','bound_graph_sha256','canonical_companion_family'):
         if latest.get(field)!=original.get(field):raise ValueError('Consultation history changed the immutable binding')
     return latest
 
@@ -60,7 +60,7 @@ def publish_import(runtime,workflow_id,graph,manifest,graph_hash):
         original=receipts/(workflow_id+'.json')
         if original.exists():
             first=_read(original)
-            for field in ('workflow_id','preset_id','source_hash','bound_graph_sha256'):
+            for field in ('workflow_id','preset_id','source_hash','bound_graph_sha256','canonical_companion_family'):
                 if first.get(field)!=manifest.get(field):raise ValueError('Pinned receipt binding differs; existing evidence kept')
         else:
             _publish(receipts,original.name,manifest)
