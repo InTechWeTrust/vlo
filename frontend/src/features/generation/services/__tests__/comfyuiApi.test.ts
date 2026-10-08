@@ -655,3 +655,22 @@ describe("ComfyApiError", () => {
     expect(error.payload).toBe("plain text");
   });
 });
+
+
+describe("Library state workflow catalogue", () => {
+  it("requests Old only when explicitly included and retains state/stale metadata", async () => {
+    fetchMock.mockResolvedValue(makeResponse({ body: [
+      { id: "active.json", name: "Current", group: "Active", stale: true },
+      { id: "lab.json", name: "Experiment", group: "Lab", stale: false },
+      { id: "old.json", name: "Retired", group: "Old" },
+    ] }));
+    expect(await listWorkflows(true)).toEqual([
+      { id: "active.json", name: "Current", libraryGroup: "Active", stale: true },
+      { id: "lab.json", name: "Experiment", libraryGroup: "Lab", stale: false },
+      { id: "old.json", name: "Retired", libraryGroup: "Old" },
+    ]);
+    expect(lastFetchUrl()).toContain("/workflow/list?show_old=1");
+    await listWorkflows();
+    expect(lastFetchUrl()).toMatch(/\/workflow\/list$/);
+  });
+});

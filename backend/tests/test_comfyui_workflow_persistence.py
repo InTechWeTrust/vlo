@@ -160,21 +160,21 @@ def test_list_workflows_applies_menu_groups_and_preserves_shadowing(
 
     assert workflows == [
         {
-            "id": "shared.json",
+            "group": "Active", "library_state": "active", "id": "shared.json",
             "name": "shared",
             "group_id": "default",
             "group_name": "Default",
             "group_order": 0,
         },
         {
-            "id": "core.json",
+            "group": "Active", "library_state": "active", "id": "core.json",
             "name": "core",
             "group_id": "core",
             "group_name": "Core",
             "group_order": 1,
         },
         {
-            "id": "zzz.json",
+            "group": "Active", "library_state": "active", "id": "zzz.json",
             "name": "zzz",
         },
     ]

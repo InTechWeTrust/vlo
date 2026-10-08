@@ -332,7 +332,22 @@ describe("GenerationPanel workflow rule hints", () => {
     );
   });
 
-  it("loads an unplaced workflow from the nested menu Other section", () => {
+  it("withholds a cold-restored Library option immediately until authoritative state metadata arrives", () => {
+    const saved = { id: "vlo_minimax_h3_ruby_saved.json", name: "Saved Library" };
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({ availableWorkflows: [saved], selectedWorkflowId: null }),
+    );
+    const { rerender } = render(<GenerationPanel />);
+    expect(screen.queryByRole("button", { name: /Saved Library/ })).not.toBeInTheDocument();
+    (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+      makeHookState({ availableWorkflows: [{ ...saved, libraryGroup: "Lab" }], selectedWorkflowId: null }),
+    );
+    rerender(<GenerationPanel />);
+    expect(screen.getByRole("button", { name: /Saved Library/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Lab" })).toBeInTheDocument();
+  });
+
+  it("loads an unplaced workflow from its Active Library group", () => {
     const handleWorkflowSelect = vi.fn();
     (useGenerationPanel as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
       makeHookState({
@@ -350,7 +365,7 @@ describe("GenerationPanel workflow rule hints", () => {
     expect(
       screen.queryByLabelText("generation-mode-label"),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Other" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Active" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Workflow" }));
     expect(handleWorkflowSelect).toHaveBeenCalledWith("wf.json");
   });

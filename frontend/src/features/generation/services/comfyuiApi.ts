@@ -460,6 +460,8 @@ interface WorkflowListResponseItem {
   group_id?: string;
   group_name?: string;
   group_order?: number;
+  group?: "Active" | "Lab" | "Old";
+  stale?: boolean;
   has_how_to?: boolean;
 }
 
@@ -481,8 +483,8 @@ export async function syncObjectInfo(): Promise<SyncObjectInfoResult> {
   return resp.json();
 }
 
-export async function listWorkflows(): Promise<WorkflowOption[]> {
-  const resp = await fetch(`${COMFY_API}/workflow/list`);
+export async function listWorkflows(showOld = false): Promise<WorkflowOption[]> {
+  const resp = await fetch(`${COMFY_API}/workflow/list${showOld ? "?show_old=1" : ""}`);
   if (!resp.ok) {
     await throwRequestError("Workflow list fetch", resp);
   }
@@ -490,6 +492,8 @@ export async function listWorkflows(): Promise<WorkflowOption[]> {
   return workflows.map((workflow) => ({
     id: workflow.id,
     name: workflow.name,
+    ...(workflow.group ? { libraryGroup: workflow.group } : {}),
+    ...(typeof workflow.stale === "boolean" ? { stale: workflow.stale } : {}),
     ...(workflow.group_id ? { groupId: workflow.group_id } : {}),
     ...(workflow.group_name ? { groupName: workflow.group_name } : {}),
     ...(typeof workflow.group_order === "number"

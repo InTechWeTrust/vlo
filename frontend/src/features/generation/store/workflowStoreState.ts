@@ -373,6 +373,7 @@ export function buildWorkflowStoreState(
   // Rules resolution is asynchronous. A newer graph, reload, or project reset
   // must invalidate old editor responses even when the filename stays the same.
   let editorSyncGeneration = 0;
+  let catalogueRequestGeneration = 0;
   // Graphs a restored snapshot carried for its workflow, by workflow id. Used
   // only when vlo has no file for that id — a workflow opened directly in
   // ComfyUI — and kept for the project's lifetime so the editor's own retries
@@ -387,6 +388,7 @@ export function buildWorkflowStoreState(
     workflowInputs: [],
     workflowInputsSourceId: null,
     availableWorkflows: [],
+    includeOldWorkflows: false,
     tempWorkflow: null,
     selectedWorkflowId: null,
     isWorkflowLoading: false,
@@ -1129,7 +1131,9 @@ export function buildWorkflowStoreState(
       }));
     },
 
-    fetchWorkflows: async () => {
+    fetchWorkflows: async (showOld = get().includeOldWorkflows) => {
+      const requestGeneration = ++catalogueRequestGeneration;
+      set({ includeOldWorkflows: showOld });
       // Object-info enriches a workflow after selection, but the lightweight
       // catalog does not depend on it. Start the sync without delaying menu
       // discovery on ComfyUI's much larger object_info response.
@@ -1139,14 +1143,19 @@ export function buildWorkflowStoreState(
         void get().syncObjectInfo();
       }
       try {
-        const baseWorkflows = await comfyApi.listWorkflows();
+        const baseWorkflows = await comfyApi.listWorkflows(showOld);
+        if (requestGeneration !== catalogueRequestGeneration) return;
         const { tempWorkflow, selectedWorkflowId, availableWorkflows } = get();
         const selectedWorkflow = selectedWorkflowId
           ? availableWorkflows.find((workflow) => workflow.id === selectedWorkflowId)
           : null;
 
-        const mergedWorkflows = selectedWorkflow
-          ? upsertWorkflowOption(baseWorkflows, selectedWorkflow)
+        const currentOption = baseWorkflows.find((workflow) => workflow.id === selectedWorkflowId);
+        // A loaded graph can remain selected after retirement, but a missing
+        // Library option must not retain its previous Active picker label.
+        const retainSelectedOption = selectedWorkflow && (currentOption || (!selectedWorkflow.libraryGroup && !selectedWorkflow.id.includes("_ruby_")));
+        const mergedWorkflows = retainSelectedOption
+          ? upsertWorkflowOption(baseWorkflows, { ...selectedWorkflow, ...(currentOption?.libraryGroup ? { libraryGroup: currentOption.libraryGroup, stale: currentOption.stale } : {}) })
           : baseWorkflows;
 
         const workflows = tempWorkflow
@@ -1155,9 +1164,11 @@ export function buildWorkflowStoreState(
 
         set({
           availableWorkflows: workflows,
+          includeOldWorkflows: showOld,
           workflowLoadError: null,
         });
       } catch (err) {
+        if (requestGeneration !== catalogueRequestGeneration) return;
         const message =
           err instanceof Error
             ? err.message

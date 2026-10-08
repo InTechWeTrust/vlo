@@ -56,6 +56,8 @@ export interface WorkflowOption {
   groupId?: string;
   groupName?: string;
   groupOrder?: number;
+  libraryGroup?: "Active" | "Lab" | "Old";
+  stale?: boolean;
   /** The workflow ships a how-to document (see `getWorkflowHowTo`). */
   hasHowTo?: boolean;
 }
@@ -139,6 +141,7 @@ export interface GenerationWorkflowState {
    */
   workflowInputsSourceId: string | null;
   availableWorkflows: WorkflowOption[];
+  includeOldWorkflows: boolean;
   tempWorkflow: TempWorkflow | null;
   selectedWorkflowId: string | null;
   isWorkflowLoading: boolean;
@@ -290,7 +293,7 @@ export interface GenerationWorkflowState {
     filename: string | null,
     bridgeIdentity?: { workflowInstanceId: string; revision: number } | null,
   ) => Promise<void>;
-  fetchWorkflows: () => Promise<void>;
+  fetchWorkflows: (showOld?: boolean) => Promise<void>;
   loadWorkflow: (filename: string) => Promise<void>;
   loadWorkflowFromAssetMetadata: (asset: Asset) => Promise<void>;
   /** Re-run ComfyUI's missing-model pipeline in the iframe (after model
