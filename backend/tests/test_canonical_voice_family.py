@@ -10,6 +10,8 @@ from fastapi import HTTPException
 from services import ruby_owner, ruby_import_validation, workflow_modes
 from routers import local_machine
 RUBY_ROOT = Path(os.environ.get("VLO_TEST_RUBY_REPO", "D:/Other-projects/rubyapp-videogenerator"))
+# Seed Hunter moved out of Rubyapp tools/h3_combo to its own project on 2026-10-12.
+VDOCOMBO = Path(os.environ.get("INGOD_VDOCOMBO_ROOT", "D:/Other-projects/Ingod-vdocombo"))
 
 @pytest.fixture
 def canonical(tmp_path, monkeypatch):
@@ -18,7 +20,7 @@ def canonical(tmp_path, monkeypatch):
     directory=tmp_path/"Preset"/"seed_hunter_combo"
     directory.mkdir(parents=True)
     (directory/"preset.json").write_bytes((RUBY_ROOT/"server/presets/seed_hunter_combo/preset.json").read_bytes())
-    (directory/"workflow.json").write_bytes((RUBY_ROOT/"tools/h3_combo/workflows/Seed_Hunter_Combo.api.json").read_bytes())
+    (directory/"workflow.json").write_bytes((VDOCOMBO/"workflows/Seed_Hunter_Combo.api.json").read_bytes())
     monkeypatch.setattr(ruby_owner,"OWNER_SOURCE",RUBY_ROOT/"server/app")
     monkeypatch.setattr(ruby_owner,"LIBRARY_ROOT",tmp_path)
     identity=hashlib.sha256(":".join(hashlib.sha256((directory/name).read_bytes()).hexdigest() for name in ("preset.json","workflow.json")).encode()).hexdigest()
