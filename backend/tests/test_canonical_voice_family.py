@@ -9,6 +9,16 @@ import pytest
 from fastapi import HTTPException
 from services import ruby_owner, ruby_import_validation, workflow_modes
 from routers import local_machine
+
+
+@pytest.fixture(autouse=True)
+def ruby_linked(monkeypatch):
+    """These cases cover the optional Ruby-linked mode (VLO_RUBY_LINK=1)."""
+    import routers.local_machine as router_module
+    import services.local_machine as service_module
+    monkeypatch.setattr(router_module, "RUBY_LINKED", True)
+    monkeypatch.setattr(service_module, "RUBY_LINKED", True)
+
 RUBY_ROOT = Path(os.environ.get("VLO_TEST_RUBY_REPO", "D:/Other-projects/rubyapp-videogenerator"))
 # Seed Hunter moved out of Rubyapp tools/h3_combo to its own project on 2026-10-12.
 VDOCOMBO = Path(os.environ.get("INGOD_VDOCOMBO_ROOT", "D:/Other-projects/Ingod-vdocombo"))

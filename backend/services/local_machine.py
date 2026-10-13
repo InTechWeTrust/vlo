@@ -8,10 +8,12 @@ from fastapi import HTTPException
 ENABLED = os.environ.get("VLO_LOCAL_MACHINE") == "1"
 PROJECT_ROOT = Path(os.environ.get("VLO_PROJECTS_ROOT", "E:/Media/VLO/Project")).resolve()
 TEMP_ROOT = Path(os.environ.get("VLO_TEMP_ROOT", "E:/Media/VLO/Temp")).resolve()
-REFERENCE_ROOT = Path(os.environ.get("VLO_REFERENCE_ROOT", "E:/Media/Rubyapp/KeyAsset")).resolve()
+# VLO stands alone by default; VLO_RUBY_LINK=1 restores the Ruby Library and Ruby media roots.
+RUBY_LINKED = os.environ.get("VLO_RUBY_LINK") == "1"
+REFERENCE_ROOT = Path(os.environ.get("VLO_REFERENCE_ROOT", "E:/Media/Rubyapp/KeyAsset" if RUBY_LINKED else "E:/Media/VLO/KeyAsset")).resolve()
 RUBYAPP_ROOT = Path(os.environ.get("VLO_RUBYAPP_ROOT", "E:/Media/Rubyapp/Project")).resolve()
 MACHINE_URL = os.environ.get("VLO_MACHINE_URL", "http://127.0.0.1:5679/api/v1/machine")
-ROOTS = {"projects": PROJECT_ROOT, "temp": TEMP_ROOT, "reference": REFERENCE_ROOT, "rubyapp": RUBYAPP_ROOT}
+ROOTS = {"projects": PROJECT_ROOT, "temp": TEMP_ROOT, "reference": REFERENCE_ROOT, **({"rubyapp": RUBYAPP_ROOT} if RUBY_LINKED else {})}
 
 def resolve_path(root: str, relative: str, *, write: bool = False) -> Path:
     if root not in ROOTS or (write and root not in ("projects", "temp")):

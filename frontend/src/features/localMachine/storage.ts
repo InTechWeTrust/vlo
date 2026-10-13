@@ -2,12 +2,14 @@ import { API_BASE_URL } from "../../config";
 
 export let localMachineEnabled = false;
 export let sharedRoots: Record<string, string> = {};
+export let rubyLinked = false;
 export async function initializeLocalMachine() {
   const response = await fetch(`${API_BASE_URL}/api/machine/status`);
   if (response.ok) {
     const status = await response.json();
     localMachineEnabled = status.enabled === true;
     sharedRoots = status.roots;
+    rubyLinked = status.ruby_linked === true;
   }
 }
 

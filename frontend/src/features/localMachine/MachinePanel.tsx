@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { Alert, Box, Button, Dialog, DialogContent, DialogTitle, MenuItem, TextField, Typography } from "@mui/material";
-import { localMachineEnabled, machineFetch, sharedRoots } from "./storage";
+import { localMachineEnabled, machineFetch, rubyLinked, sharedRoots } from "./storage";
 import { executeMachineCommand, machineCommandSchemas } from "./commands";
 import { runMachineBrain } from "./brain";
 import {activeEnabledPresets,ownerControls,shotFromControls,type LibraryPreset,type OwnerSchema} from "./library";
@@ -92,7 +92,7 @@ export function MachinePanel() {
   }
 
   return <>
-    <Button variant="contained" onClick={()=>setOpen(true)} sx={{position:"fixed",left:12,top:8,zIndex:2000}} size="small">Local brain & Ruby Library</Button>
+    <Button variant="contained" onClick={()=>setOpen(true)} sx={{position:"fixed",left:12,top:8,zIndex:2000}} size="small">{rubyLinked ? "Local brain & Ruby Library" : "Local brain"}</Button>
     <Dialog open={open} onClose={()=>!busy&&setOpen(false)} fullWidth maxWidth="md">
       <DialogTitle>Local machine</DialogTitle>
       <DialogContent sx={{display:"grid",gap:2}}>
@@ -107,6 +107,7 @@ export function MachinePanel() {
         <TextField label="Editor instruction" value={prompt} onChange={e=>setPrompt(e.target.value)} multiline minRows={3}/>
         <Button onClick={()=>void run()} disabled={busy||!prompt}>Run instruction</Button>
         {result&&<Typography component="pre" sx={{whiteSpace:"pre-wrap",maxHeight:240,overflow:"auto"}}>{result}</Typography>}
+        {rubyLinked && <>
         <Button onClick={()=>void readLibrary()} disabled={busy}>Refresh Ruby Active Library</Button>
         <Box sx={{display:"flex",gap:1}}><TextField select label="Library action" value={libraryKind} onChange={e=>{setLibraryKind(e.target.value);setLibraryId("");setOwnerSchema(null);selectionRevision.current++;}}><MenuItem value="preset">Load Active preset</MenuItem><MenuItem value="request">Read Library resource</MenuItem></TextField>{libraryKind === "preset" ? <TextField select fullWidth label="Active H3 / Qwen Image 2.1 preset" value={libraryId} disabled={busy} onChange={e=>void selectPreset(e.target.value)}><MenuItem value="">Select a current preset</MenuItem>{presets.map(preset=><MenuItem key={preset.owner_id} value={preset.owner_id}>{preset.title} · {preset.owner_id}</MenuItem>)}</TextField> : <TextField label="Library request" helperText="Examples: index:kind=doc · toc:document-id · document-id#section · prompt:id · skill:id · cases:category/slug" value={libraryId} onChange={e=>setLibraryId(e.target.value)}/>}</Box>
         {libraryKind === "preset" && <>
@@ -118,6 +119,7 @@ export function MachinePanel() {
         </>}
         <Button onClick={()=>void readSelection()} disabled={busy||!libraryId.trim()||(libraryKind==="preset"&&!ownerSchema)}>{libraryKind==="preset"?"Bind current card and load native workflow":"Read with receipt"}</Button>
         {library&&<Typography component="pre" sx={{whiteSpace:"pre-wrap",maxHeight:260,overflow:"auto"}}>{library}</Typography>}
+        </>}
       </DialogContent>
     </Dialog>
   </>;

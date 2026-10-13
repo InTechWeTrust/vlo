@@ -8,6 +8,29 @@ from pydantic import ValidationError
 from routers.local_machine import LibraryWorkflow, import_library_workflow
 from services import ruby_owner, ruby_import_validation
 
+@pytest.fixture(autouse=True)
+def ruby_linked(monkeypatch):
+    """These cases cover the optional Ruby-linked mode (VLO_RUBY_LINK=1)."""
+    import routers.local_machine as router_module
+    import services.local_machine as service_module
+    monkeypatch.setattr(router_module, "RUBY_LINKED", True)
+    monkeypatch.setattr(service_module, "RUBY_LINKED", True)
+
+
+@pytest.mark.anyio
+async def test_unlinked_vlo_refuses_ruby_library_and_ruby_workflows(monkeypatch):
+    import routers.local_machine as router_module
+    import services.local_machine as service_module
+    monkeypatch.setattr(router_module, "RUBY_LINKED", False)
+    monkeypatch.setattr(service_module, "RUBY_LINKED", False)
+    with pytest.raises(HTTPException) as library:
+        router_module.require_ruby()
+    assert library.value.status_code == 410
+    with pytest.raises(HTTPException) as submit:
+        await ruby_import_validation.validate_import("vlo_minimax_h3_ruby_0123456789abcdef.json")
+    assert submit.value.status_code == 409
+    assert await ruby_import_validation.validate_import("vlo_minimax_h3_local_0123456789abcdef.json") == {"imported": False}
+
 def test_library_request_cannot_silently_ignore_shot_or_unknown_fields():
     request = LibraryWorkflow(preset_id="future_h3",shot={"extend_from":"E:/Media/VLO/Project/source.mp4","duration_s":5})
     assert request.shot.extend_from.endswith("source.mp4")

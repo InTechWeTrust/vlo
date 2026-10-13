@@ -45,6 +45,10 @@ def machine_submission_allowed(workflow_id: str | None, workflow: dict, *, valid
                 and validated_import.get("canonical_companion_family") == "minimax_h3"
                 and validated_import.get("bound_graph_sha256") == graph_hash(workflow)):
             family = canonical_companion_graph_family(workflow)
+    if family is None and "_local_" in workflow_id:
+        # VLO-owned copy of a Seed Hunter Combo graph (comfybridge.vlo): same structural
+        # check, without asking Ruby whether its Library preset is still Active.
+        family = canonical_companion_graph_family(workflow)
     return family is not None and workflow_id.startswith(f"vlo_{family}_")
 
 

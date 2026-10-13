@@ -11,6 +11,9 @@ from services.ruby_owner import graph_hash
 async def validate_import(workflow_id):
     if "_ruby_" not in workflow_id:
         return {"imported":False}
+    from services.local_machine import RUBY_LINKED
+    if not RUBY_LINKED:
+        raise HTTPException(409, "Ruby-linked workflows are disabled; load the matching vlo_*_local_* workflow")
     if not re.fullmatch(r"[a-zA-Z0-9_.-]+\.json", workflow_id):
         raise HTTPException(422, "Invalid imported workflow ID")
     try:

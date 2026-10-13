@@ -9,7 +9,7 @@ import type { SlotValue } from "../generation/pipeline/types";
 import { getHostExportController } from "../../core/export/exportController";
 import { getLatestExportRun } from "../../core/export/exportRunLog";
 import { hostCommandTable } from "../../core/shell/commandTable";
-import { machineDirectory, machineFetch } from "./storage";
+import { machineDirectory, machineFetch, rubyLinked } from "./storage";
 
 const name = z.string().min(1).max(200).refine(v => !/[\\/:]/.test(v) && v !== "." && v !== "..", "Use a folder name within the shared workspace");
 const tick = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
@@ -106,7 +106,7 @@ export async function executeMachineCommand(command: string, args: unknown): Pro
     const p = schemas["generation.start"].parse(args); const slots: Record<string,SlotValue> = {};
     const state = useGenerationStore.getState();
     if (!state.isWorkflowReady) throw new Error("Native workflow is not ready");
-    if (state.selectedWorkflowId?.includes("_ruby_")) await machineFetch(`library/workflows/${encodeURIComponent(state.selectedWorkflowId)}/validate`);
+    if (rubyLinked && state.selectedWorkflowId?.includes("_ruby_")) await machineFetch(`library/workflows/${encodeURIComponent(state.selectedWorkflowId)}/validate`);
     const knownInputs = new Set(state.workflowInputs.map(input => input.id));
     if ([...Object.keys(p.texts || {}),...Object.keys(p.media || {})].some(key => !knownInputs.has(key))) throw new Error("Generation input ID is absent from the native workflow");
     for (const [key,value] of Object.entries(p.texts || {})) slots[key] = {type:"text",value};

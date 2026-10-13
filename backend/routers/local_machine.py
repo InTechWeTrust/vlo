@@ -8,20 +8,25 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Literal
-from services.local_machine import ROOTS, ENABLED, MACHINE_URL, editor_transport, resolve_path
+from services.local_machine import ROOTS, ENABLED, MACHINE_URL, RUBY_LINKED, editor_transport, resolve_path
 
 router = APIRouter(prefix="/api/machine")
 COMMANDS = ["state", "project.create", "project.open", "project.save", "project.configure", "assets.import", "timeline.insert", "timeline.remove", "timeline.split", "timeline.move", "generation.load", "generation.configure", "generation.start", "generation.cancel", "export.start", "export.status", "export.cancel", "host.execute"]
 
 @router.get("/status")
 def status():
-    return {"enabled": ENABLED, "roots": {k: str(v) for k,v in ROOTS.items()}, "machine_url": MACHINE_URL,
+    return {"enabled": ENABLED, "ruby_linked": RUBY_LINKED, "roots": {k: str(v) for k,v in ROOTS.items()}, "machine_url": MACHINE_URL,
             "editor_connected": bool(editor_transport.session and __import__('time').monotonic()-editor_transport.seen < 15)}
+
+def require_ruby():
+    """Ruby Library routes exist only when VLO is explicitly linked to Ruby (VLO_RUBY_LINK=1)."""
+    if not RUBY_LINKED:
+        raise HTTPException(410, "VLO is not linked to Ruby; use the vlo_*_local_* workflows")
 
 @router.get("/capabilities")
 def capabilities():
     import os
-    return {"commands": COMMANDS, "requires_browser_editor": True, "storage": "shared E media roots", "units": "timeline canonical ticks", "workflow_prefixes": [prefix.strip() for prefix in os.environ.get("VLO_ENABLED_WORKFLOW_PREFIXES", "vlo_minimax_h3_,vlo_qwen_image_2_1_").split(",") if prefix.strip()],"library":{"catalogue":"GET /api/machine/library/presets","schema":"GET /api/machine/library/presets/{preset_id}/schema","import":"POST /api/machine/library/workflow","validate":"GET /api/machine/library/workflows/{workflow_id}/validate","refile":"POST /api/machine/library/refile"}}
+    return {"commands": COMMANDS, "requires_browser_editor": True, "storage": "shared E media roots", "units": "timeline canonical ticks", "workflow_prefixes": [prefix.strip() for prefix in os.environ.get("VLO_ENABLED_WORKFLOW_PREFIXES", "vlo_minimax_h3_,vlo_qwen_image_2_1_").split(",") if prefix.strip()],"library":None if not RUBY_LINKED else {"catalogue":"GET /api/machine/library/presets","schema":"GET /api/machine/library/presets/{preset_id}/schema","import":"POST /api/machine/library/workflow","validate":"GET /api/machine/library/workflows/{workflow_id}/validate","refile":"POST /api/machine/library/refile"}}
 
 class Command(BaseModel):
     command: str
@@ -154,7 +159,7 @@ def delete(root: str, path: str, recursive: bool = False):
 
 @router.api_route("/bridge/{path:path}", methods=["GET", "POST"])
 async def bridge(path: str, request: Request):
-    if not (path in {"status", "v1/models", "v1/chat/completions"} or path.startswith("library")) or ".." in path:
+    if not (path in {"status", "v1/models", "v1/chat/completions"} or (RUBY_LINKED and path.startswith("library"))) or ".." in path:
         raise HTTPException(404, "Machine bridge route unavailable")
     async with httpx.AsyncClient(timeout=600) as client:
         try:
@@ -189,6 +194,7 @@ async def refile_library_workflows(*,force=False,strict=True):
 
 @router.post('/library/refile')
 async def refresh_library_workflows():
+    require_ruby()
     return {'entries':await refile_library_workflows(force=True)}
 
 class OwnerShot(BaseModel):
@@ -225,6 +231,7 @@ class LibraryWorkflow(BaseModel):
 
 @router.post("/library/workflow")
 async def import_library_workflow(body: LibraryWorkflow):
+    require_ruby()
     """Read the Active owner catalogue and preserve Ruby's consultation receipt."""
     from config import RUNTIME_ROOT
     from urllib.parse import quote
@@ -300,6 +307,7 @@ async def import_library_workflow(body: LibraryWorkflow):
 
 @router.get("/library/presets/{preset_id}/schema")
 async def library_preset_schema(preset_id: str):
+    require_ruby()
     from urllib.parse import quote
     from services.ruby_owner import RUBY_URL
     async with httpx.AsyncClient(timeout=30, headers={"X-Ruby-Origin":"vlo","X-Ruby-Session":"vlo","X-Machine-App":"vlo"}) as client:
@@ -316,6 +324,7 @@ async def library_preset_schema(preset_id: str):
 
 @router.get("/library/presets")
 async def library_enabled_presets(state: Literal["active","lab","old","all"]="active"):
+    require_ruby()
     """Current catalogue with usable families verified from actual owner graphs."""
     from urllib.parse import quote
     from services.workflow_modes import machine_graph_family
@@ -341,6 +350,7 @@ async def library_enabled_presets(state: Literal["active","lab","old","all"]="ac
 
 @router.get("/library/workflows/{workflow_id}/validate")
 async def validate_library_import(workflow_id: str):
+    require_ruby()
     from services.ruby_import_validation import validate_import
     return await validate_import(workflow_id)
 
