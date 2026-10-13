@@ -174,11 +174,13 @@ async def test_consultation_history_cannot_change_canonical_companion_proof(cano
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("with_voice",[True,False])
-async def test_actual_full_r2_104_and_foley_without_voice_keep_pinned_admission(canonical,with_voice):
+async def test_actual_full_r2_and_foley_without_voice_keep_pinned_admission(canonical,with_voice):
     card,identity,runtime,spec,values,entry,calls=canonical
     # Synthetic public inputs reproduce the approved actual104 R2 structure:
     # three first-frame Pictures, three references, three Clone lines,
     # original Foley/face detector, current int8 checking, no private payload.
+    # Since Seed Hunter 50a0653c (2026-10-11) each Clone line also passes through
+    # H3ComboTrimLeadingSilence, so the 104-node graph is now 107.
     spec.pop("audio")
     project=spec["project"]
     spec["images"]=[{"file":project+"/combo/picture_"+str(i)+".png","label":"Synthetic picture "+str(i),
@@ -194,12 +196,13 @@ async def test_actual_full_r2_104_and_foley_without_voice_keep_pinned_admission(
         spec["audio"]={"speech":"drive","drive":project+"/combo/dialogue.wav"}
     values["spec_json"]=json.dumps(spec)
     compiled=card.build(values)
-    if with_voice:assert len(compiled)==104
+    if with_voice:assert len(compiled)==107
     result=await local_machine.import_library_workflow(local_machine.LibraryWorkflow(preset_id=card.id,
            shot={"prompt":"Synthetic full R2"},expected_source_hash=identity,ruby_project=project))
     graph=json.loads((runtime/"workflows"/result["workflow_id"]).read_text())
-    if with_voice:assert len(graph)==104
+    if with_voice:assert len(graph)==107
     assert sum(n["class_type"]=="VoxCPM2_Clone" for n in graph.values())==(3 if with_voice else 0)
+    assert sum(n["class_type"]=="H3ComboTrimLeadingSilence" for n in graph.values())==(3 if with_voice else 0)
     detector=[n for n in graph.values() if n["class_type"]=="UltralyticsDetectorProvider"]
     assert len(detector)==1 and detector[0]["inputs"]=={"model_name":"bbox/face_yolov8m.pt"}
     assert workflow_modes.machine_graph_family(graph) is None
